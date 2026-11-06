@@ -18,12 +18,16 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S4 (the auction rule): the Cubical TT kernel of ratify-lang
+Status: S5 DONE (the committee): the Cubical TT kernel of ratify-lang
 a46d5df (a port of permit-lang 3d47120), R0 from ratify-lang 71f2c22 and
-the first domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`,
-`outcome`, the laws A1, A2 and A4, `REFUSE_AMOUNT` and `REFUSE_BOUND`
-(Q-S4-1 (a) to Q-S4-7 (a)). Section 1 has the rulings. Next: S5 (`Party`,
-`Committee`, `Certificate`, `Params`, `checkCert`).
+the domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`, `outcome`,
+the laws A1, A2 and A4 (S4), and from S5 `Hash`, `Party`, `Members`,
+`Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf`, the laws
+G1 to G3 as proof fields, `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`
+and the committee half of `REFUSE_BOUND` (Q-S5-1 (a) to Q-S5-11 (a)).
+Section 1 has the rulings. Next: S6 (`AucID`, `Slot`, `Root`, `Handle`,
+`Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`,
+`admit`, `slash`, `release`, and the deadline fields of `Params`).
 
 ## 1. Rulings
 
@@ -87,6 +91,17 @@ the first domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`,
 | 2026-11-06 | Q-S4-5 "(a) Reserve floor (Recommended)": `family Outcome := noSale | sale (slWinner : Size) (slPrice : Amount)`, with a 0-based winner index into `Bids`. A bid below the reserve is dropped. First price: the price is the winner bid. Second price: the price is the larger of the reserve and the second highest eligible bid. No eligible bid gives `noSale`. Edits: sections 6 (A2), 12 (S4). | USER, S4 |
 | 2026-11-06 | Q-S4-6 "(a) 1024 bids (Recommended)": a closed `Bids` value with more than 1024 bids in a def type or a def body gives `REFUSE_BOUND` (`BID_LIST_BOUND` in `src/front/check.c`). An open input list passes at check time; the T1 entry bounds it at S9. Edits: sections 12 (S4), 13 (OI-22). | USER, S4 |
 | 2026-11-06 | Q-S4-7 "(a) General in domain (Recommended)": the general A1, A2 and A4 terms (`Path` types, proofs by elim on `Bids` and `Amount`) are in `domain/domain.lang`. `examples/auction.lang` has the closed `refl` rows and the eval rows. Edits: section 12 (S4). | USER, S4 |
+| 2026-11-06 | Q-S5-1 "(a) Member list (Recommended)": `family Party := party (ptKey : Size)` (abstract key; S8 makes it a BN254 G1 key); `family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)`; a `Committee` holds the members, t and f; n is the length of the members. A repeated party breaks G1 (`REFUSE_SAFETY`). Edits: sections 4.1, 12 (S5), 13 (OI-25). | USER, S5 |
+| 2026-11-06 | Q-S5-2 "(a) Size + szLe, szEq (Recommended)": t, n, f and ta are `Size`. The words are `szLe`, `szLt`, `szEq`, `szAdd`, `sAnd`, `sOr`, `sNot`, `ptEq`, `hsEq`, `mbLen`, `mbHas` and `mbDistinct`. The result type is `Sum Unit Unit`, and `inr unit` means yes (the `amLe` convention). Edits: section 12 (S5). | USER, S5 |
+| 2026-11-06 | Q-S5-3 "(a) Abstract Hash now (Recommended)": `family Hash := hash (hsTag : Size)`. The DESIGN `Message` argument reads as `Hash`. S6 keeps this `Hash`. Edits: sections 4.1, 12 (S5, S6). | USER, S5 |
+| 2026-11-06 | Q-S5-4 "(a) Ideal signature list (Recommended)": `family Certificate := ctNil | ctCons (ctSigner : Party) (ctMsg : Hash) (ctRest : Certificate)`. `checkCert` counts each member one time when the certificate has an entry with that signer and that message, and accepts when the count is at least t. Equal entries count one time. At S8 the entry match becomes the Schnorr check. Edits: section 12 (S5), 13 (OI-25). | USER, S5 |
+| 2026-11-06 | Q-S5-5 "(c) Proof fields": G1 to G3 are `Path` proof fields, and the kernel checks them as types. There is no C decision of G1 to G3 on closed values. Not the recommendation. Edits: the law fields `cmSafe`, `cmCensor` and `prFork`; sections 6, 12 (S5). | USER, S5 |
+| 2026-11-06 | Q-S5-6 "(b) Separate amend t": `Params` has a separate amend threshold ta (`prAmendT : Size`). G3 holds on ta (2ta - n > f, in the field n + f < ta + ta). G1 and G2 hold on the certificate t. Not the recommendation. Edits: `prAmendT` and `prFork` in `Params`; sections 6, 12 (S5). | USER, S5 |
+| 2026-11-06 | Q-S5-7 "(a) 1024 members (Recommended)": `#define COMMITTEE_BOUND 1024u`. A closed `Members` value with more than 1024 members in a program def type, body, nested value or consumed subterm gives `REFUSE_BOUND`. An open committee passes; the T1 entry bounds it later. Edits: sections 7, 12 (S5), 13 (OI-26). | USER, S5 |
+| 2026-11-06 | Q-S5-8 "(a) At S6 (Recommended)": there are no deadlines at S5. S6 adds the deadline fields with `Slot` and `release` (P2). Edits: sections 12 (S6), 13 (OI-27). | USER, S5 |
+| 2026-11-06 | Q-S5-9 "(a) Field failure = code (Recommended)": a law field that does not check gives the law code: the G1 field `REFUSE_SAFETY`, the G2 field `REFUSE_CENSOR`, the G3 field `REFUSE_FORK`. This holds for every term (`refl` on closed numbers that break the law, or no proof for open numbers). G1 to G3 hold for open inputs too: DISCHARGED by the type, as P2. Edits: sections 6, 7, 12 (S5). | USER, S5 |
+| 2026-11-06 | Q-S5-10 "(a) G1, G2 in Committee (Recommended)": `Committee := committee (cmMembers) (cmT) (cmF) (cmSafe : G1 field) (cmCensor : G2 field)`. G1: no repeated party and f < t. G2: t + f <= n. `Params := params (prRule) (prReserve) (prCommittee) (prAmendT) (prFork : G3 field)`. G3: n + f < ta + ta. Edits: sections 6, 12 (S5). | USER, S5 |
+| 2026-11-06 | Q-S5-11 "(a) G3 only (Recommended)": there is no upper law on ta. New open item: ta > n - f stops amendments by the honest members (a loss of liveness, not of safety). S7 states it. Edits: sections 12 (S5), 13 (OI-24). | USER, S5 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -200,7 +215,12 @@ root, the timestamp and the release each become a t-of-n certificate, and
 slashing becomes a certified log entry.
 
 Hash (Q-S0-8 (a)): an abstract `Hash` in the language (leaf-lang
-precedent); Poseidon at T2 and in the crypto prelude (Q-S0-13 (b)).
+precedent); Poseidon at T2 and in the crypto prelude (Q-S0-13 (b)). From
+S5 (Q-S5-3 (a)): `family Hash := hash (hsTag : Size)` is the abstract
+`Hash`, the DESIGN `Message` argument reads as `Hash`, and S6 keeps it.
+`Party` is `party (ptKey : Size)`, an abstract key until S8 (Q-S5-1 (a)).
+`Members` is the committee list, and a `Committee` holds the members, t
+and f.
 
 ### 4.2 Operations
 
@@ -252,9 +272,9 @@ discharged.
 | Z1 | Knowledge soundness of pi^m | ASSUMED | proof system; the paper states no such assumption |
 | Z2 | Threshold decryption matches the ideal | ASSUMED | noise flooding proof |
 | Z3 | dec(eval g cs) = g(dec cs) at T1 | ASSUMED | scheme correctness |
-| G1 | Safety: t > f | DISCHARGED | decided on `Params` |
-| G2 | Censorship resistance: n - f >= t | DISCHARGED | decided on `Params` |
-| G3 | Fork freedom of the amend rule: 2t - n > f | DISCHARGED | decided on `Params` (ratify-lang O5) |
+| G1 | Safety: t > f | DISCHARGED | the type of `Committee` (a proof field) |
+| G2 | Censorship resistance: n - f >= t | DISCHARGED | the type of `Committee` (a proof field) |
+| G3 | Fork freedom of the amend rule: 2ta - n > f | DISCHARGED | the type of `Params` (a proof field on ta) (ratify-lang O5) |
 | G4 | `nil` is the unit, `append` is associative | DISCHARGED | paths by induction (ratify-lang TCM-E) |
 | G5 | Causality: an entry reads only earlier `Params` | DISCHARGED | by construction (ratify-lang O10) |
 | G6 | At most one entry for each height | EXTERNAL | G3 and honest single signing (ratify-lang O11) |
@@ -281,15 +301,15 @@ hint at A2.
 | Code | When | Source |
 |---|---|---|
 | `REFUSE_PARTIAL` | A partial kit word. | R0 |
-| `REFUSE_BOUND` | A committee or a bid list larger than the target bound. | R0 |
+| `REFUSE_BOUND` | A committee or a bid list larger than the target bound: a closed `Bids` value with more than 1024 bids (Q-S4-6 (a)), or a closed `Members` value with more than 1024 members (Q-S5-7 (a)). | R0 |
 | `REFUSE_AMOUNT` | An `Amount` operation other than compare, select, max, second max. | R0, Q-S0-1 |
 | `REFUSE_FORMER` | A type constructor that is not CM or CC. | R1 |
 | `REFUSE_FIXPOINT` | General recursion, or `Params` that authorize themselves. | R1 |
 | `REFUSE_CLOCK` | A wall clock or a host tick. | section 5 |
 | `REFUSE_PEEK` | A read of a `Sealed` value outside `release`. | P1 |
-| `REFUSE_SAFETY` | t <= f. | G1 |
-| `REFUSE_CENSOR` | n - f < t. | G2 |
-| `REFUSE_FORK` | 2t - n <= f for the amend rule. | G3 |
+| `REFUSE_SAFETY` | A G1 field does not check (t <= f or a repeated party). | G1, Q-S5-9 (a) |
+| `REFUSE_CENSOR` | A G2 field does not check (n - f < t). | G2, Q-S5-9 (a) |
+| `REFUSE_FORK` | A G3 field does not check (2ta - n <= f). | G3, Q-S5-9 (a) |
 | `REFUSE_APPROX` | An approximate scheme (CKKS). | T3 |
 | `REFUSE_WORD` | A user program that names `Word` or a `Word` operation. | Q-S1-7 (a) |
 
@@ -441,8 +461,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a), Q-S2-1 (a) to Q-S2-4 (a)): ratify-lang a46d5df, name edits only, no R0. Gate: 29 examples, 17 parse refusals, 154 check refusals, 10 kit-only refusals, 1 time hint, 78 evals, 1 build refusal; the review, domain and path regressions pass. Mutants M1 (path ends), M2 (glue face), M3 (universe level): KILLED. | DONE |
 | S3 | Port the ratify-lang 71f2c22 R0 delta (Q-S3-1 (a), Q-S3-2 (a)): R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build, with the IR rows, the Wasm modules and the differential cases (OI-20). Gate: 30 examples, 17 parse refusals, 158 check refusals, 10 kit-only refusals, 1 time hint, 79 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 33 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. These are the 71f2c22 counts: the 71f2c22 `test/gate.sh` line 287 has `test/ir/proof-trap.lang` in the Wasm and differential rows (an earlier ratify-lang S3 run had 32 modules and 958 cases). Mutants M1, M2 (`REFUSE_PARTIAL`), M3 (the div guard of the no-trap tool), M4 (`flag_norm`): KILLED. M5 (the `br_table` default) and M6 (the IF condition): equivalent. | DONE |
 | S4 | `Amount`, `Bids`, `Rule`, `Outcome`, `outcome` (Q-S4-1 (a) to Q-S4-7 (a)); A1, A2, A4 in `domain/domain.lang`; `REFUSE_AMOUNT`, `REFUSE_BOUND`; the kernel slot `DaoOutcome` (OI-23). Gate: 32 examples, 17 parse refusals, 163 check refusals, 10 kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. `test/gate.sh` builds a Wasm module for each `examples/*.lang` file, so the two new examples add two modules. Mutants M1 (the `REFUSE_AMOUNT` site), M2 (the `REFUSE_BOUND` site), M3 (`amMax`, A1), M4 (`bdSecond`, A2), M5 (the `bdArg` tie-break, A4): KILLED. | DONE |
-| S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | NEXT |
-| S6 | `AucID`, `Slot`, `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`. | |
+| S5 | `Hash`, `Party`, `Members`, `Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf` and the Size and Sum words (Q-S5-1 (a) to Q-S5-11 (a)); G1 to G3 as proof fields (`cmSafe`, `cmCensor`, `prFork`); `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` (Q-S5-9 (a)); the committee half of `REFUSE_BOUND` (`COMMITTEE_BOUND` 1024). Gate: 34 examples, 17 parse refusals, 169 check refusals, 10 kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S4: examples 32 to 34 (`examples/committee.lang`, `examples/committee-bound-edge.lang`), check refusals 163 to 169 (6 rows), evals 83 to 89 (6 committee rows), Wasm modules 35 to 37 (the 2 new examples); all other counts are the same. Mutants M1 (the `REFUSE_SAFETY` mapping), M2 (the `REFUSE_CENSOR` mapping), M3 (the `REFUSE_FORK` mapping), M4 (`COMMITTEE_BOUND` 1025), M5 (G1 `f <= t`), M6 (G2 with f dropped), M7 (G3 with `ta` for `ta + ta`): M1 to M7 KILLED (7/7). | DONE |
+| S6 | `AucID`, `Slot`, `Hash` (kept from S5), `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`; the deadline fields of `Params` (Q-S5-8 (a)). | NEXT |
 | S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | |
 | S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | |
 | S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
@@ -520,6 +540,18 @@ One session for each slice: scope, gate, mutants, docs, close.
   (Q-S4-3 (a)): in `src/front/check.c`, in the DAO prelude of
   `src/front/front.c` and in 23 `.lang` files. A port from ratify-lang or
   permit-lang must apply the same rename.
+- OI-24 G3 sets no upper law on ta (Q-S5-11 (a)). A ta above n - f stops
+  the amendments by the honest members: a loss of liveness, not of
+  safety. S7 states it.
+- OI-25 The `Party` key is an abstract `Size` until S8 (Q-S5-1 (a)). In
+  `checkCert`, the match of an entry on its signer and message is the
+  ideal signature check; at S8 it becomes the Schnorr check on a BN254 G1
+  key (Q-S5-4 (a)).
+- OI-26 An open committee (an input) passes the check at any size; only a
+  closed `Members` value with more than 1024 members gives `REFUSE_BOUND`
+  (Q-S5-7 (a)). The T1 entry bounds the open committee (S9).
+- OI-27 `Params` has no deadline field at S5 (Q-S5-8 (a)). S6 adds the
+  deadline fields with `Slot` and `release` (P2).
 
 ## 14. Questions for the USER (S0)
 

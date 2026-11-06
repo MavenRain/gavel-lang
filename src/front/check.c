@@ -2427,6 +2427,36 @@ static const Core *family_app(Call *k, uint32_t fam) {
   return core_op(c, OP_FAMILY, fam, 0, cores, n);
 }
 
+/* Q-S5-9 (a): the law fields of the domain. The field type is the law, so
+   a kernel failure of the field already stops the check; the failure gets
+   the law code (G1 cmSafe, G2 cmCensor, G3 prFork) for every term. */
+static const struct {
+  const char *family;
+  const char *field;
+  const char *code;
+  const char *law;
+} LAW_FIELDS[] = {
+  {"Committee", "cmSafe", "REFUSE_SAFETY", "G1 (the members are distinct and f < t)"},
+  {"Committee", "cmCensor", "REFUSE_CENSOR", "G2 (t + f <= n)"},
+  {"Params", "prFork", "REFUSE_FORK", "G3 (n + f < ta + ta, that is 2ta - n > f)"},
+};
+
+static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
+  Diag *d = c->m->diag;
+  const char *fam = c->m->families[ci->family].name;
+  const char *field = ci->fields[j].name;
+  uint32_t i;
+  if (d->code == NULL || strcmp(d->code, "OOM") == 0 || fam == NULL || field == NULL)
+    return;
+  for (i = 0; i < (uint32_t)(sizeof LAW_FIELDS / sizeof LAW_FIELDS[0]); i++) {
+    if (strcmp(fam, LAW_FIELDS[i].family) == 0 && strcmp(field, LAW_FIELDS[i].field) == 0) {
+      d->code = LAW_FIELDS[i].code;
+      snprintf(d->msg, sizeof d->msg, "%s: the proof field %s of %s does not check, so the law %s does not hold; Q-S5-9 (a)", d->def, field, ci->name, LAW_FIELDS[i].law);
+      return;
+    }
+  }
+}
+
 /* A constructor takes the family parameters (the indices), then its fields,
    then its interval arguments (a path constructor). */
 static const Core *ctor_app(Call *k, uint32_t ctor) {
@@ -2449,6 +2479,8 @@ static const Core *ctor_app(Call *k, uint32_t ctor) {
   for (j = 0; j < ci->field_count; j++) {
     const Value *fv;
     cores[p + j] = check(c, k->args[p + j], eval_core(c->m, env, ci->fields[j].type));
+    if (cores[p + j] == NULL)
+      law_field(c, ci, j);
     fv = here(c, cores[p + j]);
     env = fv == NULL ? NULL : env_push(c->m, env, fv);
     if (env == NULL)
@@ -4071,54 +4103,86 @@ static int amount_read(const Machine *m, const Core *type, const Core *body) {
 
 /* Q-S4-6 (a): the largest closed bid list. */
 #define BID_LIST_BOUND 1024u
+/* Q-S5-7 (a): the largest closed committee. */
+#define COMMITTEE_BOUND 1024u
 
-/* The number of bids in the closed Bids value V, saturated at
-   BID_LIST_BOUND + 1; 0 when the spine ends in a neutral value. */
-static uint64_t bid_count(const Machine *m, const Value *v) {
-  uint32_t nil = bound_ctor(m, "bdNil");
-  uint32_t cons = bound_ctor(m, "bdCons");
+/* A bounded list family (Bids or Members): the family, its two
+   constructors (the tail is the last argument of CONS) and the largest
+   closed length. */
+typedef struct {
+  uint32_t family;
+  uint32_t nil;
+  uint32_t cons;
+  uint32_t bound;
+} ListBound;
+
+/* The bound of the list family NAME with the constructors NIL and CONS. */
+static ListBound list_bound(Machine *m, const char *name, const char *nil, const char *cons, uint32_t bound) {
+  ListBound b;
+  b.family = find_family(m, name);
+  b.nil = bound_ctor(m, nil);
+  b.cons = bound_ctor(m, cons);
+  b.bound = bound;
+  return b;
+}
+
+/* The length of the closed list V, saturated at B->bound + 1; 0 when the
+   spine ends in a neutral value. */
+static uint64_t list_count(const ListBound *b, const Value *v) {
   uint64_t n = 0;
-  uint64_t cap = (uint64_t)BID_LIST_BOUND + 1u;
-  while (v != NULL && val_is(v, OP_CTOR) && v->inst == cons && v->argc >= 2u) {
+  uint64_t cap = (uint64_t)b->bound + 1u;
+  while (v != NULL && val_is(v, OP_CTOR) && v->inst == b->cons && v->argc >= 2u) {
     if (n < cap)
       n++;
     v = v->args[v->argc - 1u];
   }
-  return v != NULL && val_is(v, OP_CTOR) && v->inst == nil ? n : 0;
+  return v != NULL && val_is(v, OP_CTOR) && v->inst == b->nil ? n : 0;
 }
 
-static int bids_over(const Machine *m, const Value *v) {
-  return bid_count(m, v) > BID_LIST_BOUND;
+static int list_over(const ListBound *b, const Value *v) {
+  return list_count(b, v) > b->bound;
 }
 
-/* Q-S4-6 (a): 1 when the type T holds a closed Bids value above the bound.
-   The walk enters closures at fresh variables (the ratify c19574d
-   bound_over shape); a constructor value of Bids is counted, another
-   constructor value is entered through its arguments. */
-static int bound_over(Machine *m, uint32_t level, uint32_t bids, const Value *t) {
+typedef struct {
+  const ListBound *bound;
+  int over;
+} BoundWatch;
+
+static void bound_observe(void *context, const Value *value) {
+  BoundWatch *watch = context;
+  if (!watch->over && list_over(watch->bound, value))
+    watch->over = 1;
+}
+
+/* Q-S4-6 (a), Q-S5-7 (a): 1 when the type T holds a closed list of the
+   family of B above its bound. The walk enters closures at fresh
+   variables (the ratify c19574d bound_over shape); a constructor value of
+   the family is counted, another constructor value is entered through its
+   arguments. */
+static int bound_over(Machine *m, uint32_t level, const ListBound *b, const Value *t) {
   uint32_t i;
   if (t == NULL)
     return 0;
   switch (t->kind) {
   case VAL_PI:
   case VAL_SIGMA:
-    return bound_over(m, level, bids, t->dom) || bound_over(m, level + 1u, bids, closure_apply(m, t, val_var(m, level)));
+    return bound_over(m, level, b, t->dom) || bound_over(m, level + 1u, b, closure_apply(m, t, val_var(m, level)));
   case VAL_LAM:
-    return bound_over(m, level + 1u, bids, closure_apply(m, t, val_var(m, level)));
+    return bound_over(m, level + 1u, b, closure_apply(m, t, val_var(m, level)));
   case VAL_PLAM:
-    return bound_over(m, level + 1u, bids, closure_apply(m, t, val_ivar(m, level)));
+    return bound_over(m, level + 1u, b, closure_apply(m, t, val_ivar(m, level)));
   case VAL_PATHP:
-    if (bound_over(m, level + 1u, bids, closure_apply(m, t, val_ivar(m, level))))
+    if (bound_over(m, level + 1u, b, closure_apply(m, t, val_ivar(m, level))))
       return 1;
     break;
   case VAL_APP:
   case VAL_PAPP:
-    if (bound_over(m, level, bids, t->dom) || bound_over(m, level, bids, t->arg))
+    if (bound_over(m, level, b, t->dom) || bound_over(m, level, b, t->arg))
       return 1;
     break;
   case VAL_OP:
-    if (t->op == OP_CTOR && m->ctors[t->inst].family == bids)
-      return bids_over(m, t);
+    if (t->op == OP_CTOR && m->ctors[t->inst].family == b->family)
+      return list_over(b, t);
     break;
   case VAL_STUCK:
     break;
@@ -4129,15 +4193,16 @@ static int bound_over(Machine *m, uint32_t level, uint32_t bids, const Value *t)
     return 0;
   }
   for (i = 0; i < t->argc; i++) {
-    if (bound_over(m, level, bids, t->args[i]))
+    if (bound_over(m, level, b, t->args[i]))
       return 1;
   }
   return 0;
 }
 
-/* Skip terms with no dependency on Bids, including through globals. The
-   cache avoids repeatedly entering shared definitions in large proofs. */
-static int bids_uses(const Machine *m, uint32_t bids, unsigned char *seen, const Core *t) {
+/* Skip terms with no dependency on the list family FAM, including through
+   globals. The cache avoids repeatedly entering shared definitions in
+   large proofs. */
+static int list_uses(const Machine *m, uint32_t fam, unsigned char *seen, const Core *t) {
   uint32_t i;
   if (t == NULL)
     return 0;
@@ -4151,7 +4216,7 @@ static int bids_uses(const Machine *m, uint32_t bids, unsigned char *seen, const
   case CORE_GLOBAL:
     if (seen[t->index] == 0u) {
       seen[t->index] = 1u;
-      if (bids_uses(m, bids, seen, m->defs[t->index].body))
+      if (list_uses(m, fam, seen, m->defs[t->index].body))
         seen[t->index] = 2u;
     }
     return seen[t->index] == 2u;
@@ -4165,18 +4230,18 @@ static int bids_uses(const Machine *m, uint32_t bids, unsigned char *seen, const
   case CORE_INEG:
   case CORE_IMEET:
   case CORE_IJOIN:
-    if (bids_uses(m, bids, seen, t->a) || bids_uses(m, bids, seen, t->b))
+    if (list_uses(m, fam, seen, t->a) || list_uses(m, fam, seen, t->b))
       return 1;
     break;
   case CORE_OP:
-    if (((t->op == OP_FAMILY || t->op == OP_FOLD_FAMILY) && t->inst == bids)
-      || ((t->op == OP_CTOR || t->op == OP_PROJ) && m->ctors[t->inst].family == bids)
-      || (t->op == OP_ELIM && t->field == bids + 1u))
+    if (((t->op == OP_FAMILY || t->op == OP_FOLD_FAMILY) && t->inst == fam)
+      || ((t->op == OP_CTOR || t->op == OP_PROJ) && m->ctors[t->inst].family == fam)
+      || (t->op == OP_ELIM && t->field == fam + 1u))
       return 1;
     break;
   }
   for (i = 0; i < t->argc; i++) {
-    if (bids_uses(m, bids, seen, t->args[i]))
+    if (list_uses(m, fam, seen, t->args[i]))
       return 1;
   }
   return 0;
@@ -4184,7 +4249,7 @@ static int bids_uses(const Machine *m, uint32_t bids, unsigned char *seen, const
 
 /* Inspect written subterms before evaluation can discard a closed list.
    Binders keep their variables neutral, so an open list still passes. */
-static int bound_syntax(Machine *m, const Env *env, uint32_t level, const Core *t) {
+static int bound_syntax(Machine *m, const ListBound *b, const Env *env, uint32_t level, const Core *t) {
   uint32_t i;
   if (t == NULL)
     return 0;
@@ -4198,24 +4263,24 @@ static int bound_syntax(Machine *m, const Env *env, uint32_t level, const Core *
   case CORE_LAM:
   case CORE_PI:
   case CORE_SIGMA:
-    return bound_syntax(m, env, level, t->a)
-      || bound_syntax(m, env_push(m, env, val_var(m, level)), level + 1u, t->b);
+    return bound_syntax(m, b, env, level, t->a)
+      || bound_syntax(m, b, env_push(m, env, val_var(m, level)), level + 1u, t->b);
   case CORE_PLAM:
   case CORE_PATHP:
-    if (bound_syntax(m, env_push(m, env, val_ivar(m, level)), level + 1u, t->b))
+    if (bound_syntax(m, b, env_push(m, env, val_ivar(m, level)), level + 1u, t->b))
       return 1;
     for (i = 0; i < t->argc; i++) {
-      if (bound_syntax(m, env, level, t->args[i]))
+      if (bound_syntax(m, b, env, level, t->args[i]))
         return 1;
     }
     return 0;
   case CORE_INEG:
   case CORE_IMEET:
   case CORE_IJOIN:
-    return bound_syntax(m, env, level, t->a) || bound_syntax(m, env, level, t->b);
+    return bound_syntax(m, b, env, level, t->a) || bound_syntax(m, b, env, level, t->b);
   case CORE_APP:
   case CORE_PAPP:
-    if (bound_syntax(m, env, level, t->a) || bound_syntax(m, env, level, t->b))
+    if (bound_syntax(m, b, env, level, t->a) || bound_syntax(m, b, env, level, t->b))
       return 1;
     break;
   case CORE_GLOBAL:
@@ -4223,28 +4288,44 @@ static int bound_syntax(Machine *m, const Env *env, uint32_t level, const Core *
     break;
   }
   for (i = 0; i < t->argc; i++) {
-    if (bound_syntax(m, env, level, t->args[i]))
+    if (bound_syntax(m, b, env, level, t->args[i]))
       return 1;
   }
-  return bids_over(m, eval_core(m, env, t));
+  return list_over(b, eval_core(m, env, t));
 }
 
-/* Q-S4-6 (a): closed lists in types, nested values and body subterms. */
-static int bound_def(Checker *c, const Value *tv, const Core *type, const Core *body) {
-  uint32_t bids = find_family(c->m, "Bids");
+/* Q-S4-6 (a), Q-S5-7 (a): closed lists of the family of B in types,
+   nested values and body subterms. */
+static int bound_def(Checker *c, const ListBound *b, const Value *tv, const Core *type, const Core *body) {
+  Machine *m = c->m;
   unsigned char *seen;
-  if (bids == NO_FAMILY)
+  BoundWatch watch;
+  void (*previous_observer)(void *, const Value *);
+  void *previous_context;
+  int over;
+  if (b->family == NO_FAMILY)
     return 0;
   seen = arena_alloc(c->m->arena, (size_t)c->m->def_count + 1u);
   if (seen == NULL)
     return FAIL(c, "OOM", "out of memory");
   memset(seen, 0, (size_t)c->m->def_count + 1u);
-  if (!bids_uses(c->m, bids, seen, type) && !bids_uses(c->m, bids, seen, body))
+  if (!list_uses(c->m, b->family, seen, type) && !list_uses(c->m, b->family, seen, body))
     return 0;
-  return bound_over(c->m, c->level, bids, tv)
-    || bound_syntax(c->m, c->env, c->level, type)
-    || bound_syntax(c->m, c->env, c->level, body)
-    || bound_over(c->m, c->level, bids, here(c, body));
+  /* Inspect constructors as well as written subterms: a closed helper
+     application can create an oversized list and fold it away. */
+  watch.bound = b;
+  watch.over = 0;
+  previous_observer = m->observe_ctor;
+  previous_context = m->observe_context;
+  m->observe_ctor = bound_observe;
+  m->observe_context = &watch;
+  over = bound_over(c->m, c->level, b, tv)
+    || bound_syntax(c->m, b, c->env, c->level, type)
+    || bound_syntax(c->m, b, c->env, c->level, body)
+    || bound_over(c->m, c->level, b, here(c, body));
+  m->observe_ctor = previous_observer;
+  m->observe_context = previous_context;
+  return over || watch.over;
 }
 
 /* Register a checked body, including the closed label cores retained by
@@ -4273,13 +4354,21 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
      amMax and amMin. The domain file is exempt (program), as is kit mode. */
   if (program && guest(c) && amount_read(m, syntax_type, body))
     return FAIL(c, "REFUSE_AMOUNT", "%s reads an Amount by an elim, a fold, a projection or amSucc on a term that is not a literal; a program uses only amLe (compare), amSelect (select), amMax (max) and amMin (second max); Q-S0-1 (a), Q-S4-1 (a)", d->name);
-  /* Q-S4-6 (a): a closed bid list has at most 1024 bids. */
+  /* Q-S4-6 (a): a closed bid list has at most 1024 bids. Q-S5-7 (a): a
+     closed committee has at most 1024 members. */
   if (program && guest(c)) {
-    int over = bound_def(c, tv, syntax_type, body);
+    ListBound bids = list_bound(m, "Bids", "bdNil", "bdCons", BID_LIST_BOUND);
+    ListBound members = list_bound(m, "Members", "mbNil", "mbCons", COMMITTEE_BOUND);
+    int over = bound_def(c, &bids, tv, syntax_type, body);
     if (m->diag->code != NULL)
       return 0;
     if (over)
       return FAIL(c, "REFUSE_BOUND", "%s has a closed bid list with more than 1024 bids; an open list passes and the T1 entry bounds it; Q-S4-6 (a)", d->name);
+    over = bound_def(c, &members, tv, syntax_type, body);
+    if (m->diag->code != NULL)
+      return 0;
+    if (over)
+      return FAIL(c, "REFUSE_BOUND", "%s has a closed committee with more than 1024 members; an open committee passes and the T1 entry bounds it; Q-S5-7 (a)", d->name);
   }
   info->name = d->name;
   info->origin = d->origin;

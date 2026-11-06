@@ -1,0 +1,7 @@
+-- REFUSE_FORK (S5, Q-S5-6 (b), Q-S5-9 (a)): ta + ta <= n + f breaks G3 (2ta - n > f)
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def members : Members := mbCons (party sz0) (mbCons (party s1) (mbCons (party s2) (mbCons (party s3) mbNil)))
+def board : Committee := committee members s3 s1 refl refl
+def setup : Params := params secondPrice (amSucc amZero) board s2 refl

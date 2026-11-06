@@ -212,12 +212,88 @@ static int amount_bounds(void) {
   ok &= checked_in(prelude,
     "def packedEdge : Sigma (u : Unit) Bids := pack unit (addBid1024 bdNil)",
     ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def consume : Bids -> Unit := fun (bs : Bids) => fold unit (fun (h : Amount) (t : Unit) => t) (addBid1024 bs)\n"
+    "def appliedConsume : Unit := consume (bdCons amZero bdNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consume : Bids -> Unit := fun (bs : Bids) => fold unit (fun (h : Amount) (t : Unit) => t) (addBid1024 bs)\n"
+    "def appliedEdge : Unit := consume bdNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  return ok;
+}
+
+/* Q-S5-7 (a): a closed committee has at most 1024 members, even inside a
+   type. An open committee passes. */
+static int committee_bounds(void) {
+  const char *prelude =
+    "family Amount := amZero | amSucc (amPred : Amount)\n"
+    "family Party := party (ptKey : Amount)\n"
+    "family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)\n"
+    "def addMember : Members -> Members := fun (ms : Members) => mbCons (party amZero) ms\n"
+    "def addMember4 : Members -> Members := fun (ms : Members) => addMember (addMember (addMember (addMember ms)))\n"
+    "def addMember16 : Members -> Members := fun (ms : Members) => addMember4 (addMember4 (addMember4 (addMember4 ms)))\n"
+    "def addMember64 : Members -> Members := fun (ms : Members) => addMember16 (addMember16 (addMember16 (addMember16 ms)))\n"
+    "def addMember256 : Members -> Members := fun (ms : Members) => addMember64 (addMember64 (addMember64 (addMember64 ms)))\n"
+    "def addMember1024 : Members -> Members := fun (ms : Members) => addMember256 (addMember256 (addMember256 (addMember256 ms)))\n";
+  int ok = 1;
+  ok &= checked_in(prelude,
+    "def big : Members := addMember (addMember1024 mbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def hidden : Path Members (addMember (addMember1024 mbNil)) (addMember (addMember1024 mbNil)) := refl",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def delayed : Unit -> Members := fun (u : Unit) => addMember (addMember1024 mbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def packed : Sigma (u : Unit) Members := pack unit (addMember (addMember1024 mbNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consumed : Unit := fold unit (fun (h : Party) (t : Unit) => t) (addMember (addMember1024 mbNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def erasedType : (fun (ms : Members) => Unit) (addMember (addMember1024 mbNil)) := unit",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def delayedConsume : Unit -> Unit := fun (u : Unit) => fold unit (fun (h : Party) (t : Unit) => t) (addMember (addMember1024 mbNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def openKeep : Members -> Members := fun (ms : Members) => addMember (addMember1024 ms)",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def edge : Members := addMember1024 mbNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def delayedEdge : Unit -> Members := fun (u : Unit) => addMember1024 mbNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def packedEdge : Sigma (u : Unit) Members := pack unit (addMember1024 mbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  /* A closed application can build and consume the list inside a helper. */
+  ok &= checked_in(prelude,
+    "def consume : Members -> Unit := fun (ms : Members) => fold unit (fun (h : Party) (t : Unit) => t) (addMember1024 ms)\n"
+    "def appliedConsume : Unit := consume (mbCons (party amZero) mbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consume : Members -> Unit := fun (ms : Members) => fold unit (fun (h : Party) (t : Unit) => t) (addMember1024 ms)\n"
+    "def delayedApplied : Unit -> Unit := fun (u : Unit) => consume (mbCons (party amZero) mbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consume : Members -> Type 0 := fun (ms : Members) => (fun (u : Unit) => Unit) (fold unit (fun (h : Party) (t : Unit) => t) (addMember1024 ms))\n"
+    "def erasedApplication : consume (mbCons (party amZero) mbNil) := unit",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consume : Members -> Unit := fun (ms : Members) => fold unit (fun (h : Party) (t : Unit) => t) (addMember1024 ms)\n"
+    "def appliedEdge : Unit := consume mbNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
   return ok;
 }
 
 int main(void) {
   int ok = 1;
   ok &= amount_bounds();
+  ok &= committee_bounds();
   ok &= checked_fixture("test/ir/lazy.lang");
   ok &= checked_fixture("test/ir/proof-trap.lang");
   /* Diagnostics can print binders while constructor slots are still unnamed. */

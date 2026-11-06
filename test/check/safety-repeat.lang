@@ -1,0 +1,7 @@
+-- REFUSE_SAFETY (S5, Q-S5-1 (a), Q-S5-9 (a)): a repeated party breaks G1, one signer must not count two times
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def members : Members := mbCons (party sz0) (mbCons (party s1) (mbCons (party s2) (mbCons (party s3) mbNil)))
+def repeated : Members := mbCons (party sz0) (mbCons (party sz0) (mbCons (party s1) (mbCons (party s2) mbNil)))
+def board : Committee := committee repeated s3 s1 refl refl

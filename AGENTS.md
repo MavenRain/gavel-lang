@@ -4,6 +4,22 @@ This file is for coding agents that work in this repo or meet gavel-lang
 code. It is a DRAFT at S0. Slice S20 makes it final (`docs/PLAN.md`
 section 12).
 
+## State at S5
+
+- S5 adds the committee to `domain/domain.lang`: `Hash`, `Party`,
+  `Members`, `Committee`, `Certificate`, `Params`, `checkCert` and
+  `outcomeOf`. A `Committee` holds the members, t and f. `Params` holds
+  the rule, the reserve, the committee and the amend threshold ta.
+- G1 to G3 are `Path` proof fields (`cmSafe`, `cmCensor`, `prFork`). A
+  field that does not check gives `REFUSE_SAFETY` (G1: no repeated party
+  and f < t), `REFUSE_CENSOR` (G2: t + f <= n) or `REFUSE_FORK` (G3:
+  n + f < ta + ta). A closed committee has at most 1024 members
+  (`REFUSE_BOUND`).
+- `Party` is an abstract key and `checkCert` matches an entry on its
+  signer and message, until S8 (the Schnorr check). `Params` has no
+  deadline field until S6.
+- The rest of the state is as at S4, below.
+
 ## State at S4
 
 - The code is the Cubical TT kernel of ratify-lang a46d5df (S2) and R0

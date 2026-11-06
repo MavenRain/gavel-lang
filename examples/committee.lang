@@ -1,0 +1,34 @@
+-- The committee and the certificate (S5, USER rulings Q-S5-1 to Q-S5-11),
+-- guest mode: a valid Params with n = 4, t = 3, f = 1 and ta = 3, and eval
+-- rows of checkCert and outcomeOf. The proof fields are refl: the kernel
+-- checks G1 to G3 on the closed numbers. The general words are in
+-- domain/domain.lang.
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def s7 : Size := szS (szS (szS (szS (szS (szS (szS sz0))))))
+def p0 : Party := party sz0
+def p1 : Party := party s1
+def p2 : Party := party s2
+def p3 : Party := party s3
+def outsider : Party := party s7
+def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
+-- G1: the members are distinct and f = 1 < t = 3. G2: t + f = 4 <= n = 4.
+def board : Committee := committee members s3 s1 refl refl
+-- G3 on ta = 3: n + f = 5 < ta + ta = 6.
+def bids : Bids := bdCons (amSucc amZero) (bdCons (amSucc (amSucc amZero)) bdNil)
+def setup : Params := params secondPrice (amSucc amZero) board s3 refl
+def msg : Hash := hash s2
+def other : Hash := hash s3
+-- Three distinct signers on msg: accept.
+def certThree : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p2 msg (ctCons p3 msg ctNil)))
+-- Two signers: reject.
+def certTwo : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg ctNil))
+-- Two signers, each two times: two equal entries count one time, reject.
+def certDup : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p0 msg (ctCons p1 msg (ctCons p1 msg ctNil))))
+-- Three signers, but one signs other: reject.
+def certWrong : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg (ctCons p2 other ctNil)))
+-- Two members and a party outside the committee: reject.
+def certOut : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg (ctCons outsider msg ctNil)))
+-- The second price of the bids 1, 2 with the reserve 1.
+def setupOf : Outcome := outcomeOf setup bids

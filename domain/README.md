@@ -1,7 +1,8 @@
 # Domain slot
 
-In S4 the domain is the kernel prelude, ported from permit-lang 3d47120,
-the IR test families of permit-lang 18deea2 and the auction rule.
+In S5 the domain is the kernel prelude, ported from permit-lang 3d47120,
+the IR test families of permit-lang 18deea2, the auction rule and the
+committee.
 `domain/domain.lang` holds the domain. At build time, `tcc -run
 gen/embed.c` copies it into `build/domain.c`, so the domain is part of
 `build/langc`. `langc` loads the domain first, then the program.
@@ -82,7 +83,42 @@ both.
   `Amount` to a fixed-width word.
 - `REFUSE_BOUND`: a closed `Bids` value in a def type or a def body has
   more than 1024 bids (`BID_LIST_BOUND` in `src/front/check.c`). An open
-  input list passes; the T1 entry bounds it.
+  input list passes; the T1 entry bounds it. A closed `Members` value
+  with more than 1024 members has the same code (`COMMITTEE_BOUND`, S5).
+
+## The committee
+
+S5 adds the committee words (`docs/PLAN.md` section 1, Q-S5-1 (a) to
+Q-S5-11 (a)).
+
+| Kind | Names |
+|---|---|
+| Families | `Hash`, `Party`, `Members`, `Committee`, `Params`, `Certificate` |
+| Constructors and fields | `hash`, `hsTag`, `party`, `ptKey`, `mbNil`, `mbCons`, `mbHead`, `mbTail`, `committee`, `cmMembers`, `cmT`, `cmF`, `cmSafe`, `cmCensor`, `params`, `prRule`, `prReserve`, `prCommittee`, `prAmendT`, `prFork`, `ctNil`, `ctCons`, `ctSigner`, `ctMsg`, `ctRest` |
+| Size and Sum words | `szLe`, `szLt`, `szEq`, `szAdd`, `sAnd`, `sOr`, `sNot` (the result `Sum Unit Unit`: `inr unit` is yes) |
+| Party, hash and member words | `ptEq`, `hsEq`, `mbLen`, `mbHas`, `mbDistinct` |
+| The laws | `cmG1` (G1: no repeated party and f < t), `cmG2` (G2: t + f <= n), `prG3` (G3: n + f < ta + ta) |
+| The certificate | `ctHas`, `ctCount`, `checkCert` |
+| The rule on `Params` | `outcomeOf` |
+
+G1 to G3 are proof fields: the type of `cmSafe` and `cmCensor` in
+`Committee`, and of `prFork` in `Params`, is a `Path` to `inr unit` in the
+law word. The kernel checks them as types, so each law holds for open
+numbers too. A field that does not check gives the law code (Q-S5-9 (a)).
+Each code is rewritten at `ctor_app` in `src/front/check.c`. This file is
+exempt from all of them.
+
+- `REFUSE_SAFETY`: a `cmSafe` field does not check (t <= f, or a repeated
+  party).
+- `REFUSE_CENSOR`: a `cmCensor` field does not check (n - f < t).
+- `REFUSE_FORK`: a `prFork` field does not check (2ta - n <= f).
+- `REFUSE_BOUND` (committee): a closed `Members` value with more than
+  1024 members. An open committee passes; the T1 entry bounds it.
+
+`checkCert` counts each member of the committee one time when the
+certificate has an entry with that signer and that message, and accepts
+when the count is at least t. Equal entries count one time. At S8 the
+entry match becomes the Schnorr check.
 
 ## The IR test families
 

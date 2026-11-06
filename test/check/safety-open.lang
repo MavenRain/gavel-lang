@@ -1,0 +1,2 @@
+-- REFUSE_SAFETY (S5, Q-S5-9 (a)): open numbers with no proof of G1
+def mk : Members -> Size -> Size -> Committee := fun (ms : Members) (t : Size) (f : Size) => committee ms t f refl refl

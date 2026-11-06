@@ -416,6 +416,8 @@ const Value *val_op(Machine *m, ValKind kind, Op op, uint32_t inst, uint32_t fie
   v->field = field;
   v->args = copy;
   v->argc = argc;
+  if (kind == VAL_OP && op == OP_CTOR && m->observe_ctor != NULL)
+    m->observe_ctor(m->observe_context, v);
   return v;
 }
 

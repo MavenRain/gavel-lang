@@ -314,6 +314,10 @@ typedef struct {
   int has_state;          /* the program declares the state (slice K3a) */
   uint32_t state_family; /* the state family, when has_state is 1 */
   uint32_t fresh; /* the count of fresh levels for the Kan head test */
+  /* A temporary checker observer of constructors, including intermediate
+     values that evaluation consumes before returning its result. */
+  void (*observe_ctor)(void *context, const Value *value);
+  void *observe_context;
   /* Each Glue that a true key reduced, newest first. transp at Glue reads
      them to get A, phi and sys at an end. */
   const struct GlueRec *glue_recs;

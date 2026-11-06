@@ -161,3 +161,9 @@ amount-succ-open.lang REFUSE_AMOUNT
 amount-proj.lang NAME_UNKNOWN
 bound-over.lang REFUSE_BOUND
 bound-index.lang REFUSE_BOUND
+safety-tf.lang REFUSE_SAFETY
+safety-repeat.lang REFUSE_SAFETY
+safety-open.lang REFUSE_SAFETY
+censor.lang REFUSE_CENSOR
+fork.lang REFUSE_FORK
+bound-committee.lang REFUSE_BOUND

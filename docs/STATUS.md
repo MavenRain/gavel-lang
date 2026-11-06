@@ -1,11 +1,13 @@
 # gavel-lang status
 
-The build implements slice S4 of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S5 of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
-(Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), and the auction rule (Q-S4-1 (a) to
-Q-S4-7 (a)). It does not complete M0. The next slice is S5: `Party`,
-`Committee`, `Certificate`, `Params`, `checkCert`.
+(Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
+Q-S4-7 (a)) and the committee (Q-S5-1 (a) to Q-S5-11 (a)). It does not
+complete M0. The next slice is S6: `AucID`, `Slot`, `Root`, `Handle`,
+`Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`,
+`admit`, `slash`, `release`, and the deadline fields of `Params`.
 
 ## Implemented
 
@@ -27,6 +29,15 @@ Q-S4-7 (a)). It does not complete M0. The next slice is S5: `Party`,
   terms. In a program, any other read of an `Amount` gives
   `REFUSE_AMOUNT`, and a closed bid list with more than 1024 bids gives
   `REFUSE_BOUND`.
+- The committee in `domain/domain.lang` (S5): `Hash`, `Party`, `Members`,
+  `Committee` (members, t, f), `Certificate`, `Params` (rule, reserve,
+  committee, amend threshold ta), `checkCert` and `outcomeOf`, with the
+  Size and Sum words `szLe`, `szLt`, `szEq`, `szAdd`, `sAnd`, `sOr`,
+  `sNot`, `ptEq`, `hsEq`, `mbLen`, `mbHas` and `mbDistinct`. G1 to G3 are
+  `Path` proof fields of `Committee` and `Params`, checked by the kernel
+  as types. A field that does not check gives `REFUSE_SAFETY` (G1),
+  `REFUSE_CENSOR` (G2) or `REFUSE_FORK` (G3). A closed committee with more
+  than 1024 members gives `REFUSE_BOUND`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -34,19 +45,18 @@ Q-S4-7 (a)). It does not complete M0. The next slice is S5: `Party`,
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 32 examples, 17 parse refusals, 163 check refusals, 10
-  kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir
+- The gate: 34 examples, 17 parse refusals, 169 check refusals, 10
+  kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir
   refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine
-  evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches;
+  evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S5 to S8c: the governance and crypto layers of `docs/PLAN.md` section
-   12 (`Party`, `Committee`, `Certificate`, `SealedBid`, `Log`, `Machine`,
-   the crypto prelude). Each slice needs the slice before it; S5 needs
-   the S4 commit first.
+1. S6 to S8c: the governance and crypto layers of `docs/PLAN.md` section
+   12 (`SealedBid`, `Log`, `Machine`, the crypto prelude). Each slice
+   needs the slice before it; S6 needs the S5 commit first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
@@ -62,6 +72,13 @@ Q-S4-7 (a)). It does not complete M0. The next slice is S5: `Party`,
 - An open bid list passes the check at any length. The T1 entry bounds it
   (OI-22).
 - The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
+- The `Party` key is an abstract `Size` until S8, and `checkCert` matches
+  an entry on its signer and message (OI-25).
+- An open committee passes the check at any size. The T1 entry bounds it
+  (OI-26).
+- G3 sets no upper law on ta. A ta above n - f stops the amendments by
+  the honest members (OI-24).
+- `Params` has no deadline field. S6 adds it (OI-27).
 
 ## Internal boundaries
 

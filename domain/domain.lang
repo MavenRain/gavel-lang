@@ -487,3 +487,72 @@ def a4 : (h : Amount) -> (t : Bids) -> Path Amount (bdTop t) h -> Path Size (bdA
     trans Size (bdArg (bdCons h t)) (amSelect Size h h sz0 (szS (bdArg t))) sz0
       (cong (fun (m : Amount) => amSelect Size m h sz0 (szS (bdArg t))) p)
       (selRefl Size h sz0 (szS (bdArg t)))
+-- The committee (S5, design section 4, USER rulings Q-S5-1 to Q-S5-11).
+-- Hash and Party are abstract: a Size tag and a Size key (Q-S5-3 (a),
+-- Q-S5-1 (a)); S8 makes the key a BN254 G1 key. Members is the list of
+-- the committee members and n is its length. t, n, f and the amend
+-- threshold ta are Size values (Q-S5-2 (a)). The compare and the test
+-- words give Sum Unit Unit as amLe: inr unit is "yes".
+family Hash := hash (hsTag : Size)
+family Party := party (ptKey : Size)
+family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)
+def szLe : Size -> Size -> Sum Unit Unit :=
+  fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
+    (fun (y : Size) => inr unit)
+    (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
+      elim (fun (b : Size) => Sum Unit Unit) (inl unit) (fun (b : Size) (ihb : Sum Unit Unit) => ih b) y) x
+def szLt : Size -> Size -> Sum Unit Unit := fun (x : Size) (y : Size) => szLe (szS x) y
+def szEq : Size -> Size -> Sum Unit Unit :=
+  fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
+    (fun (y : Size) => elim (fun (b : Size) => Sum Unit Unit) (inr unit) (fun (b : Size) (ihb : Sum Unit Unit) => inl unit) y)
+    (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
+      elim (fun (b : Size) => Sum Unit Unit) (inl unit) (fun (b : Size) (ihb : Sum Unit Unit) => ih b) y) x
+def szAdd : Size -> Size -> Size :=
+  fun (x : Size) (y : Size) => elim (fun (a : Size) => Size) y (fun (a : Size) (ih : Size) => szS ih) x
+def sAnd : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inl unit) (fun (u : Unit) => b) a
+def sOr : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => b) (fun (u : Unit) => inr unit) a
+def sNot : Sum Unit Unit -> Sum Unit Unit :=
+  fun (a : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) a
+def ptEq : Party -> Party -> Sum Unit Unit := fun (p : Party) (q : Party) => szEq (ptKey p) (ptKey q)
+def hsEq : Hash -> Hash -> Sum Unit Unit := fun (g : Hash) (h : Hash) => szEq (hsTag g) (hsTag h)
+def mbLen : Members -> Size :=
+  fun (ms : Members) => elim (fun (k : Members) => Size) sz0 (fun (h : Party) (t : Members) (ih : Size) => szS ih) ms
+def mbHas : Party -> Members -> Sum Unit Unit :=
+  fun (p : Party) (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inl unit)
+    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sOr (ptEq p h) ih) ms
+def mbDistinct : Members -> Sum Unit Unit :=
+  fun (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inr unit)
+    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sAnd (sNot (mbHas h t)) ih) ms
+-- The laws G1 to G3 are proof fields (Q-S5-5 (c), Q-S5-10 (a)): each value
+-- of Committee and Params carries its proofs, so the laws hold for open
+-- inputs too. G1 (cmSafe): no party is in the members two times, and f < t.
+-- G2 (cmCensor): t + f <= n. G3 (prFork, on ta, Q-S5-6 (b)): n + f <
+-- ta + ta, that is 2ta - n > f. When the kernel cannot check a proof
+-- field, the checker gives the law code: REFUSE_SAFETY, REFUSE_CENSOR or
+-- REFUSE_FORK (Q-S5-9 (a)).
+def cmG1 : Members -> Size -> Size -> Sum Unit Unit :=
+  fun (ms : Members) (t : Size) (f : Size) => sAnd (mbDistinct ms) (szLt f t)
+def cmG2 : Members -> Size -> Size -> Sum Unit Unit :=
+  fun (ms : Members) (t : Size) (f : Size) => szLe (szAdd t f) (mbLen ms)
+family Committee := committee (cmMembers : Members) (cmT : Size) (cmF : Size) (cmSafe : Path (Sum Unit Unit) (cmG1 cmMembers cmT cmF) (inr unit)) (cmCensor : Path (Sum Unit Unit) (cmG2 cmMembers cmT cmF) (inr unit))
+def prG3 : Committee -> Size -> Sum Unit Unit :=
+  fun (c : Committee) (ta : Size) => szLt (szAdd (mbLen (cmMembers c)) (cmF c)) (szAdd ta ta)
+family Params := params (prRule : Rule) (prReserve : Amount) (prCommittee : Committee) (prAmendT : Size) (prFork : Path (Sum Unit Unit) (prG3 prCommittee prAmendT) (inr unit))
+-- The certificate (Q-S5-4 (a)): an ideal list of signatures, each a signer
+-- and a message. checkCert c h cs counts each member of c one time when cs
+-- has an entry with that signer and the message h, and accepts (inr unit)
+-- when the count is at least t. Two equal entries count one time. At S8
+-- the entry match becomes the Schnorr check.
+family Certificate := ctNil | ctCons (ctSigner : Party) (ctMsg : Hash) (ctRest : Certificate)
+def ctHas : Party -> Hash -> Certificate -> Sum Unit Unit :=
+  fun (p : Party) (h : Hash) (cs : Certificate) => elim (fun (k : Certificate) => Sum Unit Unit) (inl unit)
+    (fun (s : Party) (g : Hash) (r : Certificate) (ih : Sum Unit Unit) => sOr (sAnd (ptEq p s) (hsEq h g)) ih) cs
+def ctCount : Members -> Hash -> Certificate -> Size :=
+  fun (ms : Members) (h : Hash) (cs : Certificate) => elim (fun (k : Members) => Size) sz0
+    (fun (q : Party) (t : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (ctHas q h cs)) ms
+def checkCert : Committee -> Hash -> Certificate -> Sum Unit Unit :=
+  fun (c : Committee) (h : Hash) (cs : Certificate) => szLe (cmT c) (ctCount (cmMembers c) h cs)
+-- The outcome of the parameters (Q-S4-4 (a)).
+def outcomeOf : Params -> Bids -> Outcome := fun (p : Params) (bs : Bids) => outcome (prRule p) (prReserve p) bs
