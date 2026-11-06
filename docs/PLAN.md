@@ -18,10 +18,10 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S2 (kernel port): the Cubical TT kernel of ratify-lang a46d5df (a
-port of permit-lang 3d47120) is in, without R0 and the domain words
-(Q-S0-14 (a), Q-S2-1 (a), Q-S2-2 (a)). Section 1 has the rulings. Next: S3
-(R0 in the kernel and the Wasm writer, ratify-lang 71f2c22).
+Status: S3 (no trap): the Cubical TT kernel of ratify-lang a46d5df (a port
+of permit-lang 3d47120) and R0 from ratify-lang 71f2c22 are in, without the
+domain words (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)). Section 1 has the
+rulings. Next: S4 (`Amount`, `List`, `Outcome`, `outcome`).
 
 ## 1. Rulings
 
@@ -76,6 +76,8 @@ port of permit-lang 3d47120) is in, without R0 and the domain words
 | 2026-11-06 | Q-S2-2 "(a) Accept until S3 (Recommended)": `src/front/lower.c`, `src/wasm.c` and `src/ir.h` stay at the kit text and out of the build. `langc build` gives `REFUSE_LOWER` "target pending S3". The IR rows, the Wasm modules and the differential cases come back at S3. Edits: sections 12, 13 (OI-20). | USER, S2 |
 | 2026-11-06 | Q-S2-3 "(a) Keep as refusals (Recommended)": the four affine rows stay as parse or check refusals: affine-arrow.lang (`LEX_CHAR`), affine-budget.lang and affine-unpack.lang (`NAME_UNKNOWN`), affine-mult.lang (`TYPE_MISMATCH`). No affine code. Edits: section 12 (S2). | USER, S2 |
 | 2026-11-06 | Q-S2-4 "(a) Keep in S2 (Recommended)": the state and history part of the kernel (`state`, `REFUSE_STATE`, `REFUSE_HISTORY_WRITE`) stays byte equal to a46d5df. A later slice can cut it. Edits: section 12 (S2). | USER, S2 |
+| 2026-11-06 | Q-S3-1 "(a) Take 71f2c22 files (Recommended)": `docs/host/CAPABILITY.md` and `docs/host/README.md` come from ratify-lang 71f2c22 with one name edit (CAPABILITY.md line 6, "gavel-lang S3"). Edits: section 12 (S3). | USER, S3 |
+| 2026-11-06 | Q-S3-2 "(a) Gavel S3 status (Recommended)": the README.md status line and the AGENTS.md section "State at S3" give the S3 state in gavel-lang words, on the model of ratify-lang 71f2c22 README.md lines 13 to 18 and AGENTS.md lines 6 to 14. Edits: README.md, AGENTS.md. | USER, S3 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -124,10 +126,12 @@ Other sources of a trap and their reading:
   `REFUSE_PARTIAL` (permit-lang f9d8a15 docs/PLAN.md line 182).
 - The Wasm writer emits no `unreachable`, puts a guard before each `div_u`
   and `rem_u`, and gives each `br_table` a default that runs the last arm.
-  A C tool `test/notraptool.c` checks each module (port from ratify-lang).
+  The entry sets a Flag argument above 1 to 1 (`flag_norm` in
+  `src/wasm.c`). A C tool `test/notraptool.c` checks each module (port
+  from ratify-lang 71f2c22).
 - The kit gate row "a trap is equal to a trap" changes: R0 makes a trap a
   failure on each target (permit-lang f9d8a15 docs/PLAN.md lines 188 to
-  201). Open item OI-4.
+  201). Closed at S3 (OI-4).
 
 The crypto prelude (Q-S0-13 (b), Q-S1-3 (b)) is guest code, so R0 holds
 for it. Each `Word` operation wraps and does not trap. There is no
@@ -426,8 +430,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S0 | Seed from tcc-wasm, DESIGN.md and the digest, this plan, README table, AGENTS.md; gate EXIT 0; seed commit; private repo | DONE |
 | S1 | The USER rules section 14 and Q-S1-1 to Q-S1-10. Section 1 has the rulings. | DONE |
 | S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a), Q-S2-1 (a) to Q-S2-4 (a)): ratify-lang a46d5df, name edits only, no R0. Gate: 29 examples, 17 parse refusals, 154 check refusals, 10 kit-only refusals, 1 time hint, 78 evals, 1 build refusal; the review, domain and path regressions pass. Mutants M1 (path ends), M2 (glue face), M3 (universe level): KILLED. | DONE |
-| S3 | Port the ratify-lang 71f2c22 R0 delta: R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` come back into the build, with the IR rows, the Wasm modules and the differential cases (OI-20). | NEXT |
-| S4 | `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4; `REFUSE_AMOUNT`, `REFUSE_BOUND`. | |
+| S3 | Port the ratify-lang 71f2c22 R0 delta (Q-S3-1 (a), Q-S3-2 (a)): R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build, with the IR rows, the Wasm modules and the differential cases (OI-20). Gate: 30 examples, 17 parse refusals, 158 check refusals, 10 kit-only refusals, 1 time hint, 79 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 33 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. These are the 71f2c22 counts: the 71f2c22 `test/gate.sh` line 287 has `test/ir/proof-trap.lang` in the Wasm and differential rows (an earlier ratify-lang S3 run had 32 modules and 958 cases). Mutants M1, M2 (`REFUSE_PARTIAL`), M3 (the div guard of the no-trap tool), M4 (`flag_norm`): KILLED. M5 (the `br_table` default) and M6 (the IF condition): equivalent. | DONE |
+| S4 | `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4; `REFUSE_AMOUNT`, `REFUSE_BOUND`. | NEXT |
 | S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | |
 | S6 | `AucID`, `Slot`, `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`. | |
 | S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | |
@@ -459,7 +463,10 @@ One session for each slice: scope, gate, mutants, docs, close.
 - OI-2 The `server.json` schema version and the package type of the stdio
   `langc mcp` bundle are checked against the MCP Registry docs at S19.
 - OI-3 The `funding.json` schema and its version are checked at S19.
-- OI-4 The kit row "a trap is equal to a trap" (section 2). S3 changes it.
+- OI-4 CLOSED at S3. The kit row "a trap is equal to a trap" (section 2)
+  is gone: in the Wasm and differential rows a `trap` line is a FAIL. The
+  row `pick 2 4 9` gives 4 and does not trap: the entry sets a Flag
+  argument above 1 to 1 (`flag_norm` in `src/wasm.c`). Mutant M4 kills it.
 - OI-5 The paper text says the proof shows the deposit is active; the
   displayed relation has no activity term (digest, sec 5.3).
 - OI-6 The paper text lists AucID as a witness; Alg 2 does not (digest).
@@ -489,10 +496,10 @@ One session for each slice: scope, gate, mutants, docs, close.
 - OI-19 From S18 each gate run needs the network and the USER test inputs
   (Q-S1-5 (a)). A sandboxed session needs the facilitator host on its
   network allowlist.
-- OI-20 The gate gap from S2 to S3 (Q-S2-2 (a)). `src/front/lower.c`,
-  `src/wasm.c` and `src/ir.h` are out of the build, and `langc build` gives
-  `REFUSE_LOWER` "target pending S3". Until S3 the gate has no IR rows, no
-  Wasm modules and no differential cases. S3 closes it.
+- OI-20 CLOSED at S3. The gate gap from S2 to S3 (Q-S2-2 (a)) is gone:
+  `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build,
+  and the gate has the IR rows, 33 Wasm modules and 998 differential cases
+  with 0 mismatches (the kit had 13 modules and 813 cases).
 
 ## 14. Questions for the USER (S0)
 

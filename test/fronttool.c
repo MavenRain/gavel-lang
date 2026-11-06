@@ -41,6 +41,27 @@ static int checked(const char *text, Origin origin, CheckMode mode, const char *
   return checked_in(NULL, text, origin, mode, want);
 }
 
+/* Fixture laws use refl to check both arithmetic results and erased proofs. */
+static int checked_fixture(const char *path) {
+  char source[8192];
+  FILE *in = fopen(path, "rb");
+  size_t len;
+  int ok;
+  if (in == NULL) {
+    fprintf(stderr, "FAIL fixture: cannot read %s\n", path);
+    return 0;
+  }
+  len = fread(source, 1, sizeof source - 1u, in);
+  ok = !ferror(in) && fgetc(in) == EOF;
+  ok = fclose(in) == 0 && ok;
+  source[len] = '\0';
+  if (!ok) {
+    fprintf(stderr, "FAIL fixture: cannot read all of %s\n", path);
+    return 0;
+  }
+  return checked(source, ORIGIN_PROGRAM, CHECK_KIT, NULL);
+}
+
 static int law_guest(const char *text, const char *want) {
   return checked_in(
     "family Size := sz0 | szS (szPred : Size)\n"
@@ -134,6 +155,8 @@ static int internal_print_refused(const char *type, const char *body) {
 
 int main(void) {
   int ok = 1;
+  ok &= checked_fixture("test/ir/lazy.lang");
+  ok &= checked_fixture("test/ir/proof-trap.lang");
   /* Diagnostics can print binders while constructor slots are still unnamed. */
   ok &= domain("state State := makeState (value : fun (x : Nat) => x)", "TYPE_MISMATCH");
   /* Time words are forbidden in local scopes as well as declarations. */
@@ -282,7 +305,8 @@ int main(void) {
   ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
                "def one : Path Nat (fold Nat Unit 0 (fun (u : Unit) => 1) (fun (n : Nat) => unit) (es (os ez))) 1 := refl", NULL);
   ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
-               "def two : Path Nat (fold Nat Nat 0 (fun (u : Nat) => natAdd u 1) (fun (n : Nat) => natAdd n 1) (es (os ez))) 2 := refl", NULL);
+               "def two : Path (Option Nat) (fold (Option Nat) (Option Nat) (some 0) (fun (u : Option Nat) => bind u (fun (a : Nat) => natAdd a 1))"
+               " (fun (n : Option Nat) => bind n (fun (a : Nat) => natAdd a 1)) (es (os ez))) (some 2) := refl", NULL);
   /* block-fold-extra: a block fold with an extra argument before the
      value. Without the arity test the extra argument is never read. */
   ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"

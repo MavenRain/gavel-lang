@@ -4,6 +4,16 @@ This file is for coding agents that work in this repo or meet gavel-lang
 code. It is a DRAFT at S0. Slice S20 makes it final (`docs/PLAN.md`
 section 12).
 
+## State at S3
+
+- The code is the Cubical TT kernel of ratify-lang a46d5df (S2) and R0
+  from ratify-lang 71f2c22 (S3): `langc` (C99, TinyCC) and its domain in
+  `domain/`. The Wasm writer `src/wasm.c` is in the build and emits no
+  trap form, and `test/notraptool.c` checks each built module. The gate
+  keeps the Wasm and differential rows.
+- The gavel-lang types, refusals and targets, and `gaveld`, are a plan
+  only: `docs/PLAN.md` sections 4 to 8 and section 12.
+
 ## What gavel-lang is for
 
 Off-chain sealed-bid auctions (first price or second price, a reserve, a

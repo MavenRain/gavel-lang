@@ -1,3 +1,5 @@
--- A lazy trap. The second field of the pair overflows after two steps, but
--- the entry reads only the first field. `langc eval lazy 3` gives 3.
-def lazy : (n : Nat) -> Nat := fun (n : Nat) => first (fold (fun (p : Prod Nat Nat) => pair (natAdd (first p) 1) (natMul (second p) 18446744073709551615)) (pair 0 2) n)
+-- An unused field can become none without changing the first field.
+def steps : Nat -> Prod Nat (Option Nat) := fun n => fold (fun (p : Prod Nat (Option Nat)) => pair (option 0 (fun (x : Nat) => x) (natAdd (first p) 1)) (bind (second p) (fun (x : Nat) => natAdd x 18446744073709551615))) (pair 0 (some 2)) n
+def lazy : Nat -> Nat := fun n => first (steps n)
+def lazy3 : Path Nat (lazy 3) 3 := refl
+def unusedOverflow : Path (Option Nat) (second (steps 3)) none := refl

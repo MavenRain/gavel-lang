@@ -1,6 +1,14 @@
-def evidence : Nat -> Eq Nat 0 0 := fun n => flagIf (natEq (natAdd n 1) 0) refl refl
-def proofMove : Nat -> Nat := fun n => transport (fun (x : Nat) => Nat) (evidence n) 7
-def proofSymm : Nat -> Nat := fun n => transport (fun (x : Nat) => Nat) (symm (evidence n)) 7
-def baseProof : Eq Nat 0 0 := refl
-def proofTrans : Nat -> Nat := fun n => transport (fun (x : Nat) => Nat) (trans baseProof (evidence n)) 7
-def proofCong : Nat -> Nat := fun n => transport (fun (x : Nat) => Nat) (cong (fun (x : Nat) => x) (evidence n)) 7
+-- Checked arithmetic in a proof gives none at overflow and transport stays total.
+def evidence : Nat -> Path Nat 0 0 := fun n => option refl (fun (k : Nat) => flagIf (natEq k 0) refl refl) (natAdd n 1)
+def move : Path Nat 0 0 -> Nat := fun p => transp (fun (i : I) => (fun (_ : Nat) => Nat) (p @ i)) i0 7
+def compose : Path Nat 0 0 -> Path Nat 0 0 -> Path Nat 0 0 := fun p q => fun (j : I) => hcomp Nat (~j \/ j) (fun (i : I) => [ ~j -> 0, j -> q @ i ]) (p @ j)
+def proofMove : Nat -> Nat := fun n => move (evidence n)
+def proofSymm : Nat -> Nat := fun n => move (sym (evidence n))
+def baseProof : Path Nat 0 0 := refl
+def proofTrans : Nat -> Nat := fun n => move (compose baseProof (evidence n))
+def proofCong : Nat -> Nat := fun n => move (cong (fun (x : Nat) => x) (evidence n))
+def moveSmall : Path Nat (proofMove 3) 7 := refl
+def moveOverflow : Path Nat (proofMove 18446744073709551615) 7 := refl
+def symOverflow : Path Nat (proofSymm 18446744073709551615) 7 := refl
+def transOverflow : Path Nat (proofTrans 18446744073709551615) 7 := refl
+def congOverflow : Path Nat (proofCong 18446744073709551615) 7 := refl
