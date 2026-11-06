@@ -45,7 +45,7 @@ section 14 lists them as questions.
 | `AucID` | The name of one auction. | sec 5.1 |
 | `Slot` | A deposit slot s. | sec 5.2 |
 | `Height` | A position in the log. The only time. There is no clock. | ratify-lang |
-| `Hash` | An abstract hash (Poseidon at T2 and in `gaveld`). | sec 6 |
+| `Hash` | An abstract hash (Poseidon at T2 and in the crypto prelude). | sec 6 |
 | `Root` | A Merkle root root_s. | Alg 2 |
 | `Handle` | hu = Hash(rho_u \|\| AucID). | sec 5.3 |
 | `Commitment` | cm = Hash(tx \|\| C_u). | sec 5.3 |
@@ -59,6 +59,7 @@ section 14 lists them as questions.
 | `Outcome` | The winner and the price, or `noSale`. | sec 5.4 |
 | `Params` | The auction rule (first or second price), the reserve, the committee, t, n, f, the deadlines. | (request) |
 | `Amendment`, `Ballot`, `Log` | A change of `Params`, a vote on it, the ordered list of entries. | ratify-lang |
+| `Word` | A wrapping 32-bit word, available only to the crypto prelude. | Q-S1-7 (a) |
 
 ## 4. Operations (draft)
 
@@ -66,7 +67,8 @@ All operations are total. A failed check gives `invalid Reason`.
 
 - `checkCert : Committee -> Message -> Certificate -> Bool`.
 - `elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Bool`. The
-  proof check is a host import at T1 (Alg 2 elgVrf).
+  proof check is in the crypto prelude of the module at T1 (Alg 2
+  elgVrf).
 - `admit : Params -> Log -> SealedBid -> Certificate -> Verdict`. The bid
   needs a timestamp certificate before the deadline, a handle that is not
   slashed, and a valid eligibility proof.
@@ -84,6 +86,11 @@ All operations are total. A failed check gives `invalid Reason`.
   `Params`.
 - `paramsAt : (l : Log) -> Fin (length l + 1) -> Params` and `replay :
   Log -> List Verdict`.
+
+The crypto prelude alone may use `Word` and its total operations: wrapping
+add, sub, mul, mulhi, and, or, xor, not, shifts, rotates and compare. There
+is no division. A user program that names `Word` or a `Word` operation
+gets `REFUSE_WORD` (Q-S1-7 (a)).
 
 ## 5. The governance layer
 
@@ -127,8 +134,9 @@ These are four different programs. Do not merge them.
   calls and runs behind a TLS proxy. The USER gives the facilitator URL
   and the payTo address. The repo holds no wallet address.
 - `gaveld`: the T1 host. It runs a compiled module on bids, certificates
-  and logs, with the crypto behind a fixed host-import ABI. It holds no
-  secret key and does not bid.
+  and logs; the crypto is in the module. In replay mode it holds no
+  secret key. In member mode it runs the MPC rounds of one member over
+  TCP links. It does not bid.
 
 ## 8. Not in v1
 

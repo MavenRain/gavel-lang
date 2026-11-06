@@ -18,8 +18,8 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S0 (seed): the tcc-wasm kit and this plan. Next: S1 (the USER
-rules section 14).
+Status: S1 (rulings): section 1 has the USER rulings on Q-S0-1 to
+Q-S0-28 and Q-S1-1 to Q-S1-10. Next: S2 (port the ratify-lang kernel).
 
 ## 1. Rulings
 
@@ -32,6 +32,44 @@ rules section 14).
 | 2026-11-05 | x402 route: `langc serve`, an HTTP server in C that tcc builds. It links libcurl for the facilitator verify and settle calls and runs behind a TLS proxy. The repo ships `server.json`, `openapi.yaml`, `llms.txt` and `funding.json`. Not chosen: a Cloudflare Worker, files only. | USER, S0 |
 | 2026-11-05 | Host: TinyCC. `langc`, `langc mcp`, `langc serve` and `gaveld` are C99 that TinyCC builds. | USER, S0 |
 | 2026-11-05 | Each deploy, each registry submission, each AgentFund campaign and the payTo wallet are USER steps. The repo holds no wallet address that Claude made up. | USER, S0 |
+| 2026-11-05 | Q-S0-1 "(a) Compare only (Recommended)": `Amount` admits compare, select, max and second max only. | USER, S1 |
+| 2026-11-05 | Q-S0-2 "(a) Verdict value (Recommended)": `Verdict = valid \| invalid Reason` with the eight reasons of section 2. | USER, S1 |
+| 2026-11-05 | Q-S0-3 "(a) Section 3 table (Recommended)": the R1 classes of section 3. | USER, S1 |
+| 2026-11-05 | Q-S0-4 "(a) Design sec 2 (Recommended)": the role map of design sec 2. | USER, S1 |
+| 2026-11-05 | Q-S0-5 "(a) Section 4.1 list (Recommended)": the base types of section 4.1, with `Slot`. Q-S1-7 adds `Word` for the prelude only. | USER, S1 |
+| 2026-11-05 | Q-S0-6 "(a) Params + t-of-n (Recommended)": one `Params` record, t-of-n amendments, the amend rule can amend itself, order by log height. | USER, S1 |
+| 2026-11-05 | Q-S0-7 "(a) Deploy setting (Recommended)": the price list is a deploy setting, not in `Params`. | USER, S1 |
+| 2026-11-05 | Q-S0-8 "(a) Abstract Hash (Recommended)": an abstract `Hash`. Poseidon at T2 and, by Q-S0-13 (b), in the crypto prelude, not in `gaveld`. | USER, S1 |
+| 2026-11-05 | Q-S0-9 "(a) T2 outcome proof (Recommended)": a T2 proof of the auction outcome. | USER, S1 |
+| 2026-11-05 | Q-S0-10 "(a) Noir (Recommended)": T2 exports Noir. | USER, S1 |
+| 2026-11-05 | Q-S0-11 "(a) TFHE (Recommended)": T3 uses TFHE. | USER, S1 |
+| 2026-11-05 | Q-S0-12 "(b) Pin one protocol": this plan pins one MPC protocol. Not the recommendation. Edits: section 6 (M1), 8.2 (T4), 11, 12, 13. Q-S1-1 and Q-S1-2 come from this ruling. | USER, S1 |
+| 2026-11-05 | Q-S0-13 "(b) In the module": the ZK, FHE and MPC crypto is in the Wasm module, not in `gaveld`. Not the recommendation. It replaces the clause "The ZK, FHE and MPC crypto is behind a fixed import ABI" of the S0 T1 row. Edits: section 2, 4.1, 4.2, 6, 7, 8.2, 8.3, 10, 11, 12, 13; design sec 3, 4 and 7. Q-S1-3, Q-S1-4, Q-S1-7, Q-S1-8 and Q-S1-10 come from this ruling. | USER, S1 |
+| 2026-11-05 | Q-S0-14 "(a) ratify-lang kernel (Recommended)": S2 ports the ratify-lang kernel (the permit-lang kernel without the affine layer). | USER, S1 |
+| 2026-11-05 | Q-S0-15 "(a) Own C99 interpreter (Recommended)": `gaveld` runs the module on its own C99 Wasm interpreter; node and wasmtime are oracles in the gate. | USER, S1 |
+| 2026-11-05 | Q-S0-16 "(a) POST routes + /mcp (Recommended)": JSON POST routes for the five tools and MCP streamable HTTP at `/mcp`, each behind x402. | USER, S1 |
+| 2026-11-05 | Q-S0-17 "(a) Tiered 0.01/0.05/0.20 (Recommended)": $0.01 for check, fmt, explain, list-base and show-law; $0.05 for build (T1 module); $0.20 for the T2 to T4 exports. | USER, S1 |
+| 2026-11-05 | Q-S0-18 "(a) USDC on Base (Recommended)": USDC on Base mainnet; base-sepolia in tests. | USER, S1 |
+| 2026-11-05 | Q-S0-19 "(a) packages + remotes (Recommended)": `server.json` has a `packages` entry (the stdio `langc mcp` bundle) and a `remotes` entry (the `langc serve` `/mcp` URL, after the USER deploys it). | USER, S1 |
+| 2026-11-05 | Q-S0-20 "(a) 3.1 with 402s (Recommended)": `openapi.yaml` 3.1; each route lists its 402 response with the x402 body schema and the price. | USER, S1 |
+| 2026-11-05 | Q-S0-21 "(a) No ai-donate.json (Recommended)": `.github/FUNDING.yml`, `funding.json`, `llms.txt`; no `.well-known/ai-donate.json`. | USER, S1 |
+| 2026-11-05 | Q-S0-22 "(a) Local count log (Recommended)": `langc serve` writes a local count log; nothing leaves the host. | USER, S1 |
+| 2026-11-05 | Q-S0-23 "(a) Candidate milestones (Recommended)": this plan lists candidate milestones only; the USER runs any campaign. | USER, S1 |
+| 2026-11-05 | Q-S0-24 '(a) "What an agent gets" (Recommended)': the README gets the section "What an agent gets" in ROI terms. | USER, S1 |
+| 2026-11-05 | Q-S0-25 "(b) Also public testnet": also a test against a public test-network facilitator; the network is in the gate. Not the recommendation. Edits: section 9 (USER steps), 10, 12 (S18), 13 (OI-19). Q-S1-5 and Q-S1-6 come from this ruling. | USER, S1 |
+| 2026-11-05 | Q-S0-26 "(a) permit-lang ruling (Recommended)": count_tokens, equal outputs. | USER, S1 |
+| 2026-11-05 | Q-S0-27 "(a) Four buckets (Recommended)": the four buckets of section 6; `laws_discharged` counts DISCHARGED rows only. | USER, S1 |
+| 2026-11-05 | Q-S0-28 "(a) Eleven codes (Recommended)": the codes of section 7. Q-S1-7 (a) adds `REFUSE_WORD`, thus twelve codes. | USER, S1 |
+| 2026-11-05 | Q-S1-1 "(b) WRK authenticated garbling": T4 targets the protocol of Wang, Ranellucci and Katz (CCS 2017): dishonest majority, malicious, up to n - 1 corrupt members. Not the recommendation. M1 becomes ASSUMED. Edits: section 6 (M1), 8.2 (T4), 11, 13 (OI-14, OI-15). | USER, S1 |
+| 2026-11-05 | Q-S1-2 "(b) Party program too": the module also runs the WRK rounds of one member, and `gaveld` carries the messages. Not the recommendation. Edits: section 8.2 (T1, T4), 8.3 (`gaveld` member mode), 10, 12 (S14b, S14c); design sec 7. | USER, S1 |
+| 2026-11-05 | Q-S1-3 "(b) Guest-language prelude": the crypto is gavel-lang terms over a new total `Word` type, checked by the kernel and lowered by langc. quorum-lang `src/crypto` is the reference and a C oracle in the gate. Not the recommendation. Edits: section 2, 4.2, 8.2, 10, 11, 12 (S8, S8b, S8c). | USER, S1 |
+| 2026-11-05 | Q-S1-4 "(b) Also TFHE share checks": the module checks Poseidon, the Schnorr certificates on BN254 G1 (keccak-256 challenge, the ratify-lang Q-S1-3 (a) scheme), the Noir proofs with the BN254 pairing, the MPC outputs and each TFHE decryption share. `gaveld` has no crypto code. Not the recommendation. Edits: section 4.2, 6 (Z5), 8.2 (T1, T3), 12 (S8b, S13), 13 (OI-16, OI-17). | USER, S1 |
+| 2026-11-05 | Q-S1-5 "(a) Strict: gate fails (Recommended)": from S18, `make check` runs the test-network row and fails when the network or a test input is absent. The USER gives the inputs in environment variables; the repo holds none of them. | USER, S1 |
+| 2026-11-05 | Q-S1-6 "(a) Verify and settle (Recommended)": each run pays $0.01 test USDC on base-sepolia; the log keeps the settle transaction hash. The C test client signs the EIP-3009 authorization (keccak-256 and secp256k1 in C99 under `test/`). | USER, S1 |
+| 2026-11-05 | Q-S1-7 "(a) Prelude only (Recommended)": only the crypto prelude names `Word` (wrapping 32-bit: add, sub, mul, mulhi, and, or, xor, not, shifts, rotates, compare; no division). A user program that names it gets `REFUSE_WORD`. Edits: section 4.1, 7, 12 (S8). | USER, S1 |
+| 2026-11-05 | Q-S1-8 "(a) Noir proof per share (Recommended)": each member gives a Noir proof that its TFHE share is the partial decryption under its committed key share with bounded noise. T2 exports the relation; the in-module Noir verifier checks it. Edits: section 6 (Z5), 8.2 (T2, T3), 12 (S12). | USER, S1 |
+| 2026-11-05 | Q-S1-9 "(b) TCP links": in member mode `gaveld` opens TCP links to the other members, with TLS by a proxy. Not the recommendation. Edits: section 2, 6 (M2), 8.3, 9 (USER steps), 12 (S14c), 13 (OI-18). | USER, S1 |
+| 2026-11-05 | Q-S1-10 "(a) OS seed per run (Recommended)": in member mode `gaveld` reads 32 bytes from the OS (getentropy) for each run and gives them to the module as an input; the prelude expands them with ChaCha20 on `Word`. Edits: section 2, 6 (M3), 8.3, 12 (S8c). | USER, S1 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -85,6 +123,13 @@ Other sources of a trap and their reading:
   failure on each target (permit-lang f9d8a15 docs/PLAN.md lines 188 to
   201). Open item OI-4.
 
+The crypto prelude (Q-S0-13 (b), Q-S1-3 (b)) is guest code, so R0 holds
+for it. Each `Word` operation wraps and does not trap. There is no
+division. Each loop is a fold on a static bound. In member mode
+(Q-S1-2 (b)), a lost TCP link, a late message or a bad message is a
+value, not a crash (Q-S1-9 (b), OI-18). The OS seed is an input of the
+module, not an import (Q-S1-10 (a)).
+
 ## 3. The reading of R1
 
 R1: the type constructors are the cell monads and their duals, as
@@ -128,21 +173,29 @@ outside this list is core.
 The draft list is design sec 3 (Q-S0-5): `AucID`, `Slot`, `Height`,
 `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`,
 `Amount`, `SealedBid`, `Party`, `Committee`, `Certificate`, `Verdict`,
-`Reason`, `Outcome`, `Params`, `Amendment`, `Ballot`, `Log`.
+`Reason`, `Outcome`, `Params`, `Amendment`, `Ballot`, `Log`. `Word`
+(wrapping 32-bit) is a type of the crypto prelude only (Q-S1-7 (a)).
 
 The role map of design sec 2 is the core reading (Q-S0-4): the deposit
 root, the timestamp and the release each become a t-of-n certificate, and
 slashing becomes a certified log entry.
 
-Hash (Q-S0-8). (a) An abstract `Hash` in the language (leaf-lang
-precedent); Poseidon at T2 and in `gaveld`. (b) Poseidon fixed in the
-language.
+Hash (Q-S0-8 (a)): an abstract `Hash` in the language (leaf-lang
+precedent); Poseidon at T2 and in the crypto prelude (Q-S0-13 (b)).
 
 ### 4.2 Operations
 
 The draft list is design sec 4: `checkCert`, `elgVrf`, `admit`, `slash`,
 `release`, `outcome`, `authorize`, `amend`, `paramsAt`, `replay`. Each one
 is total and gives a `Verdict`, a `Bool` or an `Outcome`.
+
+The crypto prelude (Q-S0-13 (b), Q-S1-3 (b), Q-S1-4 (b)) is gavel-lang
+terms over `Word`: the BN254 field and curve, Poseidon, keccak-256, the
+Schnorr certificate check, the BN254 pairing, the Noir verifier (for
+`elgVrf`, the outcome proof and the TFHE share proof of Q-S1-8 (a)), the
+MPC output check, the WRK rounds of one member (Q-S1-2 (b)) and ChaCha20
+(Q-S1-10 (a)). `checkCert` and `elgVrf` call the prelude. There is no
+crypto import.
 
 Governance (Q-S0-6). (a) One `Params` record (the auction rule, the
 reserve, the committee, t, n, f, the deadlines). Only a t-of-n authorized
@@ -192,15 +245,19 @@ discharged.
 | A4 | Tie-break: equal top bids give the lowest index | DISCHARGED | definition of `outcome` |
 | F1 | FHE exactness for `outcome` | AT TARGET (T3) | a static depth bound for each circuit |
 | Z4 | The T2 relation is the guest relation | AT TARGET (T2) | golden files |
-| M1 | MPC security and the corruption model | EXTERNAL | the protocol, not langc (T4 emits the circuit only) |
+| M1 | MPC security and the corruption model | ASSUMED | the WRK proof (Wang, Ranellucci, Katz, CCS 2017): malicious, up to n - 1 corrupt members, abort possible (Q-S1-1 (b)) |
+| M2 | Private, authenticated channels between members | EXTERNAL | the TLS proxy of each member (Q-S1-9 (b)) |
+| M3 | The OS seed is uniform and fresh for each run | ASSUMED | getentropy (Q-S1-10 (a)) |
+| Z5 | Soundness of the TFHE share proof | ASSUMED | proof system (Q-S1-8 (a)) |
 
-Count at S0: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
-ASSUMED 6 (P1, P4, P5, Z1, Z2, Z3), AT TARGET 2 (F1, Z4), EXTERNAL 3 (G6,
-A3, M1). Total 21.
+Count at S1: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
+ASSUMED 9 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3), AT TARGET 2 (F1, Z4),
+EXTERNAL 3 (G6, A3, M2). Total 24.
 
 ## 7. Refusals
 
-New check codes (proposals, Q-S0-28). Each one gets a `fix` hint at A2.
+New check codes (Q-S0-28 (a), Q-S1-7 (a)): twelve. Each one gets a `fix`
+hint at A2.
 
 | Code | When | Source |
 |---|---|---|
@@ -215,6 +272,7 @@ New check codes (proposals, Q-S0-28). Each one gets a `fix` hint at A2.
 | `REFUSE_CENSOR` | n - f < t. | G2 |
 | `REFUSE_FORK` | 2t - n <= f for the amend rule. | G3 |
 | `REFUSE_APPROX` | An approximate scheme (CKKS). | T3 |
+| `REFUSE_WORD` | A user program that names `Word` or a `Word` operation. | Q-S1-7 (a) |
 
 ## 8. Route
 
@@ -229,16 +287,25 @@ SOURCE-ONLY.
 - T1 (primary): one Wasm module for `admit`, `slash`, `release`,
   `outcome`, `authorize`, `amend`, `paramsAt` and `replay`. `gaveld` reads
   a log, the bids and the certificates, runs the module and prints the
-  verdicts. The crypto is C in `gaveld` behind a fixed host-import ABI
-  (Q-S0-13). The Wasm engine of `gaveld` is Q-S0-15. Differential rows
-  under node and wasmtime.
+  verdicts. The crypto is in the module: the guest prelude of section
+  4.2 (Q-S0-13 (b), Q-S1-3 (b), Q-S1-4 (b)). `gaveld` has no crypto code
+  and no crypto import. In member mode the module also runs the WRK
+  rounds of one member (Q-S1-2 (b)). The Wasm engine of `gaveld` is its
+  own C99 interpreter (Q-S0-15 (a)). Differential rows under node and
+  wasmtime.
 - T2: the eligibility relation of Alg 2 (statement (root_s, hu, cm);
   witnesses rho_u, A_u, the Merkle path, tx) and the auction-outcome proof
-  (Q-S0-9), in the format of Q-S0-10, with golden files (Z4).
+  (Q-S0-9 (a)) and the TFHE share relation (Q-S1-8 (a)), in Noir
+  (Q-S0-10 (a)), with golden files (Z4).
 - T3: the FHE compare circuit for winner and price over encrypted bids
-  (Q-S0-11), with a static depth bound (F1). `REFUSE_APPROX` for CKKS.
+  (Q-S0-11 (a)), with a static depth bound (F1). `REFUSE_APPROX` for CKKS.
+  The module checks each decryption share by its Noir proof (Q-S1-4 (b),
+  Q-S1-8 (a), Z5).
 - T4: Bristol Fashion Boolean circuits for winner and price and for the
-  amendment tally. The MPC protocol is EXTERNAL (M1, Q-S0-12).
+  amendment tally, for the WRK protocol (Q-S0-12 (b), Q-S1-1 (b)). The
+  module runs the rounds of one member (Q-S1-2 (b)): base OT, OT
+  extension, the authenticated preprocessing, the garbling and the
+  evaluation (OI-15). M1 is ASSUMED.
 - T5: the JSON report: the auction facts, the governance facts (the G1 to
   G3 margins), the law counts and the verdict for each log height.
 
@@ -247,6 +314,13 @@ SOURCE-ONLY.
 design sec 7. `langc`, `langc mcp`, `langc serve` and `gaveld` are
 different programs. Do not merge them. `langc mcp` and `langc serve` give
 the same tools: `check`, `fmt`, `explain`, `list-base`, `show-law`.
+
+`gaveld` has two modes. Replay mode reads a log, the bids and the
+certificates and prints the verdicts. It holds no secret. Member mode
+(Q-S1-2 (b)) runs the WRK rounds of one member. It opens TCP links to the
+other members, with TLS by a proxy (Q-S1-9 (b), M2). It reads 32 bytes
+from the OS (getentropy) for each run as the module seed (Q-S1-10 (a),
+M3). The seed and the member state stay in memory for the run only.
 
 ### 8.4 The x402 route
 
@@ -291,13 +365,16 @@ do.
 | B4 | block 2 item 4 (frame the value in agent terms) | README section "What an agent gets" (Q-S0-24). | S20 |
 
 USER steps: deploy `langc serve` and its TLS proxy; give the facilitator
-URL, the network and the payTo address; publish `server.json` to the MCP
+URL, the network and the payTo address; give the test-network inputs of
+the gate (Q-S1-5 (a)): the test facilitator URL, a funded base-sepolia
+payer key and the test payTo address; deploy the TLS proxy of each member
+(Q-S1-9 (b)); publish `server.json` to the MCP
 Registry; list the endpoint in x402 discovery surfaces; run any AgentFund
 campaign; make the repo public.
 
 ## 10. Tests
 
-The dev-language rule (ruling 10-09) holds (Q-S0-25): unit and integration
+The dev-language rule (ruling 10-09) holds (Q-S0-25 (b)): unit and integration
 tests in C (host) and in gavel-lang (guest). No new node, Python or shell
 harness. The kit's node differential stays.
 
@@ -310,15 +387,26 @@ harness. The kit's node differential stays.
 - Golden files for T2 to T5.
 - x402: a C client against a local `langc serve` and a stub facilitator in
   C.
+- x402 on the test network (Q-S0-25 (b), Q-S1-5 (a), Q-S1-6 (a)): from
+  S18 the gate runs a C client against a local `langc serve` that calls a
+  public base-sepolia facilitator. The client signs the EIP-3009
+  authorization (keccak-256 and secp256k1 in C99 under `test/`). The row
+  verifies and settles $0.01 test USDC and logs the settle transaction
+  hash. The gate fails when the network or an input is absent (OI-19).
+- Prelude rows (Q-S1-3 (b)): each prelude operation against quorum-lang
+  `src/crypto` as a C oracle on fixed vectors.
+- WRK rows (Q-S1-2 (b)): n `gaveld` members in member mode on local TCP
+  links. The outputs equal the clear `outcome`.
 
 ## 11. Port sources
 
 | Source | What | Where |
 |---|---|---|
 | lang-template 5265a2a | the tcc-wasm kit | `hosts/tcc-wasm` |
-| ratify-lang 796f442 | R0, R1, the governance layer, the kernel, `test/notraptool.c`, the Wasm engine, the host-import ABI (Q-S1-1 (a)) | docs/PLAN.md; seed 55310c5 docs/PLAN.md lines 43 to 128 |
+| ratify-lang 796f442 | R0, R1, the governance layer, the kernel, `test/notraptool.c`, the Wasm engine; not its host-import ABI (Q-S0-13 (b)) | docs/PLAN.md; seed 55310c5 docs/PLAN.md lines 43 to 128 |
 | sealed-lang 30d4d5f | the eligibility relation, hu, cm, `slashUsr` on chain | SPEC.md |
-| quorum-lang 8d1a113 | `src/crypto` (bn254, elgamal, bgw, dkg) | src/crypto |
+| quorum-lang 8d1a113 | `src/crypto` (bn254, elgamal, bgw, dkg): the reference of the guest prelude and a C oracle in the gate (Q-S1-3 (b)) | src/crypto |
+| Wang, Ranellucci, Katz (CCS 2017) | WRK authenticated garbling (Q-S1-1 (b)); no sibling source | the paper |
 | permit-lang b7e1228 | `langc mcp`, `check --json`, SKILL.md, the token comparison | docs/PLAN.md |
 | mandate-lang 33556e9 | the x402 route | docs/VALIDATION.md line 51, test/run/mandate-x402.script |
 | auction-lang 0c599f1 | the auction laws (theorem names) | Lean sources |
@@ -330,24 +418,28 @@ One session for each slice: scope, gate, mutants, docs, close.
 | Slice | Work | Status |
 |---|---|---|
 | S0 | Seed from tcc-wasm, DESIGN.md and the digest, this plan, README table, AGENTS.md; gate EXIT 0; seed commit; private repo | DONE |
-| S1 | The USER rules section 14. Record the rulings here. | NEXT |
-| S2 | Port the Cubical TT kernel (8.1, Q-S0-14). Survey first. | |
+| S1 | The USER rules section 14 and Q-S1-1 to Q-S1-10. Section 1 has the rulings. | DONE |
+| S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a)). Survey first. | NEXT |
 | S3 | R0 in the kernel and the Wasm writer: `REFUSE_PARTIAL`, `test/notraptool.c`, the trap row (OI-4). | |
 | S4 | `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4; `REFUSE_AMOUNT`, `REFUSE_BOUND`. | |
 | S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | |
 | S6 | `AucID`, `Slot`, `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`. | |
 | S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | |
-| S8 | The crypto layer (Q-S0-13): the ASSUMED rows, `REFUSE_APPROX`. | |
-| S9 | T1 part 1: the Wasm module, the import ABI, the notrap rows. | |
+| S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | |
+| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
+| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
+| S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
 | S10 | T1 part 2: `gaveld`, the Wasm engine (Q-S0-15), the demo D1 to D8. | |
 | S11 | T5: the JSON report, `docs/REPORT-JSON.md`. | |
-| S12 | T2: the ZK relation export (Q-S0-9, Q-S0-10). | |
-| S13 | T3: the FHE compare circuit, the depth bound (F1). | |
-| S14 | T4: the Bristol Fashion circuits. | |
+| S12 | T2: the ZK relation export (Q-S0-9 (a), Q-S0-10 (a)) and the TFHE share relation (Q-S1-8 (a)). | |
+| S13 | T3: the FHE compare circuit, the depth bound (F1), the share checks (Q-S1-4 (b), OI-16). | |
+| S14 | T4: the Bristol Fashion circuits for WRK (Q-S1-1 (b)). | |
+| S14b | T4 part 2: the WRK party program in the module (Q-S1-2 (b)): base OT, OT extension, preprocessing, garbling, evaluation (OI-15). | |
+| S14c | `gaveld` member mode: the TCP links (Q-S1-9 (b)), the OS seed, the WRK rows (OI-18). | |
 | S15 | A1: canonical forms and `langc fmt`. | |
 | S16 | A2: `langc check --json`. | |
 | S17 | A4: `langc mcp`. | |
-| S18 | `langc serve`: routes, `/mcp`, x402, the stub facilitator, the count log. | |
+| S18 | `langc serve`: routes, `/mcp`, x402, the stub facilitator, the count log, the test-network row (Q-S0-25 (b), Q-S1-5 (a), Q-S1-6 (a)). | |
 | S19 | A7 and B2: `server.json`, `openapi.yaml`, `llms.txt`, `funding.json`, `.github/FUNDING.yml`. | |
 | S20 | A3, A5, B4: SKILL.md, G1 to G5, AGENTS.md and the README final. | |
 | S21 | A6: the token comparison. | |
@@ -377,82 +469,98 @@ One session for each slice: scope, gate, mutants, docs, close.
 - OI-12 The facilitator URL, the network and the payTo address are USER
   inputs. `langc serve` does not start without them.
 - OI-13 The TLS proxy and the deploy are USER steps.
+- OI-14 WRK has no guaranteed output: one corrupt member can abort the T4
+  run (Q-S1-1 (b)). An aborted auction is a loss of liveness, not of
+  safety. T5 states it.
+- OI-15 The base OT, the OT extension, the garbling hash and the PRF of
+  the WRK port are fixed at S14b (a question then). No sibling source.
+- OI-16 The TFHE parameters, the noise bound of a share and the threshold
+  key generation are fixed at S13. The key generation is EXTERNAL.
+- OI-17 The run time of the BN254 pairing and the Noir verifier in the
+  prelude under the C99 interpreter is not known. S8b measures it.
+- OI-18 The reason for a lost link, a late message or a bad message in
+  member mode is fixed at S14c.
+- OI-19 From S18 each gate run needs the network and the USER test inputs
+  (Q-S1-5 (a)). A sandboxed session needs the facilitator host on its
+  network allowlist.
 
 ## 14. Questions for the USER (S0)
 
-Each question has a recommendation (rec). S1 records the rulings.
+Each question has a recommendation (rec). S1 ruled each one; section 1
+has the rulings. The rulings that are not (a) raised Q-S1-1 to Q-S1-10,
+which S1 asked and ruled; section 1 has them too.
 
-- Q-S0-1 Amount arithmetic. (a) rec: compare, select, max and second max
+- Q-S0-1 RULED (a). Amount arithmetic. (a) rec: compare, select, max and second max
   only. (b) Bounded add and sub with a static bound obligation.
-- Q-S0-2 Rejections. (a) rec: `Verdict = valid | invalid Reason` with the
+- Q-S0-2 RULED (a). Rejections. (a) rec: `Verdict = valid | invalid Reason` with the
   eight reasons of section 2. (b) `Bool` only, and the host prints the
   reason.
-- Q-S0-3 R1 classes. (a) rec: the table of section 3 (`Log` CM, `Machine`
+- Q-S0-3 RULED (a). R1 classes. (a) rec: the table of section 3 (`Log` CM, `Machine`
   CC, `List` CM, `Sealed` and `Share` the identity CM at base types,
   `Proof` and `Protocol` base sorts). (b) `Protocol` as a CM too.
-- Q-S0-4 The role map. (a) rec: design sec 2. (b) A variant that the USER
+- Q-S0-4 RULED (a). The role map. (a) rec: design sec 2. (b) A variant that the USER
   names.
-- Q-S0-5 Base types. (a) rec: the list of section 4.1. (b) No `Slot`: one
+- Q-S0-5 RULED (a). Base types. (a) rec: the list of section 4.1. (b) No `Slot`: one
   root for each auction.
-- Q-S0-6 Governance. (a) rec: one `Params` record, t-of-n amendments, the
+- Q-S0-6 RULED (a). Governance. (a) rec: one `Params` record, t-of-n amendments, the
   amend rule can amend itself, order by log height. (b) The auction rule is
   fixed for each `AucID`.
-- Q-S0-7 The price list. (a) rec: a deploy setting, not in `Params`. (b) In
+- Q-S0-7 RULED (a). The price list. (a) rec: a deploy setting, not in `Params`. (b) In
   `Params`.
-- Q-S0-8 Hash. (a) rec: abstract `Hash`; Poseidon at T2 and in `gaveld`.
+- Q-S0-8 RULED (a). Hash. (a) rec: abstract `Hash`; Poseidon at T2 and in `gaveld`.
   (b) Poseidon fixed in the language.
-- Q-S0-9 Proof of the outcome. (a) rec: a T2 proof of the auction outcome
+- Q-S0-9 RULED (a). Proof of the outcome. (a) rec: a T2 proof of the auction outcome
   (the paper has an auction proof, Table 1). (b) t attestations of correct
   evaluation.
-- Q-S0-10 T2 format. (a) rec: Noir (the USER ruled Noir for ratify-lang,
+- Q-S0-10 RULED (a). T2 format. (a) rec: Noir (the USER ruled Noir for ratify-lang,
   Q-S0-13 (b), 2026-11-03). (b) arkworks R1CS for Groth16 on BN254 (the
   paper's system).
-- Q-S0-11 T3 scheme. (a) rec: TFHE (integer compare is native). (b) BFV.
-- Q-S0-12 T4. (a) rec: Bristol Fashion only; the MPC protocol and its
+- Q-S0-11 RULED (a). T3 scheme. (a) rec: TFHE (integer compare is native). (b) BFV.
+- Q-S0-12 RULED (b). T4. (a) rec: Bristol Fashion only; the MPC protocol and its
   corruption model are EXTERNAL (M1). (b) Pin one MPC protocol in this
   plan.
-- Q-S0-13 Crypto location. (a) rec: C in `gaveld` behind a fixed
+- Q-S0-13 RULED (b). Crypto location. (a) rec: C in `gaveld` behind a fixed
   host-import ABI, a port of quorum-lang `src/crypto` (ratify-lang Q-S1-1
   (a)). (b) In the module.
-- Q-S0-14 Kernel source. (a) rec: the ratify-lang kernel (the permit-lang
+- Q-S0-14 RULED (a). Kernel source. (a) rec: the ratify-lang kernel (the permit-lang
   kernel without the affine layer, ratify-lang Q-S0-10 (a)). (b) The
   permit-lang kernel. (c) Extend the kit checker in place.
-- Q-S0-15 Wasm engine in `gaveld`. (a) rec: the own C99 interpreter
+- Q-S0-15 RULED (a). Wasm engine in `gaveld`. (a) rec: the own C99 interpreter
   (ratify-lang Q-S0-11 (a)); node and wasmtime are oracles in the gate.
   (b) Vendor wasm3. (c) The wasmtime C API.
-- Q-S0-16 `langc serve` routes. (a) rec: JSON POST routes for the five
+- Q-S0-16 RULED (a). `langc serve` routes. (a) rec: JSON POST routes for the five
   tools and MCP streamable HTTP at `/mcp`, each behind x402. (b) Only
   `/mcp`.
-- Q-S0-17 Price in the 402 response. (a) rec: $0.01 for check, fmt,
+- Q-S0-17 RULED (a). Price in the 402 response. (a) rec: $0.01 for check, fmt,
   explain, list-base and show-law; $0.05 for build (T1 module); $0.20 for
   the T2 to T4 exports. (b) A flat $0.01. (c) A USER price list. The
   pasted range is $0.01 to $0.20.
-- Q-S0-18 Network. (a) rec: USDC on Base mainnet; base-sepolia in tests.
+- Q-S0-18 RULED (a). Network. (a) rec: USDC on Base mainnet; base-sepolia in tests.
   (b) A network that the USER names.
-- Q-S0-19 Registry entry (`server.json`, name
+- Q-S0-19 RULED (a). Registry entry (`server.json`, name
   `io.github.MavenRain/gavel-lang`). (a) rec: a `packages` entry (a bundle
   of the stdio `langc mcp` from a GitHub release) and a `remotes` entry
   (streamable HTTP at the `langc serve` `/mcp` URL, after the USER
   deploys it). (b) `remotes` only. (c) `packages` only.
-- Q-S0-20 OpenAPI. (a) rec: `openapi.yaml` 3.1; each route lists its 402
+- Q-S0-20 RULED (a). OpenAPI. (a) rec: `openapi.yaml` 3.1; each route lists its 402
   response with the x402 body schema and the price. (b) 3.0.
-- Q-S0-21 Funding files. (a) rec: `.github/FUNDING.yml` (`github:
+- Q-S0-21 RULED (a). Funding files. (a) rec: `.github/FUNDING.yml` (`github:
   [MavenRain]`), `funding.json`, `llms.txt`; no
   `.well-known/ai-donate.json` (no published standard). (b) Ship
   `ai-donate.json` too.
-- Q-S0-22 Measurement. (a) rec: `langc serve` writes a local count log;
+- Q-S0-22 RULED (a). Measurement. (a) rec: `langc serve` writes a local count log;
   nothing leaves the host. (b) None.
-- Q-S0-23 AgentFund and the human channels. (a) rec: this plan lists
+- Q-S0-23 RULED (a). AgentFund and the human channels. (a) rec: this plan lists
   candidate milestones only; the USER runs any campaign. (b) None.
-- Q-S0-24 Agent framing. (a) rec: a README section "What an agent gets" in
+- Q-S0-24 RULED (a). Agent framing. (a) rec: a README section "What an agent gets" in
   ROI terms (fewer failed runs, cheaper verification). (b) No section.
-- Q-S0-25 Tests. (a) rec: C and gavel-lang tests, a stub facilitator in C,
+- Q-S0-25 RULED (b). Tests. (a) rec: C and gavel-lang tests, a stub facilitator in C,
   the kit node differential stays. (b) Also a test against a public
   test-network facilitator (the network in the gate).
-- Q-S0-26 Token comparison. (a) rec: the permit-lang ruling (count_tokens,
+- Q-S0-26 RULED (a). Token comparison. (a) rec: the permit-lang ruling (count_tokens,
   equal outputs). (b) An offline tokenizer.
-- Q-S0-27 Law counts. (a) rec: the four buckets of section 6;
+- Q-S0-27 RULED (a). Law counts. (a) rec: the four buckets of section 6;
   `laws_discharged` counts DISCHARGED rows only. (b) One `laws_total` for
   all rows.
-- Q-S0-28 Refusal codes. (a) rec: the eleven codes of section 7. (b) Fewer
+- Q-S0-28 RULED (a). Refusal codes. (a) rec: the eleven codes of section 7. (b) Fewer
   codes: one `REFUSE_PARAMS` for G1 to G3.
