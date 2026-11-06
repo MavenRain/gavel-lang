@@ -5,10 +5,13 @@ under an off-chain threshold authority that amends itself. It comes from
 lang-template with the tcc-wasm host. The reference is arXiv:2606.14939
 (see `design/DIGEST-2606.14939.md`). No program can have a runtime error.
 
-Status: S3 (no trap): the Cubical TT kernel of ratify-lang a46d5df and R0
-from ratify-lang 71f2c22: total Nat operations, `REFUSE_PARTIAL`, and a
-Wasm writer that emits no trap form (`test/notraptool.c` checks each built
-module). The gavel-lang types, refusals and targets do not exist yet.
+Status: S4 (the auction rule): the Cubical TT kernel of ratify-lang
+a46d5df, R0 from ratify-lang 71f2c22 (total Nat operations,
+`REFUSE_PARTIAL`, and a Wasm writer that emits no trap form), and the first
+gavel-lang words in `domain/domain.lang`: `Amount`, `Bids`, `Rule`,
+`Outcome`, `outcome`, the laws A1, A2 and A4, `REFUSE_AMOUNT` and
+`REFUSE_BOUND`. The governance and crypto layers and the targets do not
+exist yet.
 `docs/PLAN.md` gives the readings, the route and the slices.
 
 ## When to reach for gavel-lang (DRAFT)

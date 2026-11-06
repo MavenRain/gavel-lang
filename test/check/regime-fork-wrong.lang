@@ -4,7 +4,7 @@ def Member : Type 0 := Sum Unit Unit
 def Choice : Type 0 := Sum Unit Unit
 -- The phases (O9): phaseZero is the reading at zero, phasePlus and phaseMinus the two readings away from zero.
 def Phase : Type 0 := Sum Unit (Sum Unit Unit)
-def Outcome : Type 0 := Phase
+def DaoOutcome : Type 0 := Phase
 def Group : Type 0 := Sum Unit Unit
 
 def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
@@ -56,7 +56,7 @@ def loopsSum : (A : Type 0) -> (B : Type 0) -> isSet A -> isSet B -> (x : Sum A 
 def isSetSum : (A : Type 0) -> (B : Type 0) -> isSet A -> isSet B -> isSet (Sum A B) :=
   fun (A : Type 0) (B : Type 0) (sA : isSet A) (sB : isSet B) => setFromLoops (Sum A B) (loopsSum A B sA sB)
 -- The proof slot outcomeSet: Phase is a set, as a sum of sets.
-def outcomeSet : isSet Outcome := isSetSum Unit (Sum Unit Unit) isSetUnit (isSetSum Unit Unit isSetUnit isSetUnit)
+def outcomeSet : isSet DaoOutcome := isSetSum Unit (Sum Unit Unit) isSetUnit (isSetSum Unit Unit isSetUnit isSetUnit)
 
 def phaseZero : Phase := inl unit
 def phasePlus : Phase := inr (inl unit)
@@ -89,27 +89,27 @@ def b21 : Beta := pack sizeTwo sizeOne
 def b12 : Beta := pack sizeOne sizeTwo
 
 -- A constant constitution: its rule gives o at each configuration, so refl is its invariance proof.
-def constCon : Outcome -> Constitution := fun (o : Outcome) => pack (fun (c : Config) => o) (fun (g : Group) (c : Config) => refl)
+def constCon : DaoOutcome -> Constitution := fun (o : DaoOutcome) => pack (fun (c : Config) => o) (fun (g : Group) (c : Config) => refl)
 
 -- The menus. menuAt b: for beta at most 1 each outcome selects the constant constitution at phaseZero, and for beta
 -- above 1 each phase selects the constant constitution at itself. cycleMenu: each phase selects the next phase.
-def menuAt : Beta -> Outcome -> Constitution :=
-  fun (b : Beta) (o : Outcome) => either (fun (u : Unit) => constCon o) (fun (u : Unit) => constCon phaseZero) (betaGt (witness b) (payload b))
+def menuAt : Beta -> DaoOutcome -> Constitution :=
+  fun (b : Beta) (o : DaoOutcome) => either (fun (u : Unit) => constCon o) (fun (u : Unit) => constCon phaseZero) (betaGt (witness b) (payload b))
 def nextPhase : Phase -> Phase :=
   fun (p : Phase) => either (fun (u : Unit) => phasePlus) (fun (s : Sum Unit Unit) => either (fun (u : Unit) => phaseMinus) (fun (u : Unit) => phaseZero) s) p
-def cycleMenu : Outcome -> Constitution := fun (o : Outcome) => constCon (nextPhase o)
+def cycleMenu : DaoOutcome -> Constitution := fun (o : DaoOutcome) => constCon (nextPhase o)
 
 -- The menu slot: the menu at beta 2/1.
-def menu : Outcome -> Constitution := fun (o : Outcome) => menuAt b21 o
+def menu : DaoOutcome -> Constitution := fun (o : DaoOutcome) => menuAt b21 o
 
 -- isFix M t o is inl unit when o is self constituting at the tally t: the entry of M at o, aggregated at t, gives o.
 -- regimeOf counts the self constituting phases up to two: bump moves AI to AD, and AD or SI to SI.
-def isFix : (Outcome -> Constitution) -> Tally -> Outcome -> Choice :=
-  fun (M : Outcome -> Constitution) (t : Tally) (o : Outcome) => eqPhase (aggregate (M o) t) o
+def isFix : (DaoOutcome -> Constitution) -> Tally -> DaoOutcome -> Choice :=
+  fun (M : DaoOutcome -> Constitution) (t : Tally) (o : DaoOutcome) => eqPhase (aggregate (M o) t) o
 def bump : Choice -> Regime -> Regime :=
   fun (c : Choice) (r : Regime) => either (fun (u : Unit) => either (fun (v : Unit) => AD) (fun (s : Sum Unit Unit) => SI) r) (fun (u : Unit) => r) c
-def regimeOf : (Outcome -> Constitution) -> Tally -> Regime :=
-  fun (M : Outcome -> Constitution) (t : Tally) => bump (isFix M t phaseZero) (bump (isFix M t phasePlus) (bump (isFix M t phaseMinus) AI))
+def regimeOf : (DaoOutcome -> Constitution) -> Tally -> Regime :=
+  fun (M : DaoOutcome -> Constitution) (t : Tally) => bump (isFix M t phaseZero) (bump (isFix M t phasePlus) (bump (isFix M t phaseMinus) AI))
 
 -- The eval rows (test/eval/expect.txt) read these at the tally of allA.
 def allA : Member -> Choice := fun (m : Member) => inl unit

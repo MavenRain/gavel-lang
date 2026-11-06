@@ -272,3 +272,218 @@ family Signal := sigQuiet | sigLoud (loudLevel : Nat)
 and Window := winOpen | winShut (shutFor : Nat)
 family Hop := hopEnd | hopNext (nextEcho : Echo)
 and Echo := echoBack (backHop : Hop)
+-- The amount (S4, design section 4, USER ruling Q-S4-1 (a)): an inductive
+-- family, so A1, A2 and A4 are proofs by elim and stay DISCHARGED. A
+-- program reads an Amount only through the four domain operations amLe
+-- (compare), amSelect (select), amMax (max) and amMin (the second max of
+-- two amounts): an elim, a fold or a projection of Amount, or amSucc on a
+-- term that is not a literal, gives REFUSE_AMOUNT (Q-S0-1 (a)). The
+-- compare result is Sum Unit Unit as in consP: inr unit is "at most" and
+-- inl unit is "more than". amSelect A x y p q is p when x is at most y,
+-- else q. The three operations reduce together on the two amounts, so the
+-- laws below go by induction on both.
+family Amount := amZero | amSucc (amPred : Amount)
+def amLe : Amount -> Amount -> Sum Unit Unit :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Sum Unit Unit)
+    (fun (y : Amount) => inr unit)
+    (fun (a : Amount) (ih : Amount -> Sum Unit Unit) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Sum Unit Unit) (inl unit) (fun (b : Amount) (ihb : Sum Unit Unit) => ih b) y) x
+def amSelect : (A : Type 0) -> Amount -> Amount -> A -> A -> A :=
+  fun (A : Type 0) (x : Amount) => elim (fun (a : Amount) => Amount -> A -> A -> A)
+    (fun (y : Amount) (p : A) (q : A) => p)
+    (fun (a : Amount) (ih : Amount -> A -> A -> A) => fun (y : Amount) =>
+      elim (fun (b : Amount) => A -> A -> A) (fun (p : A) (q : A) => q) (fun (b : Amount) (ihb : A -> A -> A) => ih b) y) x
+def amMax : Amount -> Amount -> Amount :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+    (fun (y : Amount) => y)
+    (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Amount) (amSucc a) (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+def amMin : Amount -> Amount -> Amount :=
+  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+    (fun (y : Amount) => amZero)
+    (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Amount) amZero (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+-- The laws of amLe, amMax, amMin and amSelect, by induction on the amounts.
+-- "x is at most y" is the path amMax x y = y; leOfMax turns it into the
+-- compare form amLe x y = inr unit.
+def leRefl : (x : Amount) -> Path (Sum Unit Unit) (amLe x x) (inr unit) :=
+  fun (x : Amount) => elim (fun (a : Amount) => Path (Sum Unit Unit) (amLe a a) (inr unit)) refl
+    (fun (a : Amount) (ih : Path (Sum Unit Unit) (amLe a a) (inr unit)) => ih) x
+def maxLe : (x : Amount) -> (y : Amount) -> Path (Sum Unit Unit) (amLe x (amMax x y)) (inr unit) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path (Sum Unit Unit) (amLe a (amMax a y)) (inr unit))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path (Sum Unit Unit) (amLe a (amMax a y)) (inr unit)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path (Sum Unit Unit) (amLe (amSucc a) (amMax (amSucc a) b)) (inr unit))
+        (leRefl a)
+        (fun (b : Amount) (ihb : Path (Sum Unit Unit) (amLe (amSucc a) (amMax (amSucc a) b)) (inr unit)) => ih b) y) x
+def maxIdem : (x : Amount) -> Path Amount (amMax x x) x :=
+  fun (x : Amount) => elim (fun (a : Amount) => Path Amount (amMax a a) a) refl
+    (fun (a : Amount) (ih : Path Amount (amMax a a) a) => cong (fun (m : Amount) => amSucc m) ih) x
+def maxComm : (x : Amount) -> (y : Amount) -> Path Amount (amMax x y) (amMax y x) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amMax a y) (amMax y a))
+    (fun (y : Amount) => elim (fun (b : Amount) => Path Amount (amMax amZero b) (amMax b amZero)) refl
+      (fun (b : Amount) (ihb : Path Amount (amMax amZero b) (amMax b amZero)) => refl) y)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amMax a y) (amMax y a)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amMax (amSucc a) b) (amMax b (amSucc a))) refl
+        (fun (b : Amount) (ihb : Path Amount (amMax (amSucc a) b) (amMax b (amSucc a))) => cong (fun (m : Amount) => amSucc m) (ih b)) y) x
+def maxAssoc : (x : Amount) -> (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax x y) z) (amMax x (amMax y z)) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax a y) z) (amMax a (amMax y z)))
+    (fun (y : Amount) (z : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> (z : Amount) -> Path Amount (amMax (amMax a y) z) (amMax a (amMax y z))) => fun (y : Amount) =>
+      elim (fun (b : Amount) => (z : Amount) -> Path Amount (amMax (amMax (amSucc a) b) z) (amMax (amSucc a) (amMax b z)))
+        (fun (z : Amount) => refl)
+        (fun (b : Amount) (ihb : (z : Amount) -> Path Amount (amMax (amMax (amSucc a) b) z) (amMax (amSucc a) (amMax b z))) => fun (z : Amount) =>
+          elim (fun (c : Amount) => Path Amount (amMax (amMax (amSucc a) (amSucc b)) c) (amMax (amSucc a) (amMax (amSucc b) c)))
+            refl
+            (fun (c : Amount) (ihc : Path Amount (amMax (amMax (amSucc a) (amSucc b)) c) (amMax (amSucc a) (amMax (amSucc b) c))) =>
+              cong (fun (m : Amount) => amSucc m) (ih b c)) z) y) x
+def maxSwap : (x : Amount) -> (y : Amount) -> (z : Amount) -> Path Amount (amMax x (amMax y z)) (amMax y (amMax x z)) :=
+  fun (x : Amount) (y : Amount) (z : Amount) =>
+    trans Amount (amMax x (amMax y z)) (amMax (amMax x y) z) (amMax y (amMax x z))
+      (sym (maxAssoc x y z))
+      (trans Amount (amMax (amMax x y) z) (amMax (amMax y x) z) (amMax y (amMax x z))
+        (cong (fun (m : Amount) => amMax m z) (maxComm x y))
+        (maxAssoc y x z))
+def minMax : (x : Amount) -> (y : Amount) -> Path Amount (amMax (amMin x y) (amMax x y)) (amMax x y) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amMax (amMin a y) (amMax a y)) (amMax a y))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amMax (amMin a y) (amMax a y)) (amMax a y)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amMax (amMin (amSucc a) b) (amMax (amSucc a) b)) (amMax (amSucc a) b))
+        refl
+        (fun (b : Amount) (ihb : Path Amount (amMax (amMin (amSucc a) b) (amMax (amSucc a) b)) (amMax (amSucc a) b)) =>
+          cong (fun (m : Amount) => amSucc m) (ih b)) y) x
+def selMap : (A : Type 0) -> (B : Type 0) -> (f : A -> B) -> (x : Amount) -> (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B x y (f p) (f q)) (f (amSelect A x y p q)) :=
+  fun (A : Type 0) (B : Type 0) (f : A -> B) (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B a y (f p) (f q)) (f (amSelect A a y p q)))
+    (fun (y : Amount) (p : A) (q : A) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> (p : A) -> (q : A) -> Path B (amSelect B a y (f p) (f q)) (f (amSelect A a y p q))) => fun (y : Amount) =>
+      elim (fun (b : Amount) => (p : A) -> (q : A) -> Path B (amSelect B (amSucc a) b (f p) (f q)) (f (amSelect A (amSucc a) b p q)))
+        (fun (p : A) (q : A) => refl)
+        (fun (b : Amount) (ihb : (p : A) -> (q : A) -> Path B (amSelect B (amSucc a) b (f p) (f q)) (f (amSelect A (amSucc a) b p q))) => ih b) y) x
+def selRefl : (A : Type 0) -> (x : Amount) -> (p : A) -> (q : A) -> Path A (amSelect A x x p q) p :=
+  fun (A : Type 0) (x : Amount) => elim (fun (a : Amount) => (p : A) -> (q : A) -> Path A (amSelect A a a p q) p)
+    (fun (p : A) (q : A) => refl)
+    (fun (a : Amount) (ih : (p : A) -> (q : A) -> Path A (amSelect A a a p q) p) => ih) x
+def selMax : (x : Amount) -> (y : Amount) -> Path Amount (amSelect Amount x y y x) (amMax x y) :=
+  fun (x : Amount) => elim (fun (a : Amount) => (y : Amount) -> Path Amount (amSelect Amount a y y a) (amMax a y))
+    (fun (y : Amount) => refl)
+    (fun (a : Amount) (ih : (y : Amount) -> Path Amount (amSelect Amount a y y a) (amMax a y)) => fun (y : Amount) =>
+      elim (fun (b : Amount) => Path Amount (amSelect Amount (amSucc a) b b (amSucc a)) (amMax (amSucc a) b))
+        refl
+        (fun (b : Amount) (ihb : Path Amount (amSelect Amount (amSucc a) b b (amSucc a)) (amMax (amSucc a) b)) =>
+          trans Amount (amSelect Amount a b (amSucc b) (amSucc a)) (amSucc (amSelect Amount a b b a)) (amSucc (amMax a b))
+            (selMap Amount Amount (fun (m : Amount) => amSucc m) a b b a)
+            (cong (fun (m : Amount) => amSucc m) (ih b))) y) x
+def lubLe : (x : Amount) -> (y : Amount) -> (m : Amount) -> Path Amount (amMax x m) m -> Path Amount (amMax y m) m -> Path Amount (amMax (amMax x y) m) m :=
+  fun (x : Amount) (y : Amount) (m : Amount) (p : Path Amount (amMax x m) m) (q : Path Amount (amMax y m) m) =>
+    trans Amount (amMax (amMax x y) m) (amMax x (amMax y m)) m (maxAssoc x y m)
+      (trans Amount (amMax x (amMax y m)) (amMax x m) m (cong (fun (n : Amount) => amMax x n) q) p)
+def leMaxR : (x : Amount) -> (m : Amount) -> (n : Amount) -> Path Amount (amMax x m) m -> Path Amount (amMax x (amMax n m)) (amMax n m) :=
+  fun (x : Amount) (m : Amount) (n : Amount) (p : Path Amount (amMax x m) m) =>
+    trans Amount (amMax x (amMax n m)) (amMax n (amMax x m)) (amMax n m) (maxSwap x n m) (cong (fun (k : Amount) => amMax n k) p)
+def leOfMax : (x : Amount) -> (y : Amount) -> Path Amount (amMax x y) y -> Path (Sum Unit Unit) (amLe x y) (inr unit) :=
+  fun (x : Amount) (y : Amount) (p : Path Amount (amMax x y) y) =>
+    trans (Sum Unit Unit) (amLe x y) (amLe x (amMax x y)) (inr unit) (cong (fun (m : Amount) => amLe x m) (sym p)) (maxLe x y)
+-- The bid list (Q-S4-2 (a)): the free monoid at Amount as a cons list, the
+-- PLAN section 3 List row; the core List stays kit only. bdAt is total (an
+-- index past the end gives amZero), bdTop is the top bid (amZero for
+-- bdNil), bdArg the lowest index of a top bid, and bdSecond r the larger of
+-- the reserve r and the second highest bid. A closed Bids value with more
+-- than 1024 bids in a program gives REFUSE_BOUND (Q-S4-6 (a)).
+family Bids := bdNil | bdCons (bdHead : Amount) (bdTail : Bids)
+def bdAt : Bids -> Size -> Amount :=
+  fun (bs : Bids) => elim (fun (b : Bids) => Size -> Amount)
+    (fun (i : Size) => amZero)
+    (fun (h : Amount) (t : Bids) (ih : Size -> Amount) => fun (i : Size) =>
+      elim (fun (k : Size) => Amount) h (fun (k : Size) (ihk : Amount) => ih k) i) bs
+def bdTop : Bids -> Amount :=
+  fun (bs : Bids) => elim (fun (b : Bids) => Amount) amZero (fun (h : Amount) (t : Bids) (ih : Amount) => amMax h ih) bs
+def bdArg : Bids -> Size :=
+  fun (bs : Bids) => elim (fun (b : Bids) => Size) sz0
+    (fun (h : Amount) (t : Bids) (ih : Size) => amSelect Size (bdTop t) h sz0 (szS ih)) bs
+def bdSecond : Amount -> Bids -> Amount :=
+  fun (r : Amount) (bs : Bids) => elim (fun (b : Bids) => Amount) r
+    (fun (h : Amount) (t : Bids) (ih : Amount) => amMax (amMin h (bdTop t)) ih) bs
+-- The rule and the outcome (Q-S4-3 (a), Q-S4-4 (a), Q-S4-5 (a)): the
+-- domain owns Outcome; the DAO signature slot is DaoOutcome. outcome k r bs
+-- is noSale for bdNil and when the top bid is below the reserve r; else it
+-- is sale (the lowest index of a top bid) (the price of the rule k): the
+-- top bid under firstPrice, bdSecond r bs under secondPrice. A bid equal to
+-- the reserve is eligible. At S5, outcomeOf (p : Params) gives the
+-- DESIGN.md form.
+family Rule := firstPrice | secondPrice
+family Outcome := noSale | sale (slWinner : Size) (slPrice : Amount)
+def priceOf : Rule -> Amount -> Bids -> Amount :=
+  fun (k : Rule) (r : Amount) (bs : Bids) => elim (fun (q : Rule) => Amount) (bdTop bs) (bdSecond r bs) k
+def outcome : Rule -> Amount -> Bids -> Outcome :=
+  fun (k : Rule) (r : Amount) (bs : Bids) => elim (fun (b : Bids) => Outcome) noSale
+    (fun (h : Amount) (t : Bids) (ih : Outcome) => amSelect Outcome r (amMax h (bdTop t)) (sale (bdArg (bdCons h t)) (priceOf k r (bdCons h t))) noSale) bs
+-- The list laws, by induction on the list (Q-S4-7 (a)): each bid is at most
+-- the top, the bid at the winner index is the top, the second price is at
+-- least the reserve and at most the larger of the reserve and the top.
+def leTop : (bs : Bids) -> (i : Size) -> Path Amount (amMax (bdAt bs i) (bdTop bs)) (bdTop bs) :=
+  fun (bs : Bids) => elim (fun (b : Bids) => (i : Size) -> Path Amount (amMax (bdAt b i) (bdTop b)) (bdTop b))
+    (fun (i : Size) => refl)
+    (fun (h : Amount) (t : Bids) (ih : (i : Size) -> Path Amount (amMax (bdAt t i) (bdTop t)) (bdTop t)) => fun (i : Size) =>
+      elim (fun (k : Size) => Path Amount (amMax (bdAt (bdCons h t) k) (bdTop (bdCons h t))) (bdTop (bdCons h t)))
+        (trans Amount (amMax h (amMax h (bdTop t))) (amMax (amMax h h) (bdTop t)) (amMax h (bdTop t))
+          (sym (maxAssoc h h (bdTop t)))
+          (cong (fun (m : Amount) => amMax m (bdTop t)) (maxIdem h)))
+        (fun (k : Size) (ihk : Path Amount (amMax (bdAt (bdCons h t) k) (bdTop (bdCons h t))) (bdTop (bdCons h t))) =>
+          leMaxR (bdAt t k) (bdTop t) h (ih k)) i) bs
+def bdArgTop : (bs : Bids) -> Path Amount (bdAt bs (bdArg bs)) (bdTop bs) :=
+  fun (bs : Bids) => elim (fun (b : Bids) => Path Amount (bdAt b (bdArg b)) (bdTop b)) refl
+    (fun (h : Amount) (t : Bids) (ih : Path Amount (bdAt t (bdArg t)) (bdTop t)) =>
+      trans Amount (bdAt (bdCons h t) (amSelect Size (bdTop t) h sz0 (szS (bdArg t)))) (amSelect Amount (bdTop t) h h (bdAt t (bdArg t))) (amMax h (bdTop t))
+        (sym (selMap Size Amount (fun (k : Size) => bdAt (bdCons h t) k) (bdTop t) h sz0 (szS (bdArg t))))
+        (trans Amount (amSelect Amount (bdTop t) h h (bdAt t (bdArg t))) (amSelect Amount (bdTop t) h h (bdTop t)) (amMax h (bdTop t))
+          (cong (fun (m : Amount) => amSelect Amount (bdTop t) h h m) ih)
+          (trans Amount (amSelect Amount (bdTop t) h h (bdTop t)) (amMax (bdTop t) h) (amMax h (bdTop t))
+            (selMax (bdTop t) h)
+            (maxComm (bdTop t) h)))) bs
+def floorEq : (r : Amount) -> (bs : Bids) -> Path Amount (amMax r (bdSecond r bs)) (bdSecond r bs) :=
+  fun (r : Amount) (bs : Bids) => elim (fun (b : Bids) => Path Amount (amMax r (bdSecond r b)) (bdSecond r b)) (maxIdem r)
+    (fun (h : Amount) (t : Bids) (ih : Path Amount (amMax r (bdSecond r t)) (bdSecond r t)) =>
+      leMaxR r (bdSecond r t) (amMin h (bdTop t)) ih) bs
+def secondTop : (r : Amount) -> (bs : Bids) -> Path Amount (amMax (bdSecond r bs) (amMax r (bdTop bs))) (amMax r (bdTop bs)) :=
+  fun (r : Amount) (bs : Bids) => elim (fun (b : Bids) => Path Amount (amMax (bdSecond r b) (amMax r (bdTop b))) (amMax r (bdTop b)))
+    (trans Amount (amMax r (amMax r amZero)) (amMax (amMax r r) amZero) (amMax r amZero)
+      (sym (maxAssoc r r amZero))
+      (cong (fun (m : Amount) => amMax m amZero) (maxIdem r)))
+    (fun (h : Amount) (t : Bids) (ih : Path Amount (amMax (bdSecond r t) (amMax r (bdTop t))) (amMax r (bdTop t))) =>
+      lubLe (amMin h (bdTop t)) (bdSecond r t) (amMax r (amMax h (bdTop t)))
+        (leMaxR (amMin h (bdTop t)) (amMax h (bdTop t)) r (minMax h (bdTop t)))
+        (trans Amount (amMax (bdSecond r t) (amMax r (amMax h (bdTop t)))) (amMax (bdSecond r t) (amMax h (amMax r (bdTop t)))) (amMax r (amMax h (bdTop t)))
+          (cong (fun (m : Amount) => amMax (bdSecond r t) m) (maxSwap r h (bdTop t)))
+          (trans Amount (amMax (bdSecond r t) (amMax h (amMax r (bdTop t)))) (amMax h (amMax r (bdTop t))) (amMax r (amMax h (bdTop t)))
+            (leMaxR (bdSecond r t) (amMax r (bdTop t)) h ih)
+            (sym (maxSwap r h (bdTop t)))))) bs
+-- A1 (PLAN section 6, first price): the winner bid is at least each bid,
+-- and the price is the winner bid. a1Sale states it on outcome.
+def a1Bid : (bs : Bids) -> (i : Size) -> Path (Sum Unit Unit) (amLe (bdAt bs i) (bdAt bs (bdArg bs))) (inr unit) :=
+  fun (bs : Bids) (i : Size) =>
+    trans (Sum Unit Unit) (amLe (bdAt bs i) (bdAt bs (bdArg bs))) (amLe (bdAt bs i) (bdTop bs)) (inr unit)
+      (cong (fun (m : Amount) => amLe (bdAt bs i) m) (bdArgTop bs))
+      (leOfMax (bdAt bs i) (bdTop bs) (leTop bs i))
+def a1Price : (r : Amount) -> (bs : Bids) -> Path Amount (priceOf firstPrice r bs) (bdAt bs (bdArg bs)) :=
+  fun (r : Amount) (bs : Bids) => sym (bdArgTop bs)
+def a1Sale : (r : Amount) -> (h : Amount) -> (t : Bids) -> Path Outcome (outcome firstPrice r (bdCons h t)) (amSelect Outcome r (bdTop (bdCons h t)) (sale (bdArg (bdCons h t)) (bdAt (bdCons h t) (bdArg (bdCons h t)))) noSale) :=
+  fun (r : Amount) (h : Amount) (t : Bids) =>
+    cong (fun (m : Amount) => amSelect Outcome r (bdTop (bdCons h t)) (sale (bdArg (bdCons h t)) m) noSale) (sym (bdArgTop (bdCons h t)))
+-- A2 (second price): the price is the larger of the reserve and the second
+-- highest bid (a2Second, the definition), it is at least the reserve
+-- (a2Floor) and at most the larger of the reserve and the winner bid
+-- (a2Top; in a sale the reserve is at most the top, so this is the winner
+-- bid).
+def a2Second : (r : Amount) -> (h : Amount) -> (t : Bids) -> Path Amount (priceOf secondPrice r (bdCons h t)) (amMax (amMin h (bdTop t)) (bdSecond r t)) :=
+  fun (r : Amount) (h : Amount) (t : Bids) => refl
+def a2Floor : (r : Amount) -> (bs : Bids) -> Path (Sum Unit Unit) (amLe r (priceOf secondPrice r bs)) (inr unit) :=
+  fun (r : Amount) (bs : Bids) => leOfMax r (bdSecond r bs) (floorEq r bs)
+def a2Top : (r : Amount) -> (bs : Bids) -> Path (Sum Unit Unit) (amLe (priceOf secondPrice r bs) (amMax r (bdTop bs))) (inr unit) :=
+  fun (r : Amount) (bs : Bids) => leOfMax (bdSecond r bs) (amMax r (bdTop bs)) (secondTop r bs)
+-- A4 (tie-break): equal top bids give the lowest index. When the head is
+-- the top of the tail, the winner index is 0 under both rules.
+def a4 : (h : Amount) -> (t : Bids) -> Path Amount (bdTop t) h -> Path Size (bdArg (bdCons h t)) sz0 :=
+  fun (h : Amount) (t : Bids) (p : Path Amount (bdTop t) h) =>
+    trans Size (bdArg (bdCons h t)) (amSelect Size h h sz0 (szS (bdArg t))) sz0
+      (cong (fun (m : Amount) => amSelect Size m h sz0 (szS (bdArg t))) p)
+      (selRefl Size h sz0 (szS (bdArg t)))

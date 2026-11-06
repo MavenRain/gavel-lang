@@ -30,12 +30,12 @@ static const char orbit_source[] =
 
 static const char dao_source[] =
   "def Config : Type 0 := Member -> Choice\n"
-  "def Constitution : Type 0 := Sigma (F : Config -> Outcome) ((g : Group) -> (c : Config) -> Path Outcome (F (act g c)) (F c))\n"
-  "def Aggregation : Type 0 := Orbit -> Outcome\n"
+  "def Constitution : Type 0 := Sigma (F : Config -> DaoOutcome) ((g : Group) -> (c : Config) -> Path DaoOutcome (F (act g c)) (F c))\n"
+  "def Aggregation : Type 0 := Orbit -> DaoOutcome\n"
   "def Tally : Type 0 := Orbit\n"
   "def aggregate : Constitution -> Aggregation := fun (F : Constitution) (z : Orbit) => fold (witness F)\n"
   "  (fun (a : Config) (b : Config) (r : Sigma (g : Group) (Path Config (act g b) a)) =>\n"
-  "    trans Outcome (witness F a) (witness F (act (witness r) b)) (witness F b) (sym (cong (witness F) (payload r))) (payload F (witness r) b))\n"
+  "    trans DaoOutcome (witness F a) (witness F (act (witness r) b)) (witness F b) (sym (cong (witness F) (payload r))) (payload F (witness r) b))\n"
   "  outcomeSet z\n"
   "def gov : Aggregation -> Constitution := fun (L : Aggregation) => pack (fun (c : Config) => L (orbitProj c))\n"
   "  (fun (g : Group) (c : Config) => fun (i : I) => L (orbitEq (act g c) c (pack g refl) i))\n"

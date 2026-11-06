@@ -153,8 +153,71 @@ static int internal_print_refused(const char *type, const char *body) {
   return ok;
 }
 
+/* Q-S4-1 (a) and Q-S4-6 (a): a program reads an Amount only through the
+   domain operations, and a closed bid list has at most 1024 bids, even
+   inside a type. An open list and a literal amount pass. */
+static int amount_bounds(void) {
+  const char *prelude =
+    "family Amount := amZero | amSucc (amPred : Amount)\n"
+    "family Bids := bdNil | bdCons (bdHead : Amount) (bdTail : Bids)\n"
+    "def addBid : Bids -> Bids := fun (b : Bids) => bdCons amZero b\n"
+    "def addBid4 : Bids -> Bids := fun (b : Bids) => addBid (addBid (addBid (addBid b)))\n"
+    "def addBid16 : Bids -> Bids := fun (b : Bids) => addBid4 (addBid4 (addBid4 (addBid4 b)))\n"
+    "def addBid64 : Bids -> Bids := fun (b : Bids) => addBid16 (addBid16 (addBid16 (addBid16 b)))\n"
+    "def addBid256 : Bids -> Bids := fun (b : Bids) => addBid64 (addBid64 (addBid64 (addBid64 b)))\n"
+    "def addBid1024 : Bids -> Bids := fun (b : Bids) => addBid256 (addBid256 (addBid256 (addBid256 b)))\n";
+  int ok = 1;
+  ok &= checked_in(prelude,
+    "def double : Amount -> Amount := fun (a : Amount) => elim (fun (x : Amount) => Amount) amZero (fun (x : Amount) (ih : Amount) => amSucc ih) a",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_AMOUNT");
+  ok &= checked_in(prelude,
+    "def toZero : Amount -> Amount := fun (a : Amount) => fold amZero (fun (p : Amount) => p) a",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_AMOUNT");
+  ok &= checked_in(prelude,
+    "def bump : Amount -> Amount := fun (a : Amount) => amSucc a",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_AMOUNT");
+  ok &= checked_in(prelude,
+    "def two : Amount := amSucc (amSucc amZero)",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def big : Bids := addBid (addBid1024 bdNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def hidden : Path Bids (addBid (addBid1024 bdNil)) (addBid (addBid1024 bdNil)) := refl",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def delayed : Unit -> Bids := fun (u : Unit) => addBid (addBid1024 bdNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def packed : Sigma (u : Unit) Bids := pack unit (addBid (addBid1024 bdNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consumed : Unit := fold unit (fun (h : Amount) (t : Unit) => t) (addBid (addBid1024 bdNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def erasedType : (fun (bs : Bids) => Unit) (addBid (addBid1024 bdNil)) := unit",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def delayedConsume : Unit -> Unit := fun (u : Unit) => fold unit (fun (h : Amount) (t : Unit) => t) (addBid (addBid1024 bdNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def openKeep : Bids -> Bids := fun (bs : Bids) => addBid (addBid1024 bs)",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def edge : Bids := addBid1024 bdNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def delayedEdge : Unit -> Bids := fun (u : Unit) => addBid1024 bdNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def packedEdge : Sigma (u : Unit) Bids := pack unit (addBid1024 bdNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  return ok;
+}
+
 int main(void) {
   int ok = 1;
+  ok &= amount_bounds();
   ok &= checked_fixture("test/ir/lazy.lang");
   ok &= checked_fixture("test/ir/proof-trap.lang");
   /* Diagnostics can print binders while constructor slots are still unnamed. */

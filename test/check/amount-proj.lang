@@ -1,0 +1,2 @@
+-- NAME_UNKNOWN (S4, Q-S4-1 (a)): Amount has two constructors, so amPred is a field name and not a projection; the name is unknown
+def before : Amount -> Amount := fun (a : Amount) => amPred a

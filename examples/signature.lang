@@ -2,7 +2,7 @@
 -- act g flips the choice of every member when g is inr (the Z2 flip of the reference group) and keeps it when g is inl.
 def Member : Type 0 := Sum Unit Unit
 def Choice : Type 0 := Sum Unit Unit
-def Outcome : Type 0 := Choice
+def DaoOutcome : Type 0 := Choice
 def Group : Type 0 := Sum Unit Unit
 
 def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c

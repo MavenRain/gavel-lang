@@ -1,0 +1,8 @@
+-- REFUSE_BOUND (S4, Q-S4-6 (a)): a closed bid list with 1025 bids is above the bound of 1024
+def addBid : Bids -> Bids := fun (b : Bids) => bdCons amZero b
+def addBid4 : Bids -> Bids := fun (b : Bids) => addBid (addBid (addBid (addBid b)))
+def addBid16 : Bids -> Bids := fun (b : Bids) => addBid4 (addBid4 (addBid4 (addBid4 b)))
+def addBid64 : Bids -> Bids := fun (b : Bids) => addBid16 (addBid16 (addBid16 (addBid16 b)))
+def addBid256 : Bids -> Bids := fun (b : Bids) => addBid64 (addBid64 (addBid64 (addBid64 b)))
+def addBid1024 : Bids -> Bids := fun (b : Bids) => addBid256 (addBid256 (addBid256 (addBid256 b)))
+def big : Bids := addBid (addBid1024 bdNil)

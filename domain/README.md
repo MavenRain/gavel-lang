@@ -1,7 +1,7 @@
 # Domain slot
 
-In S3 the domain is the kernel prelude, ported from permit-lang 3d47120,
-and the IR test families of permit-lang 18deea2.
+In S4 the domain is the kernel prelude, ported from permit-lang 3d47120,
+the IR test families of permit-lang 18deea2 and the auction rule.
 `domain/domain.lang` holds the domain. At build time, `tcc -run
 gen/embed.c` copies it into `build/domain.c`, so the domain is part of
 `build/langc`. `langc` loads the domain first, then the program.
@@ -56,6 +56,33 @@ uses `natMul`, and the kernel has no `natMul`.
 
 Many kernel rows in `examples/`, `test/check/` and `test/eval/expect.txt`
 use these names.
+
+## The auction rule
+
+S4 adds the first gavel-lang words (`docs/PLAN.md` section 1, Q-S4-1 (a)
+to Q-S4-7 (a)).
+
+| Kind | Names |
+|---|---|
+| Families | `Amount`, `Bids`, `Rule`, `Outcome` |
+| Constructors and fields | `amZero`, `amSucc`, `amPred`, `bdNil`, `bdCons`, `bdHead`, `bdTail`, `firstPrice`, `secondPrice`, `noSale`, `sale`, `slWinner`, `slPrice` |
+| Amount operations | `amLe` (compare), `amSelect` (select), `amMax` (max), `amMin` (second max) |
+| Bid list operations | `bdAt`, `bdTop`, `bdArg`, `bdSecond` |
+| The rule | `priceOf`, `outcome` |
+| Amount laws | `leRefl`, `maxLe`, `maxIdem`, `maxComm`, `maxAssoc`, `maxSwap`, `minMax`, `selMap`, `selRefl`, `selMax`, `lubLe`, `leMaxR`, `leOfMax` |
+| List laws | `leTop`, `bdArgTop`, `floorEq`, `secondTop` |
+| A1, A2, A4 | `a1Bid`, `a1Price`, `a1Sale`, `a2Second`, `a2Floor`, `a2Top`, `a4` |
+
+Two check codes keep a program inside the rule. This file is exempt from
+both.
+
+- `REFUSE_AMOUNT`: a program reads an `Amount` by an elim, a fold or a
+  projection, or applies `amSucc` to a term that is not a literal. A
+  program uses only the four Amount operations, so a target can lower
+  `Amount` to a fixed-width word.
+- `REFUSE_BOUND`: a closed `Bids` value in a def type or a def body has
+  more than 1024 bids (`BID_LIST_BOUND` in `src/front/check.c`). An open
+  input list passes; the T1 entry bounds it.
 
 ## The IR test families
 

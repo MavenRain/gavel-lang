@@ -156,3 +156,8 @@ partial-zero.lang REFUSE_PARTIAL
 affine-budget.lang NAME_UNKNOWN
 affine-mult.lang TYPE_MISMATCH
 affine-unpack.lang NAME_UNKNOWN
+amount-elim.lang REFUSE_AMOUNT
+amount-succ-open.lang REFUSE_AMOUNT
+amount-proj.lang NAME_UNKNOWN
+bound-over.lang REFUSE_BOUND
+bound-index.lang REFUSE_BOUND

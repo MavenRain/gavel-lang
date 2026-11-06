@@ -1,11 +1,11 @@
 # gavel-lang status
 
-The build implements slice S3 of `docs/PLAN.md`: the Cubical TT kernel of
-ratify-lang a46d5df (a port of permit-lang 3d47120), and R0 in the kernel
-and the Wasm writer, ported from ratify-lang 71f2c22, without the affine
-layer and the domain words (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)). It does
-not complete M0. The next slice is S4: `Amount`, `List`, `Outcome`,
-`outcome`.
+The build implements slice S4 of `docs/PLAN.md`: the Cubical TT kernel of
+ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
+the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
+(Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), and the auction rule (Q-S4-1 (a) to
+Q-S4-7 (a)). It does not complete M0. The next slice is S5: `Party`,
+`Committee`, `Certificate`, `Params`, `checkCert`.
 
 ## Implemented
 
@@ -20,7 +20,13 @@ not complete M0. The next slice is S4: `Amount`, `List`, `Outcome`,
 - Families from `domain/domain.lang`, with indices (former F15), path
   constructors and `fold`.
 - The kernel prelude in `domain/domain.lang` (`domain/README.md` lists
-  the names). The gavel domain words come from S4 onward.
+  the names). The gavel domain words start at S4.
+- The auction rule in `domain/domain.lang` (S4): `Amount` (compare
+  `amLe`, select `amSelect`, max `amMax`, second max `amMin`), `Bids`,
+  `Rule`, `Outcome` and `outcome`, and the laws A1, A2 and A4 as `Path`
+  terms. In a program, any other read of an `Amount` gives
+  `REFUSE_AMOUNT`, and a closed bid list with more than 1024 bids gives
+  `REFUSE_BOUND`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -28,21 +34,20 @@ not complete M0. The next slice is S4: `Amount`, `List`, `Outcome`,
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 30 examples, 17 parse refusals, 158 check refusals, 10
-  kit-only refusals, 1 time hint, 79 evals, 1 build, 1 ir lowered, 5 ir
+- The gate: 32 examples, 17 parse refusals, 163 check refusals, 10
+  kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir
   refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine
-  evals, 33 Wasm modules valid, 998 differential cases with 0 mismatches;
+  evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S4: `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4;
-   `REFUSE_AMOUNT`, `REFUSE_BOUND`. It needs the S3 commit first.
-2. S5 to S8c: the governance and crypto layers of `docs/PLAN.md` section
+1. S5 to S8c: the governance and crypto layers of `docs/PLAN.md` section
    12 (`Party`, `Committee`, `Certificate`, `SealedBid`, `Log`, `Machine`,
-   the crypto prelude). Each slice needs the slice before it.
-3. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
+   the crypto prelude). Each slice needs the slice before it; S5 needs
+   the S4 commit first.
+2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
 
@@ -52,6 +57,11 @@ not complete M0. The next slice is S4: `Amount`, `List`, `Outcome`,
   an affine code.
 - `REFUSE_CELL` holds the CM and CC shape check inline in the kernel.
   The R1 slice renames it or adds `REFUSE_FORMER`.
+- `Amount` is a unary family in the kernel. T1 lowers it to a
+  fixed-width word (`docs/PLAN.md` OI-21).
+- An open bid list passes the check at any length. The T1 entry bounds it
+  (OI-22).
+- The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
 
 ## Internal boundaries
 

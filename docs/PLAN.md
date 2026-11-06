@@ -18,10 +18,12 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S3 (no trap): the Cubical TT kernel of ratify-lang a46d5df (a port
-of permit-lang 3d47120) and R0 from ratify-lang 71f2c22 are in, without the
-domain words (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)). Section 1 has the
-rulings. Next: S4 (`Amount`, `List`, `Outcome`, `outcome`).
+Status: S4 (the auction rule): the Cubical TT kernel of ratify-lang
+a46d5df (a port of permit-lang 3d47120), R0 from ratify-lang 71f2c22 and
+the first domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`,
+`outcome`, the laws A1, A2 and A4, `REFUSE_AMOUNT` and `REFUSE_BOUND`
+(Q-S4-1 (a) to Q-S4-7 (a)). Section 1 has the rulings. Next: S5 (`Party`,
+`Committee`, `Certificate`, `Params`, `checkCert`).
 
 ## 1. Rulings
 
@@ -78,6 +80,13 @@ rulings. Next: S4 (`Amount`, `List`, `Outcome`, `outcome`).
 | 2026-11-06 | Q-S2-4 "(a) Keep in S2 (Recommended)": the state and history part of the kernel (`state`, `REFUSE_STATE`, `REFUSE_HISTORY_WRITE`) stays byte equal to a46d5df. A later slice can cut it. Edits: section 12 (S2). | USER, S2 |
 | 2026-11-06 | Q-S3-1 "(a) Take 71f2c22 files (Recommended)": `docs/host/CAPABILITY.md` and `docs/host/README.md` come from ratify-lang 71f2c22 with one name edit (CAPABILITY.md line 6, "gavel-lang S3"). Edits: section 12 (S3). | USER, S3 |
 | 2026-11-06 | Q-S3-2 "(a) Gavel S3 status (Recommended)": the README.md status line and the AGENTS.md section "State at S3" give the S3 state in gavel-lang words, on the model of ratify-lang 71f2c22 README.md lines 13 to 18 and AGENTS.md lines 6 to 14. Edits: README.md, AGENTS.md. | USER, S3 |
+| 2026-11-06 | Q-S4-1 "(a) Inductive (Recommended)": `family Amount := amZero | amSucc (amPred : Amount)` in `domain/domain.lang`, so A1, A2 and A4 are proofs by elim and stay DISCHARGED. In a program, an elim, a fold or a projection of `Amount`, or `amSucc` on a term that is not a literal, gives `REFUSE_AMOUNT`: a program uses only `amLe`, `amSelect`, `amMax` and `amMin`. Edits: sections 12 (S4), 13 (OI-21). | USER, S4 |
+| 2026-11-06 | Q-S4-2 "(a) Bids family (Recommended)": `family Bids := bdNil | bdCons (bdHead : Amount) (bdTail : Bids)`, the free monoid at `Amount`. The section 3 `List` row reads as `Bids`; the core `List` is kit only. Edits: sections 3, 12 (S4). | USER, S4 |
+| 2026-11-06 | Q-S4-3 "(a) Domain keeps it (Recommended)": the domain owns `Outcome` and `outcome`. The kernel signature slot `Outcome` becomes `DaoOutcome` in `src/front/check.c`, in the DAO prelude of `src/front/front.c` and in 23 `.lang` files; the code of each row stays the same. The guest `outcome` rename was not necessary. Edits: sections 12 (S4), 13 (OI-23). | USER, S4 |
+| 2026-11-06 | Q-S4-4 "(a) Rule + reserve (Recommended)": `family Rule := firstPrice | secondPrice` and `outcome : Rule -> Amount -> Bids -> Outcome` (the rule, the reserve, the bids). At S5, `outcomeOf (p : Params)` gives the DESIGN.md form. Edits: section 12 (S4). | USER, S4 |
+| 2026-11-06 | Q-S4-5 "(a) Reserve floor (Recommended)": `family Outcome := noSale | sale (slWinner : Size) (slPrice : Amount)`, with a 0-based winner index into `Bids`. A bid below the reserve is dropped. First price: the price is the winner bid. Second price: the price is the larger of the reserve and the second highest eligible bid. No eligible bid gives `noSale`. Edits: sections 6 (A2), 12 (S4). | USER, S4 |
+| 2026-11-06 | Q-S4-6 "(a) 1024 bids (Recommended)": a closed `Bids` value with more than 1024 bids in a def type or a def body gives `REFUSE_BOUND` (`BID_LIST_BOUND` in `src/front/check.c`). An open input list passes at check time; the T1 entry bounds it at S9. Edits: sections 12 (S4), 13 (OI-22). | USER, S4 |
+| 2026-11-06 | Q-S4-7 "(a) General in domain (Recommended)": the general A1, A2 and A4 terms (`Path` types, proofs by elim on `Bids` and `Amount`) are in `domain/domain.lang`. `examples/auction.lang` has the closed `refl` rows and the eval rows. Edits: section 12 (S4). | USER, S4 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -164,7 +173,7 @@ The formers that the design needs (Q-S0-3):
 |---|---|---|---|
 | `Log` | CM (indexed) | The free category on accepted entries (amendments, admitted bids, slash entries, releases). `nil` is the unit, `cons e log` adds one cell, `append` is the bind. G4 is a path by induction. | sec 4, sec 5 |
 | `Machine` | CC (dual of `Log`) | The cofree comonad of `Entry -> _`: a Moore machine. `eps` is the `Params` at the current height; `step` moves one height. `paramsAt h` is `eps` after h steps. | sec 5 |
-| `List` | CM | The free monoid. The bid list of one auction. | sec 4 |
+| `Bids` | CM | The free monoid at `Amount`, `family Bids`: the bid list of one auction. The core `List` is kit only (Q-S4-2 (a)). | sec 4 |
 | `Sealed a`, `Share a` | CM, no cells | The identity monad at a base type: `seal` and `share` are the unit, and the denotation is the value. The parameter is a base type only (`Amount`, `Bool`). No projection to `a` exists outside `release` (P1). | sec 3, sec 4 |
 | `Proof R x` | none (a base sort) | A proposition-indexed sort: the meaning is the claim that a witness exists. | sec 3 |
 | `Protocol a b` | none (a base sort) | The meaning is the ideal functionality. Composition holds only up to indistinguishability, so it is ASSUMED (section 6). | sec 7 |
@@ -250,7 +259,7 @@ discharged.
 | G5 | Causality: an entry reads only earlier `Params` | DISCHARGED | by construction (ratify-lang O10) |
 | G6 | At most one entry for each height | EXTERNAL | G3 and honest single signing (ratify-lang O11) |
 | A1 | First price: the winner bid is at least each bid; the price is the winner bid | DISCHARGED | path by induction on the list |
-| A2 | Second price: the price is the second highest bid, at most the winner bid | DISCHARGED | path by induction on the list |
+| A2 | Second price: the price is the larger of the reserve and the second highest eligible bid, at most the winner bid (Q-S4-5 (a)) | DISCHARGED | path by induction on the list |
 | A3 | Under second price, a true bid is a dominant strategy | EXTERNAL | auction-lang theorem (name only) |
 | A4 | Tie-break: equal top bids give the lowest index | DISCHARGED | definition of `outcome` |
 | F1 | FHE exactness for `outcome` | AT TARGET (T3) | a static depth bound for each circuit |
@@ -431,8 +440,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S1 | The USER rules section 14 and Q-S1-1 to Q-S1-10. Section 1 has the rulings. | DONE |
 | S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a), Q-S2-1 (a) to Q-S2-4 (a)): ratify-lang a46d5df, name edits only, no R0. Gate: 29 examples, 17 parse refusals, 154 check refusals, 10 kit-only refusals, 1 time hint, 78 evals, 1 build refusal; the review, domain and path regressions pass. Mutants M1 (path ends), M2 (glue face), M3 (universe level): KILLED. | DONE |
 | S3 | Port the ratify-lang 71f2c22 R0 delta (Q-S3-1 (a), Q-S3-2 (a)): R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build, with the IR rows, the Wasm modules and the differential cases (OI-20). Gate: 30 examples, 17 parse refusals, 158 check refusals, 10 kit-only refusals, 1 time hint, 79 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 33 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. These are the 71f2c22 counts: the 71f2c22 `test/gate.sh` line 287 has `test/ir/proof-trap.lang` in the Wasm and differential rows (an earlier ratify-lang S3 run had 32 modules and 958 cases). Mutants M1, M2 (`REFUSE_PARTIAL`), M3 (the div guard of the no-trap tool), M4 (`flag_norm`): KILLED. M5 (the `br_table` default) and M6 (the IF condition): equivalent. | DONE |
-| S4 | `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4; `REFUSE_AMOUNT`, `REFUSE_BOUND`. | NEXT |
-| S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | |
+| S4 | `Amount`, `Bids`, `Rule`, `Outcome`, `outcome` (Q-S4-1 (a) to Q-S4-7 (a)); A1, A2, A4 in `domain/domain.lang`; `REFUSE_AMOUNT`, `REFUSE_BOUND`; the kernel slot `DaoOutcome` (OI-23). Gate: 32 examples, 17 parse refusals, 163 check refusals, 10 kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. `test/gate.sh` builds a Wasm module for each `examples/*.lang` file, so the two new examples add two modules. Mutants M1 (the `REFUSE_AMOUNT` site), M2 (the `REFUSE_BOUND` site), M3 (`amMax`, A1), M4 (`bdSecond`, A2), M5 (the `bdArg` tie-break, A4): KILLED. | DONE |
+| S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | NEXT |
 | S6 | `AucID`, `Slot`, `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`. | |
 | S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | |
 | S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | |
@@ -500,6 +509,17 @@ One session for each slice: scope, gate, mutants, docs, close.
   `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build,
   and the gate has the IR rows, 33 Wasm modules and 998 differential cases
   with 0 mismatches (the kit had 13 modules and 813 cases).
+- OI-21 `Amount` is a unary family in the kernel (Q-S4-1 (a)). A program
+  uses only `amLe`, `amSelect`, `amMax` and `amMin`, so T1 can lower
+  `Amount` to a fixed-width word with only these four operations. The T1
+  slice fixes the width and the input check.
+- OI-22 An open bid list (an input) passes the check at any length; only a
+  closed `Bids` value with more than 1024 bids gives `REFUSE_BOUND`
+  (Q-S4-6 (a)). The T1 entry bounds the input list (S9).
+- OI-23 The kernel signature slot `Outcome` is `DaoOutcome` from S4
+  (Q-S4-3 (a)): in `src/front/check.c`, in the DAO prelude of
+  `src/front/front.c` and in 23 `.lang` files. A port from ratify-lang or
+  permit-lang must apply the same rename.
 
 ## 14. Questions for the USER (S0)
 

@@ -1,0 +1,11 @@
+-- The bid list bound (S4, USER ruling Q-S4-6 (a)), guest mode: a closed
+-- Bids value with exactly 1024 bids passes. test/check/bound-over.lang has
+-- 1025 bids and gives REFUSE_BOUND. An open list (addBid1024 itself) passes
+-- at check time; the T1 entry bounds it (S9).
+def addBid : Bids -> Bids := fun (b : Bids) => bdCons amZero b
+def addBid4 : Bids -> Bids := fun (b : Bids) => addBid (addBid (addBid (addBid b)))
+def addBid16 : Bids -> Bids := fun (b : Bids) => addBid4 (addBid4 (addBid4 (addBid4 b)))
+def addBid64 : Bids -> Bids := fun (b : Bids) => addBid16 (addBid16 (addBid16 (addBid16 b)))
+def addBid256 : Bids -> Bids := fun (b : Bids) => addBid64 (addBid64 (addBid64 (addBid64 b)))
+def addBid1024 : Bids -> Bids := fun (b : Bids) => addBid256 (addBid256 (addBid256 (addBid256 b)))
+def edge : Bids := addBid1024 bdNil

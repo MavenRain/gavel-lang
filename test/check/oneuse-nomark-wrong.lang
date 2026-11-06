@@ -3,14 +3,14 @@
 -- examples/oneuse.lang up to castOr, with that change, and oneUseL.
 def Member : Type 0 := Sum Unit Unit
 def Choice : Type 0 := Sum Unit Unit
-def Outcome : Type 0 := Trunc0 Choice
+def DaoOutcome : Type 0 := Trunc0 Choice
 def Group : Type 0 := Sum Unit Unit
 def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
 def act : Group -> (Member -> Choice) -> Member -> Choice :=
   fun (g : Group) (f : Member -> Choice) (m : Member) => either (fun (u : Unit) => f m) (fun (u : Unit) => flip (f m)) g
-def outcomeSet : isSet Outcome := fun (x : Outcome) (y : Outcome) (p : Path Outcome x y) (q : Path Outcome x y) => fun (i : I) => fun (j : I) => squash0 Choice x y p q i j
+def outcomeSet : isSet DaoOutcome := fun (x : DaoOutcome) (y : DaoOutcome) (p : Path DaoOutcome x y) (q : Path DaoOutcome x y) => fun (i : I) => fun (j : I) => squash0 Choice x y p q i j
 def keepCon : Constitution := pack (fun (c : Config) => trunc0 Choice (inl unit)) (fun (g : Group) (c : Config) => refl)
-def menu : Outcome -> Constitution := fun (o : Outcome) => keepCon
+def menu : DaoOutcome -> Constitution := fun (o : DaoOutcome) => keepCon
 
 -- The key image of a member: one per member per poll (PLAN section 6), and the guest poll id is 0 (USER ruling Q5).
 def KeyImage : Type 0 := Member

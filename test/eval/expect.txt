@@ -77,3 +77,7 @@ cocell dupAt1 => szS sz0
 oppos lenEmpty => 0
 oppos lenOne => 1
 oppos lenTwo => 2
+auction firstOf => sale (szS sz0) (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))
+auction secondOf => sale (szS sz0) (amSucc (amSucc (amSucc amZero)))
+auction tieOf => sale sz0 (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))
+auction noneOf => noSale

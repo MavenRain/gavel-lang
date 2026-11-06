@@ -1,0 +1,2 @@
+-- REFUSE_AMOUNT (S4, Q-S4-1 (a)): amSucc on a term that is not a literal is arithmetic on an Amount
+def bump : Amount -> Amount := fun (a : Amount) => amSucc a

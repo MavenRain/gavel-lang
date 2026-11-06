@@ -3800,7 +3800,7 @@ typedef struct {
 static const SigRow SIGNATURE[] = {
   {"Member", SIG_TYPE, SIG_SLOT},
   {"Choice", SIG_TYPE, SIG_SLOT},
-  {"Outcome", SIG_TYPE, SIG_SLOT},
+  {"DaoOutcome", SIG_TYPE, SIG_SLOT},
   {"Group", SIG_TYPE, SIG_SLOT},
   {"Config", SIG_TYPE, SIG_DEFINED},
   {"Orbit", SIG_TYPE, SIG_DEFINED},
@@ -3827,7 +3827,7 @@ static const Term SIG_STEP = {TERM_PI, 0, 0, NULL, 0, &SIG_CONFIG, &SIG_CONFIG};
 static const Term SIG_ACT = {TERM_PI, 0, 0, NULL, 0, &SIG_GROUP, &SIG_STEP};
 
 /* The slot types of outcomeSet (USER ruling S7 Q2) and menu (Q3). */
-static const Term SIG_OUTCOME = {TERM_VAR, 0, 0, "Outcome", 0, NULL, NULL};
+static const Term SIG_OUTCOME = {TERM_VAR, 0, 0, "DaoOutcome", 0, NULL, NULL};
 static const Term SIG_IS_SET = {TERM_VAR, 0, 0, "isSet", 0, NULL, NULL};
 static const Term SIG_OUTCOME_SET = {TERM_APP, 0, 0, NULL, 0, &SIG_IS_SET, &SIG_OUTCOME};
 static const Term SIG_CONSTITUTION = {TERM_VAR, 0, 0, "Constitution", 0, NULL, NULL};
@@ -3846,8 +3846,8 @@ typedef struct {
 
 static const OpSlot OP_SLOTS[] = {
   {"act", &SIG_ACT, {"Member", "Choice", "Group"}, NULL, "Group -> (Member -> Choice) -> Member -> Choice, after Member, Choice and Group"},
-  {"outcomeSet", &SIG_OUTCOME_SET, {"Outcome", NULL, NULL}, NULL, "isSet Outcome, after Outcome"},
-  {"menu", &SIG_MENU, {"Outcome", NULL, NULL}, "Constitution", "Outcome -> Constitution, after Outcome and the DAO prelude"}
+  {"outcomeSet", &SIG_OUTCOME_SET, {"DaoOutcome", NULL, NULL}, NULL, "isSet DaoOutcome, after DaoOutcome"},
+  {"menu", &SIG_MENU, {"DaoOutcome", NULL, NULL}, "Constitution", "DaoOutcome -> Constitution, after DaoOutcome and the DAO prelude"}
 };
 
 #define OP_SLOT_COUNT ((uint32_t)(sizeof OP_SLOTS / sizeof OP_SLOTS[0]))
@@ -4000,6 +4000,253 @@ static int law_type(Machine *m, uint32_t level, uint32_t trunc, const Value *t) 
   return t != NULL && (t->kind == VAL_PATHP || is_family(t, trunc));
 }
 
+/* Q-S4-1 (a): the constructor index of NAME, or UINT32_MAX. */
+static uint32_t bound_ctor(const Machine *m, const char *name) {
+  uint32_t i;
+  for (i = 0; i < m->ctor_count; i++) {
+    if (m->ctors[i].name != NULL && strcmp(m->ctors[i].name, name) == 0)
+      return i;
+  }
+  return UINT32_MAX;
+}
+
+/* 1 if the core term T is a closed Amount literal: amZero, or amSucc of a
+   literal. */
+static int amount_literal(uint32_t zero, uint32_t succ, const Core *t) {
+  while (t != NULL && t->kind == CORE_OP && t->op == OP_CTOR && t->inst == succ && t->argc == 1u)
+    t = t->args[0];
+  return t != NULL && t->kind == CORE_OP && t->op == OP_CTOR && t->inst == zero;
+}
+
+/* Q-S4-1 (a): 1 if T has an elim, a fold or a projection of Amount, or
+   amSucc on a term that is not a literal (the law_uses walk). A global is
+   not entered: the domain operations read an Amount for the program. */
+static int amount_uses(const Machine *m, uint32_t fam, uint32_t zero, uint32_t succ, const Core *t) {
+  uint32_t i;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_GLOBAL:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+  case CORE_APP:
+  case CORE_PLAM:
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    return amount_uses(m, fam, zero, succ, t->a) || amount_uses(m, fam, zero, succ, t->b);
+  case CORE_PATHP:
+  case CORE_PAPP:
+    return amount_uses(m, fam, zero, succ, t->a) || amount_uses(m, fam, zero, succ, t->b) || amount_uses(m, fam, zero, succ, t->args[0]) || amount_uses(m, fam, zero, succ, t->args[1]);
+  case CORE_OP:
+    break;
+  }
+  if ((t->op == OP_FOLD_FAMILY && t->inst == fam) || (t->op == OP_ELIM && t->field == fam + 1u) || (t->op == OP_PROJ && m->ctors[t->inst].family == fam))
+    return 1;
+  if (t->op == OP_CTOR && t->inst == succ)
+    return !amount_literal(zero, succ, t);
+  for (i = 0; i < t->argc; i++) {
+    if (amount_uses(m, fam, zero, succ, t->args[i]))
+      return 1;
+  }
+  return 0;
+}
+
+/* Q-S4-1 (a): 1 if the written type or the body reads an Amount. The
+   quoted type is not walked: a program may state a law at an open amount
+   (amMax x y in a Path type normalizes to an elim). */
+static int amount_read(const Machine *m, const Core *type, const Core *body) {
+  uint32_t fam = find_family(m, "Amount");
+  uint32_t zero = bound_ctor(m, "amZero");
+  uint32_t succ = bound_ctor(m, "amSucc");
+  return fam != NO_FAMILY && (amount_uses(m, fam, zero, succ, type) || amount_uses(m, fam, zero, succ, body));
+}
+
+/* Q-S4-6 (a): the largest closed bid list. */
+#define BID_LIST_BOUND 1024u
+
+/* The number of bids in the closed Bids value V, saturated at
+   BID_LIST_BOUND + 1; 0 when the spine ends in a neutral value. */
+static uint64_t bid_count(const Machine *m, const Value *v) {
+  uint32_t nil = bound_ctor(m, "bdNil");
+  uint32_t cons = bound_ctor(m, "bdCons");
+  uint64_t n = 0;
+  uint64_t cap = (uint64_t)BID_LIST_BOUND + 1u;
+  while (v != NULL && val_is(v, OP_CTOR) && v->inst == cons && v->argc >= 2u) {
+    if (n < cap)
+      n++;
+    v = v->args[v->argc - 1u];
+  }
+  return v != NULL && val_is(v, OP_CTOR) && v->inst == nil ? n : 0;
+}
+
+static int bids_over(const Machine *m, const Value *v) {
+  return bid_count(m, v) > BID_LIST_BOUND;
+}
+
+/* Q-S4-6 (a): 1 when the type T holds a closed Bids value above the bound.
+   The walk enters closures at fresh variables (the ratify c19574d
+   bound_over shape); a constructor value of Bids is counted, another
+   constructor value is entered through its arguments. */
+static int bound_over(Machine *m, uint32_t level, uint32_t bids, const Value *t) {
+  uint32_t i;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case VAL_PI:
+  case VAL_SIGMA:
+    return bound_over(m, level, bids, t->dom) || bound_over(m, level + 1u, bids, closure_apply(m, t, val_var(m, level)));
+  case VAL_LAM:
+    return bound_over(m, level + 1u, bids, closure_apply(m, t, val_var(m, level)));
+  case VAL_PLAM:
+    return bound_over(m, level + 1u, bids, closure_apply(m, t, val_ivar(m, level)));
+  case VAL_PATHP:
+    if (bound_over(m, level + 1u, bids, closure_apply(m, t, val_ivar(m, level))))
+      return 1;
+    break;
+  case VAL_APP:
+  case VAL_PAPP:
+    if (bound_over(m, level, bids, t->dom) || bound_over(m, level, bids, t->arg))
+      return 1;
+    break;
+  case VAL_OP:
+    if (t->op == OP_CTOR && m->ctors[t->inst].family == bids)
+      return bids_over(m, t);
+    break;
+  case VAL_STUCK:
+    break;
+  case VAL_NAT:
+  case VAL_UNIV:
+  case VAL_VAR:
+  case VAL_IVAL:
+    return 0;
+  }
+  for (i = 0; i < t->argc; i++) {
+    if (bound_over(m, level, bids, t->args[i]))
+      return 1;
+  }
+  return 0;
+}
+
+/* Skip terms with no dependency on Bids, including through globals. The
+   cache avoids repeatedly entering shared definitions in large proofs. */
+static int bids_uses(const Machine *m, uint32_t bids, unsigned char *seen, const Core *t) {
+  uint32_t i;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_GLOBAL:
+    if (seen[t->index] == 0u) {
+      seen[t->index] = 1u;
+      if (bids_uses(m, bids, seen, m->defs[t->index].body))
+        seen[t->index] = 2u;
+    }
+    return seen[t->index] == 2u;
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+  case CORE_APP:
+  case CORE_PLAM:
+  case CORE_PATHP:
+  case CORE_PAPP:
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    if (bids_uses(m, bids, seen, t->a) || bids_uses(m, bids, seen, t->b))
+      return 1;
+    break;
+  case CORE_OP:
+    if (((t->op == OP_FAMILY || t->op == OP_FOLD_FAMILY) && t->inst == bids)
+      || ((t->op == OP_CTOR || t->op == OP_PROJ) && m->ctors[t->inst].family == bids)
+      || (t->op == OP_ELIM && t->field == bids + 1u))
+      return 1;
+    break;
+  }
+  for (i = 0; i < t->argc; i++) {
+    if (bids_uses(m, bids, seen, t->args[i]))
+      return 1;
+  }
+  return 0;
+}
+
+/* Inspect written subterms before evaluation can discard a closed list.
+   Binders keep their variables neutral, so an open list still passes. */
+static int bound_syntax(Machine *m, const Env *env, uint32_t level, const Core *t) {
+  uint32_t i;
+  if (t == NULL)
+    return 0;
+  switch (t->kind) {
+  case CORE_VAR:
+  case CORE_NAT:
+  case CORE_UNIV:
+  case CORE_IZERO:
+  case CORE_IONE:
+    return 0;
+  case CORE_LAM:
+  case CORE_PI:
+  case CORE_SIGMA:
+    return bound_syntax(m, env, level, t->a)
+      || bound_syntax(m, env_push(m, env, val_var(m, level)), level + 1u, t->b);
+  case CORE_PLAM:
+  case CORE_PATHP:
+    if (bound_syntax(m, env_push(m, env, val_ivar(m, level)), level + 1u, t->b))
+      return 1;
+    for (i = 0; i < t->argc; i++) {
+      if (bound_syntax(m, env, level, t->args[i]))
+        return 1;
+    }
+    return 0;
+  case CORE_INEG:
+  case CORE_IMEET:
+  case CORE_IJOIN:
+    return bound_syntax(m, env, level, t->a) || bound_syntax(m, env, level, t->b);
+  case CORE_APP:
+  case CORE_PAPP:
+    if (bound_syntax(m, env, level, t->a) || bound_syntax(m, env, level, t->b))
+      return 1;
+    break;
+  case CORE_GLOBAL:
+  case CORE_OP:
+    break;
+  }
+  for (i = 0; i < t->argc; i++) {
+    if (bound_syntax(m, env, level, t->args[i]))
+      return 1;
+  }
+  return bids_over(m, eval_core(m, env, t));
+}
+
+/* Q-S4-6 (a): closed lists in types, nested values and body subterms. */
+static int bound_def(Checker *c, const Value *tv, const Core *type, const Core *body) {
+  uint32_t bids = find_family(c->m, "Bids");
+  unsigned char *seen;
+  if (bids == NO_FAMILY)
+    return 0;
+  seen = arena_alloc(c->m->arena, (size_t)c->m->def_count + 1u);
+  if (seen == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  memset(seen, 0, (size_t)c->m->def_count + 1u);
+  if (!bids_uses(c->m, bids, seen, type) && !bids_uses(c->m, bids, seen, body))
+    return 0;
+  return bound_over(c->m, c->level, bids, tv)
+    || bound_syntax(c->m, c->env, c->level, type)
+    || bound_syntax(c->m, c->env, c->level, body)
+    || bound_over(c->m, c->level, bids, here(c, body));
+}
+
 /* Register a checked body, including the closed label cores retained by
    cocell_shape. Both callers obtain BODY from the term checker. */
 static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core *syntax_type, const Core *body) {
@@ -4022,6 +4269,18 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   law = program ? law_uses(m, trunc, syntax_type) || law_uses(m, trunc, tc) || law_uses(m, trunc, body) : d->is_law;
   if (law && guest(c) && !law_type(m, c->level, trunc, tv))
     return FAIL(c, "REFUSE_LAW", "%s uses a law-only name (decrypt, observe, an elim, fold or projection of a sealed family) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
+  /* Q-S4-1 (a): a guest program reads an Amount only through amLe, amSelect,
+     amMax and amMin. The domain file is exempt (program), as is kit mode. */
+  if (program && guest(c) && amount_read(m, syntax_type, body))
+    return FAIL(c, "REFUSE_AMOUNT", "%s reads an Amount by an elim, a fold, a projection or amSucc on a term that is not a literal; a program uses only amLe (compare), amSelect (select), amMax (max) and amMin (second max); Q-S0-1 (a), Q-S4-1 (a)", d->name);
+  /* Q-S4-6 (a): a closed bid list has at most 1024 bids. */
+  if (program && guest(c)) {
+    int over = bound_def(c, tv, syntax_type, body);
+    if (m->diag->code != NULL)
+      return 0;
+    if (over)
+      return FAIL(c, "REFUSE_BOUND", "%s has a closed bid list with more than 1024 bids; an open list passes and the T1 entry bounds it; Q-S4-6 (a)", d->name);
+  }
   info->name = d->name;
   info->origin = d->origin;
   info->body = body;
