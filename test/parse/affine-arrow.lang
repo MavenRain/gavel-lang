@@ -1,0 +1,2 @@
+-- S2: the affine arrow is not in gavel-lang (no affine layer, Q-S0-14 (a)).
+def f : (x : S1) -o S1 := fun (x : S1) => x

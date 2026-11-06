@@ -18,8 +18,10 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S1 (rulings): section 1 has the USER rulings on Q-S0-1 to
-Q-S0-28 and Q-S1-1 to Q-S1-10. Next: S2 (port the ratify-lang kernel).
+Status: S2 (kernel port): the Cubical TT kernel of ratify-lang a46d5df (a
+port of permit-lang 3d47120) is in, without R0 and the domain words
+(Q-S0-14 (a), Q-S2-1 (a), Q-S2-2 (a)). Section 1 has the rulings. Next: S3
+(R0 in the kernel and the Wasm writer, ratify-lang 71f2c22).
 
 ## 1. Rulings
 
@@ -70,6 +72,10 @@ Q-S0-28 and Q-S1-1 to Q-S1-10. Next: S2 (port the ratify-lang kernel).
 | 2026-11-05 | Q-S1-8 "(a) Noir proof per share (Recommended)": each member gives a Noir proof that its TFHE share is the partial decryption under its committed key share with bounded noise. T2 exports the relation; the in-module Noir verifier checks it. Edits: section 6 (Z5), 8.2 (T2, T3), 12 (S12). | USER, S1 |
 | 2026-11-05 | Q-S1-9 "(b) TCP links": in member mode `gaveld` opens TCP links to the other members, with TLS by a proxy. Not the recommendation. Edits: section 2, 6 (M2), 8.3, 9 (USER steps), 12 (S14c), 13 (OI-18). | USER, S1 |
 | 2026-11-05 | Q-S1-10 "(a) OS seed per run (Recommended)": in member mode `gaveld` reads 32 bytes from the OS (getentropy) for each run and gives them to the module as an input; the prelude expands them with ChaCha20 on `Word`. Edits: section 2, 6 (M3), 8.3, 12 (S8c). | USER, S1 |
+| 2026-11-06 | Q-S2-1 "(a) ratify a46d5df (Recommended)": the port base is ratify-lang a46d5df (its S2 kernel commit), with name edits only. S3 takes the 71f2c22 R0 delta. The ratify-lang S4 to S7 domain parts are not ported. Edits: sections 11, 12. | USER, S2 |
+| 2026-11-06 | Q-S2-2 "(a) Accept until S3 (Recommended)": `src/front/lower.c`, `src/wasm.c` and `src/ir.h` stay at the kit text and out of the build. `langc build` gives `REFUSE_LOWER` "target pending S3". The IR rows, the Wasm modules and the differential cases come back at S3. Edits: sections 12, 13 (OI-20). | USER, S2 |
+| 2026-11-06 | Q-S2-3 "(a) Keep as refusals (Recommended)": the four affine rows stay as parse or check refusals: affine-arrow.lang (`LEX_CHAR`), affine-budget.lang and affine-unpack.lang (`NAME_UNKNOWN`), affine-mult.lang (`TYPE_MISMATCH`). No affine code. Edits: section 12 (S2). | USER, S2 |
+| 2026-11-06 | Q-S2-4 "(a) Keep in S2 (Recommended)": the state and history part of the kernel (`state`, `REFUSE_STATE`, `REFUSE_HISTORY_WRITE`) stays byte equal to a46d5df. A later slice can cut it. Edits: section 12 (S2). | USER, S2 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -403,7 +409,7 @@ harness. The kit's node differential stays.
 | Source | What | Where |
 |---|---|---|
 | lang-template 5265a2a | the tcc-wasm kit | `hosts/tcc-wasm` |
-| ratify-lang 796f442 | R0, R1, the governance layer, the kernel, `test/notraptool.c`, the Wasm engine; not its host-import ABI (Q-S0-13 (b)) | docs/PLAN.md; seed 55310c5 docs/PLAN.md lines 43 to 128 |
+| ratify-lang a46d5df, 71f2c22, 796f442 | a46d5df (S2, Q-S0-14 (a), Q-S2-1 (a)): the Cubical TT kernel, a port of permit-lang 3d47120 without R0, the affine layer and the domain words: `src/front/`, `src/main.c`, `test/fronttool.c`, `test/pathtool.c`, `test/review.sh`, `test/gate.sh`, `domain/domain.lang` and the kernel rows. 71f2c22 (S3): the R0 reading, `REFUSE_PARTIAL`, `src/wasmop.h`, the no-trap Wasm writer, `test/notraptool.c`, the trap row. 796f442: R1, the governance layer, the Wasm engine; not its host-import ABI (Q-S0-13 (b)) | docs/PLAN.md; seed 55310c5 docs/PLAN.md lines 43 to 128; S2 surveyed the kernel; S3 surveys the R0 delta |
 | sealed-lang 30d4d5f | the eligibility relation, hu, cm, `slashUsr` on chain | SPEC.md |
 | quorum-lang 8d1a113 | `src/crypto` (bn254, elgamal, bgw, dkg): the reference of the guest prelude and a C oracle in the gate (Q-S1-3 (b)) | src/crypto |
 | Wang, Ranellucci, Katz (CCS 2017) | WRK authenticated garbling (Q-S1-1 (b)); no sibling source | the paper |
@@ -419,8 +425,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 |---|---|---|
 | S0 | Seed from tcc-wasm, DESIGN.md and the digest, this plan, README table, AGENTS.md; gate EXIT 0; seed commit; private repo | DONE |
 | S1 | The USER rules section 14 and Q-S1-1 to Q-S1-10. Section 1 has the rulings. | DONE |
-| S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a)). Survey first. | NEXT |
-| S3 | R0 in the kernel and the Wasm writer: `REFUSE_PARTIAL`, `test/notraptool.c`, the trap row (OI-4). | |
+| S2 | Port the ratify-lang Cubical TT kernel (8.1, Q-S0-14 (a), Q-S2-1 (a) to Q-S2-4 (a)): ratify-lang a46d5df, name edits only, no R0. Gate: 29 examples, 17 parse refusals, 154 check refusals, 10 kit-only refusals, 1 time hint, 78 evals, 1 build refusal; the review, domain and path regressions pass. Mutants M1 (path ends), M2 (glue face), M3 (universe level): KILLED. | DONE |
+| S3 | Port the ratify-lang 71f2c22 R0 delta: R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` come back into the build, with the IR rows, the Wasm modules and the differential cases (OI-20). | NEXT |
 | S4 | `Amount`, `List`, `Outcome`, `outcome`; A1, A2, A4; `REFUSE_AMOUNT`, `REFUSE_BOUND`. | |
 | S5 | `Party`, `Committee`, `Certificate`, `Params`, `checkCert`; G1 to G3; `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`. | |
 | S6 | `AucID`, `Slot`, `Hash`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`. | |
@@ -483,6 +489,10 @@ One session for each slice: scope, gate, mutants, docs, close.
 - OI-19 From S18 each gate run needs the network and the USER test inputs
   (Q-S1-5 (a)). A sandboxed session needs the facilitator host on its
   network allowlist.
+- OI-20 The gate gap from S2 to S3 (Q-S2-2 (a)). `src/front/lower.c`,
+  `src/wasm.c` and `src/ir.h` are out of the build, and `langc build` gives
+  `REFUSE_LOWER` "target pending S3". Until S3 the gate has no IR rows, no
+  Wasm modules and no differential cases. S3 closes it.
 
 ## 14. Questions for the USER (S0)
 

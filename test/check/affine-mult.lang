@@ -1,0 +1,2 @@
+-- S2: binder multiplicities are not in gavel-lang (no affine layer, Q-S0-14 (a)).
+def g : (x : S1) -> S1 := fun (x : S1) => x @1

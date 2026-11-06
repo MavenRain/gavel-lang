@@ -1,0 +1,2 @@
+-- S2: unpack is not in gavel-lang (no affine layer, Q-S0-14 (a)).
+def h : (x : S1) -> S1 := fun (x : S1) => unpack x
