@@ -1,13 +1,12 @@
 # gavel-lang status
 
-The build implements slice S6 of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S7 of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
 Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
-(Q-S6-1 (b) to Q-S6-9 (a)). It does not complete M0. The next slice is
-S7: `Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
-`paramsAt` and `replay`.
+(Q-S6-1 (b) to Q-S6-9 (a)) and the log (Q-S7-1 (a) to Q-S7-10 (a)). It
+does not complete M0. The next slice is S8: the crypto prelude part 1.
 
 ## Implemented
 
@@ -48,6 +47,17 @@ S7: `Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
   not check, gives `REFUSE_PEEK`. A `prOrder` field that does not check
   gives `REFUSE_DEADLINE`. A closed `SealedBids` or `Handles` list with
   more than 1024 entries gives `REFUSE_BOUND`.
+- The log in `domain/domain.lang` (S7): `Ballot`, `Ballots`, `Amendment`,
+  `authorize`, `amendCheck`, `Entry` (`enAmend`, `enSlash`, `enAdmit`),
+  `Log` (`lgNil`, `lgCons`), `append`, `paramsAt`, `Machine`, `Verdicts`,
+  `replay` and `slashedOf`. G4 is `appendNilL`, `appendNilR` and
+  `appendAssoc`. G5 is the type of the proof field `eaOk` of `enAmend`: an
+  `eaOk` that does not check gives `REFUSE_FIXPOINT`. P3 on the log is
+  `p3Replay`. A name from `now`, `block`, `timestamp`, `time`, `clock`,
+  `epoch`, `deadline`, `timeout` and `expires` gives `REFUSE_CLOCK`: time
+  is the log height. A closed `Ballots` list with more than 1024 ballots
+  gives `REFUSE_BOUND`. The S7 word is `amendCheck`, not `amend`, because
+  the DAO prelude has a word `amend`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -55,18 +65,18 @@ S7: `Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 36 examples, 17 parse refusals, 177 check refusals, 10
-  kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir
+- The gate: 37 examples, 17 parse refusals, 182 check refusals, 10
+  kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir
   refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine
-  evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches;
+  evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S7 to S8c: the governance and crypto layers of `docs/PLAN.md` section
-   12 (`Log`, `Machine`, the crypto prelude). Each slice needs the slice
-   before it; S7 needs the S6 commit first.
+1. S8 to S8c: the crypto layers of `docs/PLAN.md` section 12 (the crypto
+   prelude). Each slice needs the slice before it; S8 needs the S7 commit
+   first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
@@ -88,12 +98,13 @@ S7: `Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
   (OI-26).
 - G3 sets no upper law on ta. A ta above n - f stops the amendments by
   the honest members (OI-24).
-- `elgVrf` is an ideal check until S8b (OI-28). The slashed set `Handles`
-  is an input of `admit` until S7 (OI-29). The message pairing is the
+- `elgVrf` is an ideal check until S8b (OI-28). The message pairing is the
   abstract Cantor code until S8 (OI-30). `Sealed` is the clear denotation
   of the ciphertext and the shares until S13 and S14 (OI-31).
-- `szLe` calls `ih` in its inner elim step, so it is slow on large values.
-  It is only used on small values (OI-34).
+- A release is outside the Log (OI-35). The Log and `Verdicts` have no
+  bound; only `Ballots` has one (OI-36).
+- In a guest program, `amSucc` applies only to a literal Amount
+  (`REFUSE_AMOUNT`). `examples/log.lang` uses literal Amounts.
 
 ## Internal boundaries
 

@@ -85,3 +85,6 @@ partial-name.lang
 partial-option.lang
 partial-option-arg.lang
 partial-zero.lang
+time-deadline.lang
+time-expires.lang
+time-timeout.lang

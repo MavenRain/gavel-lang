@@ -1,0 +1,17 @@
+-- REFUSE_FIXPOINT (S7, Q-S7-6 (a)): the eaOk field of an Entry is the amend
+-- rule. With no ballots the earlier Params do not accept the amendment, so
+-- refl is not a proof of eaOk and the entry is refused.
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def p0 : Party := party sz0
+def p1 : Party := party s1
+def p2 : Party := party s2
+def p3 : Party := party s3
+def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
+def board : Committee := committee members s3 s1 refl refl
+def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
+def setup2 : Params := params (prRule setup) (amSucc amZero) (prCommittee setup) (szS (szS (szS (szS sz0)))) (prSlot setup) (prStampEnd setup) (prRelease setup) refl refl
+def topicA : Hash := amendMsg (amendment sz0 setup2 blNil)
+def certAm : Certificate := ctCons p0 topicA (ctCons p1 topicA (ctCons p2 topicA (ctCons p3 topicA ctNil)))
+def bad : Entry setup setup2 := enAmend setup setup2 sz0 blNil certAm refl

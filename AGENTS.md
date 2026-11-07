@@ -4,6 +4,26 @@ This file is for coding agents that work in this repo or meet gavel-lang
 code. It is a DRAFT at S0. Slice S20 makes it final (`docs/PLAN.md`
 section 12).
 
+## State at S7
+
+- S7 adds the log to `domain/domain.lang`: `Ballot`, `Ballots`,
+  `Amendment`, `authorize`, `amendCheck`, `Entry` (`enAmend`, `enSlash`,
+  `enAdmit`), `Log` (`lgNil`, `lgCons`), `append`, `paramsAt`, `Machine`,
+  `Verdicts`, `replay` and `slashedOf`.
+- The S7 word is `amendCheck`, not `amend`. The DAO prelude has a word
+  `amend`, and a domain word with that name gives `REFUSE_NAME`.
+- G4 is `appendNilL`, `appendNilR` and `appendAssoc`. G5 is the type of the
+  proof field `eaOk` of `enAmend`. An `eaOk` that does not check gives
+  `REFUSE_FIXPOINT` (it was `REFUSE_REC`). A time word (now `deadline`,
+  `timeout` and `expires` too) gives `REFUSE_CLOCK` (it was `REFUSE_TIME`):
+  time is the log height, so use a `Height`. A closed `Ballots` list has at
+  most 1024 ballots (`REFUSE_BOUND`).
+- A guest program cannot apply `amSucc` to a value that is not a literal
+  (`REFUSE_AMOUNT`). `examples/log.lang` uses literal Amounts.
+- `Handles` for `admit` come from the Log through `replay`. A release is
+  outside the Log. The Log has no bound.
+- The rest of the state is as at S6, below.
+
 ## State at S6
 
 - S6 adds the sealed bid to `domain/domain.lang`: `Slot`, `Height`, the

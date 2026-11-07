@@ -1,0 +1,2 @@
+-- REFUSE_CLOCK (S7): `timeout` is a time word; no name can use it.
+def tick : Nat := timeout

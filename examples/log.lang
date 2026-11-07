@@ -1,0 +1,74 @@
+-- S7: the log (Q-S7-1 to Q-S7-10). The committee and the bids of
+-- examples/sealed.lang, then an amendment, the log rows and replay.
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def p0 : Party := party sz0
+def p1 : Party := party s1
+def p2 : Party := party s2
+def p3 : Party := party s3
+def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
+def board : Committee := committee members s3 s1 refl refl
+-- G3 on ta = 3, and the stamp end 1 is before the release 2.
+def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
+def auc : AucID := aucId s1
+def rootA : Root := root (hash s1)
+def rootB : Root := root (hash s2)
+def hA : Handle := handle (hash s1)
+def hB : Handle := handle (hash s2)
+def cmA : Commitment := commitment (hash s1)
+def cmB : Commitment := commitment (hash s2)
+-- The proofs name the root rootA.
+def proofA : EligibilityProof := elgProof rootA hA cmA
+def proofB : EligibilityProof := elgProof rootA hA cmB
+def bidA : SealedBid := sealedBid hA cmA proofA (seal Amount (amSucc (amSucc amZero)))
+def bidB : SealedBid := sealedBid hB cmB (elgProof rootA hB cmB) (seal Amount (amSucc (amSucc (amSucc amZero))))
+def stampA : Hash := stampMsg cmA (height s1)
+def stampLate : Hash := stampMsg cmA (height s2)
+-- Three members certify the stamp of cmA at height 1.
+def certA : Certificate := ctCons p0 stampA (ctCons p1 stampA (ctCons p2 stampA ctNil))
+-- setup2 is setup with the reserve 1 and the amend threshold 4.
+def setup2 : Params := params (prRule setup) (amSucc amZero) (prCommittee setup) (szS (szS (szS (szS sz0)))) (prSlot setup) (prStampEnd setup) (prRelease setup) refl refl
+def topicA : Hash := amendMsg (amendment sz0 setup2 blNil)
+def yesA : Party -> Ballot := fun (p : Party) => ballot p topicA (inr unit)
+def ballotsA : Ballots := blCons (yesA p0) (blCons (yesA p1) (blCons (yesA p2) (blCons (yesA p3) blNil)))
+def certAm : Certificate := ctCons p0 topicA (ctCons p1 topicA (ctCons p2 topicA (ctCons p3 topicA ctNil)))
+def amA : Amendment := amendment sz0 setup2 ballotsA
+-- Four yes ballots and four signers: valid.
+def amendValid : Verdict := amendCheck setup amA certAm
+-- No ballots: not accepted.
+def amendNoBallots : Verdict := amendCheck setup (amendment sz0 setup2 blNil) certAm
+-- Four no ballots: not accepted.
+def amendNoVotes : Verdict := amendCheck setup (amendment sz0 setup2 (blCons (ballot p0 topicA (inl unit)) (blCons (ballot p1 topicA (inl unit)) (blCons (ballot p2 topicA (inl unit)) (blCons (ballot p3 topicA (inl unit)) blNil))))) certAm
+-- One signer only.
+def amendOneSigner : Verdict := amendCheck setup amA (ctCons p0 topicA ctNil)
+-- The log: the amendment, then a slash of hA (cmA and cmB differ), then a
+-- claim of the bid of hA.
+def entryA : Entry setup setup2 := enAmend setup setup2 sz0 ballotsA certAm refl
+def log01 : Log setup setup2 := lgCons setup setup2 setup2 entryA (lgNil setup2)
+def logSA : Log setup2 setup2 := lgCons setup2 setup2 setup2 (enSlash setup2 rootA hA cmA proofA cmB proofB) (lgCons setup2 setup2 setup2 (enAdmit setup2 rootA bidA (height s1) certA) (lgNil setup2))
+def logAll : Log setup setup2 := append setup setup2 setup2 log01 logSA
+-- G4 (closed rows): nil is a unit and append is associative.
+def eNilL : Path (Log setup setup2) (append setup setup setup2 (lgNil setup) log01) log01 := refl
+def eNilR : Path (Log setup setup2) (append setup setup2 setup2 log01 (lgNil setup2)) log01 := refl
+def eAssoc : Path (Log setup setup2) (append setup setup2 setup2 (append setup setup2 setup2 log01 logSA) logSA) (append setup setup2 setup2 log01 (append setup2 setup2 setup2 logSA logSA)) := refl
+-- G5: the Params at the heights 0, 1 and 5, and the machine.
+def at0 : Path Params (paramsAt setup setup2 log01 (height sz0)) setup := refl
+def at1 : Path Params (paramsAt setup setup2 log01 (height s1)) setup2 := refl
+def at5 : Path Params (paramsAt setup setup2 logAll (height (szS (szS (szS (szS (szS sz0))))))) setup2 := refl
+def taAt0 : Size := prAmendT (paramsAt setup setup2 log01 (height sz0))
+def taAt1 : Size := prAmendT (paramsAt setup setup2 log01 (height s1))
+def mach0 : Path Params (sHead Params (machineOf setup setup2 log01)) setup := refl
+def mach1 : Path Params (sHead Params (sTail Params (machineOf setup setup2 log01))) setup2 := refl
+def machTa1 : Size := prAmendT (sHead Params (sTail Params (machineOf setup setup2 log01)))
+-- replay: valid amend, valid slash, then the claim of hA is slashed.
+def replayAll : Verdicts := replay setup setup2 logAll
+def replaySA : Verdicts := replay setup2 setup2 logSA
+def slashedAll : Handles := slashedOf setup setup2 logAll
+-- P3 on the log, closed: two equal commitments.
+def p3Row : Path Verdicts (replay setup2 setup2 (lgCons setup2 setup2 setup2 (enSlash setup2 rootA hA cmA proofA cmA proofA) (lgNil setup2))) (vdCons (invalid notAccepted) vdNil) := p3Replay setup2 rootA hA cmA proofA proofA
+-- OI-24: n = 4, f = 1, t = 2 and ta = 4 > n - f, so the 3 honest members
+-- cannot amend alone.
+def cmOI : Committee := committee (cmMembers (prCommittee setup)) s2 s1 refl refl
+def setupOI : Params := params (prRule setup) (amSucc amZero) cmOI (szS (szS (szS (szS sz0)))) (prSlot setup) (prStampEnd setup) (prRelease setup) refl refl
+def oi24 : Sum Unit Unit := authorize setupOI topicA (blCons (yesA p0) (blCons (yesA p1) (blCons (yesA p2) blNil)))

@@ -5,7 +5,7 @@ under an off-chain threshold authority that amends itself. It comes from
 lang-template with the tcc-wasm host. The reference is arXiv:2606.14939
 (see `design/DIGEST-2606.14939.md`). No program can have a runtime error.
 
-Status: S6 (the sealed bid): the Cubical TT kernel of ratify-lang
+Status: S7 (the log): the Cubical TT kernel of ratify-lang
 a46d5df, R0 from ratify-lang 71f2c22 (total Nat operations,
 `REFUSE_PARTIAL`, and a Wasm writer that emits no trap form), and the
 gavel-lang words in `domain/domain.lang`: `Amount`, `Bids`, `Rule`,
@@ -15,8 +15,10 @@ gavel-lang words in `domain/domain.lang`: `Amount`, `Bids`, `Rule`,
 `REFUSE_CENSOR`, `REFUSE_FORK` and `REFUSE_BOUND` (S5), and `Slot`,
 `Height`, the deadline fields of `Params`, `Sealed`, `SealedBid`, `Verdict`,
 `elgVrf`, `admit`, `slash`, `Opening`, `release`, the laws P2 and P3,
-`REFUSE_PEEK` and `REFUSE_DEADLINE` (S6). The governance and crypto layers
-and the targets do not exist yet.
+`REFUSE_PEEK` and `REFUSE_DEADLINE` (S6), and `Ballot`, `Amendment`,
+`authorize`, `amendCheck`, `Entry`, `Log`, `append`, `paramsAt`, `Machine`,
+`replay`, the laws G4 and G5, `REFUSE_FIXPOINT` and `REFUSE_CLOCK` (S7).
+The crypto layers and the targets do not exist yet.
 `docs/PLAN.md` gives the readings, the route and the slices.
 
 ## When to reach for gavel-lang (DRAFT)

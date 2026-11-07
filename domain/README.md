@@ -168,6 +168,58 @@ values.
 gives `REFUSE_DEADLINE`. A closed `SealedBids` or `Handles` list with more
 than 1024 entries gives `REFUSE_BOUND`.
 
+## The log
+
+S7 adds the log words (`docs/PLAN.md` section 1, Q-S7-1 (a) to
+Q-S7-10 (a)).
+
+| Kind | Names |
+|---|---|
+| Families | `Ballot`, `Ballots`, `Amendment`, `Entry`, `Log`, `Verdicts` |
+| Entries | `enAmend` (with the proof field `eaOk`), `enSlash`, `enAdmit` |
+| Log words | `lgNil`, `lgCons`, `append`, `slashedOf` |
+| Amend words | `blHas`, `blCount`, `authorize`, `amendMsg`, `amendCheck` |
+| Machine words | `paramsAt`, `paramsAtSize`, `Machine`, `machineOf` |
+| Replay words | `entryVerdict`, `entrySlashed`, `replay` |
+| The laws | `appendNilL`, `appendNilR`, `appendAssoc` (G4), `p3Replay` (P3) |
+
+A `Ballot` holds a voter, a topic and a yes or no. `authorize` is yes when
+at least ta distinct committee members voted yes on the topic. An
+`Amendment` holds a tag, the new `Params` and the ballots. `amendCheck`
+gives `invalid notAccepted` when `authorize` is no, `invalid badCert` when
+`checkCert` rejects the certificate on `amendMsg`, and `valid` otherwise.
+The word is `amendCheck`, not `amend`: the DAO prelude has a word `amend`,
+and the same name gave `REFUSE_NAME` (rule R4).
+
+`Entry` and `Log` are indexed by two `Params`: the Params before and the
+Params after. `enAmend` moves the Params. `enSlash` and `enAdmit` keep
+them. The proof field `eaOk` says that the EARLIER Params accept the
+amendment. So an entry reads only earlier Params (G5), and an `eaOk` that
+does not check gives `REFUSE_FIXPOINT`. `lgNil` is a unit of `append`, and
+`append` is associative (G4): the three laws are path defs by induction.
+
+`paramsAt` gives the Params at a height of the log. Height 0 gives the
+first Params, and a height past the end gives the last Params. Time is the
+log height, so `deadline`, `timeout` and `expires` join the time words
+that give `REFUSE_CLOCK`. `Machine` is a `Stream Params`, built by
+`machineOf`.
+
+`replay` gives one `Verdict` for each entry. It carries the slashed
+handles from left to right. A valid slash entry adds its handle. An
+`enAdmit` entry is judged by `admit` with the handles so far. An amend
+entry gives `valid`. `p3Replay` proves that a one-entry log with a slash on
+two equal commitments gives `invalid notAccepted`.
+
+`szLe` is now linear (it reads y with `szIsZ` and `szDec`). A closed
+`Ballots` list with more than 1024 ballots gives `REFUSE_BOUND`. The `Log`
+has no bound.
+
+`examples/log.lang` shows the words with 11 eval rows. A guest program
+cannot apply `amSucc` to a value that is not a literal (`REFUSE_AMOUNT`),
+so `setup2` and `setupOI` use literal Amounts. The row `setupOI` states the
+liveness item OI-24: with ta above n - f, `authorize` on all n - f honest
+yes ballots gives `inl unit` (no).
+
 ## The IR test families
 
 S3 adds `Tree`, `Signal`, `Window`, `Hop` and `Echo` from permit-lang

@@ -64,7 +64,7 @@ The compiler enforces these rules:
 |---|---|---|
 | R1 | `REFUSE_DATA` | a `family` declaration in a program |
 | R2 | `REFUSE_AXIOM` | an `axiom` declaration |
-| R3 | `REFUSE_REC` | `def rec`, or a definition that refers to itself or to a later definition |
+| R3 | `REFUSE_FIXPOINT` | `def rec`, or a definition that refers to itself or to a later definition |
 | R4 | `REFUSE_NAME` | a core name, a domain name, a reserved name or a repeated name as a new definition |
 
 ## CLI
@@ -178,7 +178,7 @@ how to replace the sample domain.
 | `parse refusals: 17 checked` | each `test/parse` file fails with the code in `test/parse/expect.txt`; one file has 1100 nested parentheses |
 | `check refusals: 158 checked` | each `test/check` file fails with the code in `test/check/expect.txt`; the `PATH_END` message shows both normal forms |
 | `kit-only refusals: 10 checked` | each `REFUSE_KIT` row refuses a kit item in guest mode only: `langc --kit check` accepts the file |
-| `time hint: 1 checked` | a `REFUSE_TIME` refusal names the op-count form (`len r`, an `OpPos`) |
+| `time hint: 1 checked` | a `REFUSE_CLOCK` refusal names the log height form (a `Height`, a position in the log) |
 | `evals: 79 checked` | `langc eval` gives each result in `test/eval/expect.txt` |
 | `builds: 1 checked` | `langc --kit build examples/functions.lang -o OUT` writes a module that `wasm-validate` accepts |
 | `ir: 1 lowered` | `langc --kit ir examples/functions.lang` gives one `func` line for each `abi` line |

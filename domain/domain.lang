@@ -496,12 +496,6 @@ def a4 : (h : Amount) -> (t : Bids) -> Path Amount (bdTop t) h -> Path Size (bdA
 family Hash := hash (hsTag : Size)
 family Party := party (ptKey : Size)
 family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)
-def szLe : Size -> Size -> Sum Unit Unit :=
-  fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
-    (fun (y : Size) => inr unit)
-    (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
-      elim (fun (b : Size) => Sum Unit Unit) (inl unit) (fun (b : Size) (ihb : Sum Unit Unit) => ih b) y) x
-def szLt : Size -> Size -> Sum Unit Unit := fun (x : Size) (y : Size) => szLe (szS x) y
 -- szEq x y is inr unit when x = y. The step reads y with szIsZ and szDec,
 -- not with an inner elim: an inner elim whose step calls ih makes the
 -- time grow very fast (S6: szEq on 44 filled the arena).
@@ -509,6 +503,14 @@ def szIsZ : Size -> Sum Unit Unit :=
   fun (y : Size) => elim (fun (b : Size) => Sum Unit Unit) (inr unit) (fun (b : Size) (ihb : Sum Unit Unit) => inl unit) y
 def szDec : Size -> Size :=
   fun (y : Size) => elim (fun (b : Size) => Size) sz0 (fun (b : Size) (ihb : Size) => b) y
+-- szLe x y is inr unit when x <= y (S7, Q-S7-9 (a)): the szEq step with
+-- one ih call for each step; only the base changes.
+def szLe : Size -> Size -> Sum Unit Unit :=
+  fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
+    (fun (y : Size) => inr unit)
+    (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
+      elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => ih (szDec y)) (fun (u : Unit) => inl unit) (szIsZ y)) x
+def szLt : Size -> Size -> Sum Unit Unit := fun (x : Size) (y : Size) => szLe (szS x) y
 def szEq : Size -> Size -> Sum Unit Unit :=
   fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
     (fun (y : Size) => szIsZ y)
@@ -659,3 +661,102 @@ family Opening := opening (opAuc : AucID) (opParams : Params) (opCert : Certific
 def release : Opening -> SealedBids -> Bids :=
   fun (o : Opening) (bs : SealedBids) => elim (fun (k : SealedBids) => Bids) bdNil
     (fun (b : SealedBid) (t : SealedBids) (ih : Bids) => bdCons (sealOf (sbBid b)) ih) bs
+-- S7: the log (design section 6, USER rulings Q-S7-1 to Q-S7-10).
+-- A ballot is the vote of a party on a topic hash; blYes inr unit is "yes".
+-- authorize p t bs counts each committee member one time when bs has a yes
+-- ballot of that member on t, and accepts (inr unit) when the count is at
+-- least the amend threshold ta (Q-S7-2 (a)). G1 makes the members distinct.
+family Ballot := ballot (blVoter : Party) (blTopic : Hash) (blYes : Sum Unit Unit)
+family Ballots := blNil | blCons (blHead : Ballot) (blTail : Ballots)
+def blHas : Party -> Hash -> Ballots -> Sum Unit Unit :=
+  fun (p : Party) (t : Hash) (bs : Ballots) => elim (fun (k : Ballots) => Sum Unit Unit) (inl unit)
+    (fun (b : Ballot) (r : Ballots) (ih : Sum Unit Unit) => sOr (sAnd (ptEq (blVoter b) p) (sAnd (hsEq (blTopic b) t) (blYes b))) ih) bs
+def blCount : Members -> Hash -> Ballots -> Size :=
+  fun (ms : Members) (t : Hash) (bs : Ballots) => elim (fun (k : Members) => Size) sz0
+    (fun (q : Party) (r : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (blHas q t bs)) ms
+def authorize : Params -> Hash -> Ballots -> Sum Unit Unit :=
+  fun (p : Params) (t : Hash) (bs : Ballots) => szLe (prAmendT p) (blCount (cmMembers (prCommittee p)) t bs)
+-- An amendment moves the Params to amTo; the ballots are in the
+-- amendment. amendMsg has the kind tag 2 (Q-S7-2 (a)). amendCheck p a cs gives
+-- invalid notAccepted when the ballots do not authorize a, invalid badCert
+-- when cs does not certify the amend message, else valid.
+family Amendment := amendment (amTag : Size) (amTo : Params) (amBallots : Ballots)
+def amendMsg : Amendment -> Hash := fun (a : Amendment) => hash (szPair (szS (szS sz0)) (amTag a))
+def amendCheck : Params -> Amendment -> Certificate -> Verdict :=
+  fun (p : Params) (a : Amendment) (cs : Certificate) =>
+    vdCheck (authorize p (amendMsg a) (amBallots a)) notAccepted
+      (vdCheck (checkCert (prCommittee p) (amendMsg a) cs) badCert valid)
+-- A log entry (Q-S7-1 (a)) is an amendment from eaFrom to eaTo, a slash or
+-- a bid claim. The proof field eaOk says that the EARLIER Params accept the
+-- amendment (G5): Params cannot authorize themselves. When the kernel
+-- cannot check eaOk, the checker gives REFUSE_FIXPOINT. A slash and a
+-- claim keep the Params. A release is not a log entry (OI-35).
+family Entry : Params -> Params -> Type 0 := enAmend (eaFrom : Params) (eaTo : Params) (eaTag : Size) (eaBallots : Ballots) (eaCert : Certificate) (eaOk : Path Verdict (amendCheck eaFrom (amendment eaTag eaTo eaBallots) eaCert) valid) : Entry eaFrom eaTo
+  | enSlash (esAt : Params) (esRoot : Root) (esHandle : Handle) (esC : Commitment) (esE : EligibilityProof) (esD : Commitment) (esF : EligibilityProof) : Entry esAt esAt
+  | enAdmit (edAt : Params) (edRoot : Root) (edBid : SealedBid) (edHeight : Height) (edCert : Certificate) : Entry edAt edAt
+-- The log (CM, Q-S7-1 (a)): the free category on the entries, nil, cons
+-- and append. G4 (Q-S7-5 (a)): nil is a unit and append is associative
+-- (paths by induction). The log has no bound (OI-36).
+family Log : Params -> Params -> Type 0 := lgNil (lgNilOf : Params) : Log lgNilOf lgNilOf
+  | lgCons (lgFrom : Params) (lgMid : Params) (lgTo : Params) (lgHead : Entry lgFrom lgMid) (lgTail : Log lgMid lgTo) : Log lgFrom lgTo
+def append : (P : Params) -> (Q : Params) -> (R : Params) -> Log P Q -> Log Q R -> Log P R :=
+  fun (P : Params) (Q : Params) (R : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Log q R -> Log p R)
+    (fun (n : Params) => fun (m : Log n R) => m)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Log z R -> Log y R) => fun (m : Log z R) => lgCons x y R hd (ih m)) l
+def appendNilL : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P P Q (lgNil P) l) l :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => fun (i : I) => l
+def appendNilR : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P Q Q l (lgNil Q)) l :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Path (Log p q) (append p q q k (lgNil q)) k)
+    (fun (n : Params) => fun (i : I) => lgNil n)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Path (Log y z) (append y z z tl (lgNil z)) tl) => fun (i : I) => lgCons x y z hd (ih @ i)) l
+def appendAssoc : (P : Params) -> (Q : Params) -> (R : Params) -> (S : Params) -> (a : Log P Q) -> (b : Log Q R) -> (c : Log R S) -> Path (Log P S) (append P Q S a (append Q R S b c)) (append P R S (append P Q R a b) c) :=
+  fun (P : Params) (Q : Params) (R : Params) (S : Params) (a : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => (b : Log q R) -> (c : Log R S) -> Path (Log p S) (append p q S k (append q R S b c)) (append p R S (append p q R k b) c))
+    (fun (n : Params) => fun (b : Log n R) (c : Log R S) => fun (i : I) => append n R S b c)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : (b : Log z R) -> (c : Log R S) -> Path (Log y S) (append y z S tl (append z R S b c)) (append y R S (append y z R tl b) c)) => fun (b : Log z R) (c : Log R S) => fun (i : I) => lgCons x y S hd ((ih b c) @ i)) a
+-- paramsAt (G5, Q-S7-3 (a)): the Params at a log height. Height 0 is the
+-- first Params, height h + 1 is the Params of the tail at h, and a height
+-- after the end is the last Params. The step reads h with szIsZ and szDec
+-- (one ih call for each step). The machine (CC) is the stream of the
+-- Params at the heights 0, 1, 2 and so on.
+def paramsAtSize : (P : Params) -> (Q : Params) -> Log P Q -> Size -> Params :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Size -> Params)
+    (fun (n : Params) => fun (h : Size) => n)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Size -> Params) => fun (h : Size) =>
+      elim (fun (s : Sum Unit Unit) => Params) (fun (u : Unit) => ih (szDec h)) (fun (u : Unit) => x) (szIsZ h)) l
+def paramsAt : (P : Params) -> (Q : Params) -> Log P Q -> Height -> Params :=
+  fun (P : Params) (Q : Params) (l : Log P Q) (h : Height) => paramsAtSize P Q l (htOf h)
+def Machine : Type 0 := Stream Params
+def machineOf : (P : Params) -> (Q : Params) -> Log P Q -> Machine :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => sCorec Params Size (paramsAtSize P Q l) (fun (h : Size) => szS h) sz0
+-- replay (Q-S7-4 (a)): the verdict of each entry from left to right. The
+-- slashed handles go along the log: a valid slash entry adds its handle,
+-- and admit reads the handles of the earlier entries (OI-29). An amend
+-- entry is valid, because its proof field eaOk holds.
+family Verdicts := vdNil | vdCons (vdHead : Verdict) (vdTail : Verdicts)
+def entryVerdict : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Verdict :=
+  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Verdict)
+    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => valid)
+    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => slash r h c e1 d f1)
+    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => admit p sl r b h cs) e
+def entrySlashed : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Handles :=
+  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Handles)
+    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => sl)
+    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => elim (fun (v : Verdict) => Handles) (hlCons h sl) (fun (w : Reason) => sl) (slash r h c e1 d f1))
+    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => sl) e
+def replayFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Verdicts :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Verdicts)
+    (fun (n : Params) => fun (sl : Handles) => vdNil)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Verdicts) => fun (sl : Handles) => vdCons (entryVerdict x y hd sl) (ih (entrySlashed x y hd sl))) l
+def replay : (P : Params) -> (Q : Params) -> Log P Q -> Verdicts :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => replayFrom P Q l hlNil
+def slashedFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Handles :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Handles)
+    (fun (n : Params) => fun (sl : Handles) => sl)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Handles) => fun (sl : Handles) => ih (entrySlashed x y hd sl)) l
+def slashedOf : (P : Params) -> (Q : Params) -> Log P Q -> Handles :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => slashedFrom P Q l hlNil
+-- P3 on the log (Q-S7-4 (a)): a slash entry with two equal commitments is
+-- never valid.
+def p3Replay : (P : Params) -> (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdicts (replay P P (lgCons P P P (enSlash P r h c e c f) (lgNil P))) (vdCons (invalid notAccepted) vdNil) :=
+  fun (P : Params) (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
+    cong (fun (v : Verdict) => vdCons v vdNil) (p3Slash r h c e f)

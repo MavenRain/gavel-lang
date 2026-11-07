@@ -205,10 +205,11 @@ static const Builtin BUILTINS[] = {
 static const char *const RESERVED[] = {"Bool", "Text", "Prop", "SProp"};
 
 /* Time words (S3, O3): no declaration can take one and no name can use
-   one (REFUSE_TIME). A program counts operations instead. */
-static const char *const TIME_WORDS[] = {"now", "block", "timestamp", "time", "clock", "epoch"};
+   one (REFUSE_CLOCK). Time is the log height (S7): a program uses a
+   Height, a position in the log. */
+static const char *const TIME_WORDS[] = {"now", "block", "timestamp", "time", "clock", "epoch", "deadline", "timeout", "expires"};
 
-#define TIME_HINT "%s is a time word; count operations: a position is `len r` (an OpPos) and a deadline is a count of later operations"
+#define TIME_HINT "%s is a time word; time is the log height: use a `Height` (a position in the log)"
 
 static int time_word(const char *name) {
   size_t i;
@@ -420,7 +421,7 @@ static int push_value(Checker *c, const char *name, const Value *type, const Val
   Scope *s;
   const Env *e;
   if (name != NULL && time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
   s = arena_alloc(c->m->arena, sizeof *s);
   e = env_push(c->m, c->env, value);
   if (type == NULL || value == NULL || s == NULL || e == NULL)
@@ -2439,7 +2440,8 @@ static const Core *family_app(Call *k, uint32_t fam) {
    a kernel failure of the field already stops the check; the failure gets
    the law code (G1 cmSafe, G2 cmCensor, G3 prFork) for every term. S6: the
    deadline order prOrder (Q-S6-9 (a)) and the release certificate opOk of
-   an Opening (P2, Q-S6-2 (a)). */
+   an Opening (P2, Q-S6-2 (a)). S7: the amend rule eaOk of an Entry
+   (Q-S7-6 (a)): the earlier Params accept the amendment. */
 static const struct {
   const char *family;
   const char *field;
@@ -2452,6 +2454,7 @@ static const struct {
   {"Params", "prFork", "REFUSE_FORK", "G3 (n + f < ta + ta, that is 2ta - n > f)", "Q-S5-9 (a)"},
   {"Params", "prOrder", "REFUSE_DEADLINE", "of the deadline order (prStampEnd < prRelease)", "Q-S6-9 (a)"},
   {"Opening", "opOk", "REFUSE_PEEK", "P2 (t members certify the release at prRelease)", "Q-S6-2 (a)"},
+  {"Entry", "eaOk", "REFUSE_FIXPOINT", "of the amend rule (the earlier Params accept the amendment)", "Q-S7-6 (a)"},
 };
 
 static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
@@ -2620,10 +2623,10 @@ static int unknown_name(Checker *c, const char *name) {
   size_t i;
   const char *hint = partial_hint(c, name);
   if (time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
   for (i = c->decl_index; i < c->decls->count; i++) {
     if (strcmp(c->decls->items[i].name, name) == 0)
-      return FAIL(c, "REFUSE_REC", "%s is this definition or a later one; a definition can use only earlier ones (rule R3)", name);
+      return FAIL(c, "REFUSE_FIXPOINT", "%s is this definition or a later one; a definition can use only earlier ones (rule R3)", name);
   }
   if (hint != NULL)
     return FAIL(c, "REFUSE_PARTIAL", "%s is a partial name: %s", name, hint);
@@ -2782,7 +2785,7 @@ static const Core *var_core(Checker *c, const char *name, const Value **type) {
     return core_index(c, CORE_GLOBAL, d);
   }
   if (time_word(name))
-    return nul(FAIL(c, "REFUSE_TIME", TIME_HINT, name));
+    return nul(FAIL(c, "REFUSE_CLOCK", TIME_HINT, name));
   if (partial_hint(c, name) != NULL)
     return nul(FAIL(c, "REFUSE_PARTIAL", "%s is a partial name: %s", name, partial_hint(c, name)));
   return nul(FAIL(c, "NAME_UNKNOWN", "unknown name %s", name));
@@ -3131,7 +3134,7 @@ static const char *name_owner(const Checker *c, const char *name) {
 static int name_free(Checker *c, const char *name) {
   const char *why;
   if (time_word(name))
-    return FAIL(c, "REFUSE_TIME", TIME_HINT, name);
+    return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
   why = name_owner(c, name);
   return why == NULL ? 1 : FAIL(c, "REFUSE_NAME", "%s is %s (rule R4)", name, why);
 }
@@ -4117,6 +4120,8 @@ static int amount_read(const Machine *m, const Core *type, const Core *body) {
 /* Q-S6-7 (a): the largest closed sealed bid list and handle list. */
 #define SEALED_BID_BOUND 1024u
 #define HANDLE_BOUND 1024u
+/* Q-S7-10 (a): the largest closed ballot list. */
+#define BALLOT_BOUND 1024u
 
 /* The bounded list families of a guest program: the family, its two
    constructors, the bound and the REFUSE_BOUND text. */
@@ -4132,6 +4137,7 @@ static const struct {
   {"Members", "mbNil", "mbCons", COMMITTEE_BOUND, "committee with more than 1024 members", "an open committee passes and the T1 entry bounds it; Q-S5-7 (a)"},
   {"SealedBids", "sbNil", "sbCons", SEALED_BID_BOUND, "sealed bid list with more than 1024 sealed bids", "an open list passes and the T1 entry bounds it; Q-S6-7 (a)"},
   {"Handles", "hlNil", "hlCons", HANDLE_BOUND, "handle list with more than 1024 handles", "an open list passes and the T1 entry bounds it; Q-S6-7 (a)"},
+  {"Ballots", "blNil", "blCons", BALLOT_BOUND, "ballot list with more than 1024 ballots", "an open list passes and the T1 entry bounds it; Q-S7-10 (a)"},
 };
 
 /* A bounded list family (Bids or Members): the family, its two
@@ -4869,7 +4875,7 @@ static int check_decl(Checker *c, const Decl *d) {
   if (d->kind == DECL_AXIOM)
     return FAIL(c, "REFUSE_AXIOM", "an axiom has no proof (rule R2)");
   if (d->is_rec)
-    return FAIL(c, "REFUSE_REC", "def rec is refused (rule R3); use fold or unfold");
+    return FAIL(c, "REFUSE_FIXPOINT", "def rec is refused (rule R3); use fold or unfold");
   if (!kernel_sig(c, d) || !name_free(c, d->name))
     return 0;
   switch (d->kind) {

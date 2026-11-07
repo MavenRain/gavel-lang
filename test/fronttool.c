@@ -343,12 +343,15 @@ int main(void) {
   /* Diagnostics can print binders while constructor slots are still unnamed. */
   ok &= domain("state State := makeState (value : fun (x : Nat) => x)", "TYPE_MISMATCH");
   /* Time words are forbidden in local scopes as well as declarations. */
-  ok &= domain("def bad : (now : Nat) -> Nat := fun x => x", "REFUSE_TIME");
-  ok &= domain("def bad : Nat -> Nat := fun clock => clock", "REFUSE_TIME");
-  ok &= domain("def bad : Nat -> Nat := fun time => 0", "REFUSE_TIME");
-  ok &= domain("def bad : Path Nat 0 0 := fun (block : I) => 0", "REFUSE_TIME");
-  ok &= domain("family Test (timestamp : Type 0) := makeTest (payload : timestamp)", "REFUSE_TIME");
-  ok &= domain("def bad : Path Nat 0 0 := fun epoch => 0", "REFUSE_TIME");
+  ok &= domain("def bad : (now : Nat) -> Nat := fun x => x", "REFUSE_CLOCK");
+  ok &= domain("def bad : Nat -> Nat := fun clock => clock", "REFUSE_CLOCK");
+  ok &= domain("def bad : Nat -> Nat := fun time => 0", "REFUSE_CLOCK");
+  ok &= domain("def bad : Path Nat 0 0 := fun (block : I) => 0", "REFUSE_CLOCK");
+  ok &= domain("family Test (timestamp : Type 0) := makeTest (payload : timestamp)", "REFUSE_CLOCK");
+  ok &= domain("def bad : Path Nat 0 0 := fun epoch => 0", "REFUSE_CLOCK");
+  ok &= domain("def bad : Nat -> Nat := fun deadline => deadline", "REFUSE_CLOCK");
+  /* A use of this definition or a later one is a fixpoint (rule R3). */
+  ok &= domain("def fwdUse : Nat := fwdDef\ndef fwdDef : Nat := 1", "REFUSE_FIXPOINT");
   /* Counting an open higher cell must preserve its path boundaries. */
   ok &= len_roundtrip(
     "(r : FreeMon Unit) -> (p : Path (FreeMon Unit) (fmUnit Unit) r) -> Path Nat 0 (len Unit r)",

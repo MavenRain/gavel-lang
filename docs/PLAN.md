@@ -18,7 +18,7 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S6 DONE (the sealed bid): the Cubical TT kernel of ratify-lang
+Status: S7 DONE (the log): the Cubical TT kernel of ratify-lang
 a46d5df (a port of permit-lang 3d47120), R0 from ratify-lang 71f2c22 and
 the domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`, `outcome`,
 the laws A1, A2 and A4 (S4), `Hash`, `Party`, `Members`, `Committee`,
@@ -29,9 +29,12 @@ deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
 `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`,
 `elgVrf`, `admit`, `slash`, `Opening`, `release`, the laws P2 and P3,
 `REFUSE_PEEK`, `REFUSE_DEADLINE` and the sealed and handle half of
-`REFUSE_BOUND` (Q-S6-1 (b) to Q-S6-9 (a)). Section 1 has the rulings.
-Next: S7 (`Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
-`paramsAt`, `replay`).
+`REFUSE_BOUND` (Q-S6-1 (b) to Q-S6-9 (a)), and from S7 `Ballot`,
+`Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log`,
+`append`, `paramsAt`, `Machine`, `Verdicts`, `replay`, `slashedOf`, the
+laws G4 and G5, `REFUSE_FIXPOINT`, `REFUSE_CLOCK` and the ballot half of
+`REFUSE_BOUND` (Q-S7-1 (a) to Q-S7-10 (a)). Section 1 has the rulings.
+Next: S8 (the crypto prelude part 1).
 
 ## 1. Rulings
 
@@ -115,6 +118,16 @@ Next: S7 (`Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
 | 2026-11-06 | Q-S6-7 "(a) Verdict + Handles now": `Reason` (badCert, badProof, late, early, slashed, notAccepted, wrongHeight, malformed) and `Verdict := valid | invalid (vdWhy : Reason)`. `admit : Params -> Handles -> Root -> SealedBid -> Height -> Certificate -> Verdict`. `Handles` is the slashed set; S7 takes it from the Log. A closed `SealedBids` or `Handles` list with more than 1024 entries gives `REFUSE_BOUND` (two new bounds). Edits: sections 7, 12 (S6), 13. | USER, S6 |
 | 2026-11-06 | Q-S6-8 "(a) szPair + msg words": a total injective pairing `szPair : Size -> Size -> Size` (Cantor, by fold and `szAdd`), and a kind tag so the two messages differ: `stampMsg : Commitment -> Height -> Hash` and `openMsg : AucID -> Height -> Hash`. At S8 and T2 the message is Poseidon. Edits: sections 12 (S6), 13. | USER, S6 |
 | 2026-11-06 | Q-S6-9 "(a) New REFUSE_DEADLINE": a follow-up to Q-S6-1 (b). A failed `prOrder` gives `REFUSE_DEADLINE` (the stamp end is before the release). Section 7 has one new row. `prOrder` is after `prFork`, so `fork.lang` still fails at `prFork` first. Edits: sections 7, 12 (S6). | USER, S6 |
+| 2026-11-07 | Q-S7-1 "(a) Indexed Entry and Log": `family Entry : Params -> Params -> Type 0` with `enAmend` (a proof that the EARLIER Params accept the amendment; it moves the Params), `enSlash` (raw slash evidence; the Params stay) and `enAdmit` (a raw bid claim; the Params stay). `family Log : Params -> Params -> Type 0 := lgNil \| lgCons`, and `append`. The ballots are inside the amendment. Releases stay outside the Log (OI-35). | USER, S7 |
+| 2026-11-07 | Q-S7-2 "(a) Ballot and authorize": `Ballot := ballot (blVoter) (blTopic) (blYes)`, `Ballots := blNil \| blCons`. `authorize` is yes: at least ta yes ballots on the topic from distinct committee members. `Amendment := amendment (amTag) (amTo) (amBallots)`. The amend check does `authorize` first (else `notAccepted`), then `checkCert` on `amendMsg` with the kind tag `szS (szS sz0)` (else `badCert`), else `valid`. The S7 word is `amendCheck`, not `amend` (the DAO prelude has the word `amend`). Edits: sections 4.2, 12 (S7). | USER, S7 |
+| 2026-11-07 | Q-S7-3 "(a) Total paramsAt": `paramsAt : (p q : Params) -> Log p q -> Height -> Params`. Height 0 gives p, height h + 1 gives the tail at h, and a height past the end gives q (the clamp replaces the DESIGN `Fin` bound). `Machine := Stream Params`, `machineOf` by `sCorec`. | USER, S7 |
+| 2026-11-07 | Q-S7-4 "(a) replay with Handles from the Log": `Verdicts := vdNil \| vdCons`. `replay` is one elim with the motive `Handles -> Verdicts`. A valid slash entry adds its handle. `admit` judges an admit entry with the handles so far. An amend entry gives `valid`. `slashedOf` gives the handles of a log. `admit` keeps its S6 signature. OI-29 is CLOSED. P3 on the log is the path law `p3Replay`. | USER, S7 |
+| 2026-11-07 | Q-S7-5 "(a) G4 and G5": G4 is `appendNilL`, `appendNilR` and `appendAssoc` (paths by induction) with closed `refl` rows. G5 holds by the type (the `enAmend` proof field reads only the earlier Params), with `paramsAt` rows and the negative row `amend-self.lang`. | USER, S7 |
+| 2026-11-07 | Q-S7-6 "(a) REFUSE_FIXPOINT": the kit code `REFUSE_REC` is renamed `REFUSE_FIXPOINT` at its 2 sites (rule R3). The `LAW_FIELDS` row `Entry`, `eaOk` gives `REFUSE_FIXPOINT`: an amendment that the earlier Params do not accept is Params that authorize themselves. New test `test/check/amend-self.lang`. | USER, S7 |
+| 2026-11-07 | Q-S7-7 "(a) REFUSE_CLOCK": the kit code `REFUSE_TIME` is renamed `REFUSE_CLOCK` at its 4 sites. The time words get `deadline`, `timeout` and `expires` (9 words). The hint says that time is the log height and names `Height`. New tests `time-deadline`, `time-timeout`, `time-expires`. | USER, S7 |
+| 2026-11-07 | Q-S7-8 "(a) State OI-24": OI-24 is stated, with no law and no refusal. One closed eval row: ta > n - f, and `authorize` on all n - f honest yes ballots gives `inl unit`. | USER, S7 |
+| 2026-11-07 | Q-S7-9 "(a) Linear szLe": `szLe` uses the linear words `szIsZ` and `szDec`, and `szLt` is below `szDec`. The S5 and S6 rows stay green. OI-34 is CLOSED. | USER, S7 |
+| 2026-11-07 | Q-S7-10 "(a) Ballot bound": `BALLOT_BOUND` is 1024u, with the `LIST_BOUNDS` row `Ballots`. A closed `Ballots` value with more than 1024 ballots gives `REFUSE_BOUND`. New test `test/check/bound-ballots.lang`. The indexed `Log` has no bound (OI-36), and `Verdicts` has no bound. | USER, S7 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -239,7 +252,10 @@ and f.
 
 The draft list is design sec 4: `checkCert`, `elgVrf`, `admit`, `slash`,
 `release`, `outcome`, `authorize`, `amend`, `paramsAt`, `replay`. Each one
-is total and gives a `Verdict`, a `Bool` or an `Outcome`.
+is total and gives a `Verdict`, a `Bool` or an `Outcome`. The S7 word for
+`amend` is `amendCheck`: the DAO prelude (`src/front/front.c`) has a word
+`amend`, and the domain name gave `REFUSE_NAME` (rule R4) in the regimes
+and oneuse examples.
 
 The crypto prelude (Q-S0-13 (b), Q-S1-3 (b), Q-S1-4 (b)) is gavel-lang
 terms over `Word`: the BN254 field and curve, Poseidon, keccak-256, the
@@ -279,7 +295,7 @@ discharged.
 |---|---|---|---|
 | P1 | Hiding: no party learns a bid before the release | ASSUMED | scheme security (FHE, MPC, commitment) |
 | P2 | Simultaneous release: an `Opening` needs t certificates of `openMsg` at `prRelease` | DISCHARGED | the type of `release`: the proof field `opOk` of `Opening` (Q-S6-2 (a)) |
-| P3 | No free bid withdrawal: a slash on two equal commitments is never valid | DISCHARGED | the path law `p3Slash` on `slash` (Q-S6-4 (a)); the log entry and `replay` are S7 |
+| P3 | No free bid withdrawal: a slash on two equal commitments is never valid | DISCHARGED | the path law `p3Slash` on `slash` (Q-S6-4 (a)); on the log, the path law `p3Replay` on `replay` (Q-S7-4 (a)) |
 | P4 | Handle uniqueness for each deposit and auction | ASSUMED | collision resistance (paper Lemma 14) |
 | P5 | Completeness: an honest eligible bid is admitted | ASSUMED | proof-system completeness (paper Lemma 12) |
 | Z1 | Knowledge soundness of pi^m | ASSUMED | proof system; the paper states no such assumption |
@@ -288,8 +304,8 @@ discharged.
 | G1 | Safety: t > f | DISCHARGED | the type of `Committee` (a proof field) |
 | G2 | Censorship resistance: n - f >= t | DISCHARGED | the type of `Committee` (a proof field) |
 | G3 | Fork freedom of the amend rule: 2ta - n > f | DISCHARGED | the type of `Params` (a proof field on ta) (ratify-lang O5) |
-| G4 | `nil` is the unit, `append` is associative | DISCHARGED | paths by induction (ratify-lang TCM-E) |
-| G5 | Causality: an entry reads only earlier `Params` | DISCHARGED | by construction (ratify-lang O10) |
+| G4 | `nil` is the unit, `append` is associative | DISCHARGED | the Log is a category: `lgNil` is a unit and `append` is associative, by the path defs `appendNilL`, `appendNilR` and `appendAssoc` (paths by induction, ratify-lang TCM-E; Q-S7-5 (a)) |
+| G5 | Causality: an entry reads only earlier `Params` | DISCHARGED | by construction: the `enAmend` proof field reads only the earlier Params; `paramsAt` gives the Params at a height of the log (Q-S7-3 (a), Q-S7-5 (a), ratify-lang O10) |
 | G6 | At most one entry for each height | EXTERNAL | G3 and honest single signing (ratify-lang O11) |
 | A1 | First price: the winner bid is at least each bid; the price is the winner bid | DISCHARGED | path by induction on the list |
 | A2 | Second price: the price is the larger of the reserve and the second highest eligible bid, at most the winner bid (Q-S4-5 (a)) | DISCHARGED | path by induction on the list |
@@ -314,11 +330,11 @@ hint at A2.
 | Code | When | Source |
 |---|---|---|
 | `REFUSE_PARTIAL` | A partial kit word. | R0 |
-| `REFUSE_BOUND` | A committee or a bid list larger than the target bound: a closed `Bids` value with more than 1024 bids (Q-S4-6 (a)), a closed `Members` value with more than 1024 members (Q-S5-7 (a)), or a closed `SealedBids` or `Handles` value with more than 1024 entries (Q-S6-7 (a)). | R0 |
+| `REFUSE_BOUND` | A committee or a bid list larger than the target bound: a closed `Bids` value with more than 1024 bids (Q-S4-6 (a)), a closed `Members` value with more than 1024 members (Q-S5-7 (a)), a closed `SealedBids` or `Handles` value with more than 1024 entries (Q-S6-7 (a)), or a closed `Ballots` value with more than 1024 ballots (Q-S7-10 (a)). | R0 |
 | `REFUSE_AMOUNT` | An `Amount` operation other than compare, select, max, second max. | R0, Q-S0-1 |
 | `REFUSE_FORMER` | A type constructor that is not CM or CC. | R1 |
-| `REFUSE_FIXPOINT` | General recursion, or `Params` that authorize themselves. | R1 |
-| `REFUSE_CLOCK` | A wall clock or a host tick. | section 5 |
+| `REFUSE_FIXPOINT` | General recursion (rule R3: a def uses itself or a later def), or `Params` that authorize themselves (an `eaOk` field of `enAmend` that does not check). The kit code `REFUSE_REC` is renamed. | R1, G5, Q-S7-6 (a) |
+| `REFUSE_CLOCK` | A wall clock or a host tick: a name from `now`, `block`, `timestamp`, `time`, `clock`, `epoch`, `deadline`, `timeout` and `expires`. Time is the log height: use a `Height`. The kit code `REFUSE_TIME` is renamed. | section 5, Q-S7-7 (a) |
 | `REFUSE_PEEK` | A read of a `Sealed` value by a guest def (an elim, a fold or a projection), or an `opOk` field that does not check. | P1, P2, Q-S6-2 (a), Q-S6-3 (a) |
 | `REFUSE_SAFETY` | A G1 field does not check (t <= f or a repeated party). | G1, Q-S5-9 (a) |
 | `REFUSE_CENSOR` | A G2 field does not check (n - f < t). | G2, Q-S5-9 (a) |
@@ -477,8 +493,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S4 | `Amount`, `Bids`, `Rule`, `Outcome`, `outcome` (Q-S4-1 (a) to Q-S4-7 (a)); A1, A2, A4 in `domain/domain.lang`; `REFUSE_AMOUNT`, `REFUSE_BOUND`; the kernel slot `DaoOutcome` (OI-23). Gate: 32 examples, 17 parse refusals, 163 check refusals, 10 kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. `test/gate.sh` builds a Wasm module for each `examples/*.lang` file, so the two new examples add two modules. Mutants M1 (the `REFUSE_AMOUNT` site), M2 (the `REFUSE_BOUND` site), M3 (`amMax`, A1), M4 (`bdSecond`, A2), M5 (the `bdArg` tie-break, A4): KILLED. | DONE |
 | S5 | `Hash`, `Party`, `Members`, `Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf` and the Size and Sum words (Q-S5-1 (a) to Q-S5-11 (a)); G1 to G3 as proof fields (`cmSafe`, `cmCensor`, `prFork`); `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` (Q-S5-9 (a)); the committee half of `REFUSE_BOUND` (`COMMITTEE_BOUND` 1024). Gate: 34 examples, 17 parse refusals, 169 check refusals, 10 kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S4: examples 32 to 34 (`examples/committee.lang`, `examples/committee-bound-edge.lang`), check refusals 163 to 169 (6 rows), evals 83 to 89 (6 committee rows), Wasm modules 35 to 37 (the 2 new examples); all other counts are the same. Mutants M1 (the `REFUSE_SAFETY` mapping), M2 (the `REFUSE_CENSOR` mapping), M3 (the `REFUSE_FORK` mapping), M4 (`COMMITTEE_BOUND` 1025), M5 (G1 `f <= t`), M6 (G2 with f dropped), M7 (G3 with `ta` for `ta + ta`): M1 to M7 KILLED (7/7). | DONE |
 | S6 | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`, `elgVrf`, `admit`, `slash`, `Opening`, `release`; the deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, `prOrder`); P2, P3; `REFUSE_PEEK`, `REFUSE_DEADLINE`; the sealed and handle bounds (Q-S6-1 (b) to Q-S6-9 (a)). Gate: 36 examples, 17 parse refusals, 177 check refusals, 10 kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S5: examples 34 to 36 (`examples/sealed.lang`, `examples/sealed-bound-edge.lang`), check refusals 169 to 177 (8 rows), evals 89 to 104 (15 sealed rows), Wasm modules 37 to 39; all other counts are the same. Mutants M1 (the `REFUSE_PEEK` site), M2 (the `prOrder` code), M3 (the `opOk` code), M4 (`openMsg` at the stamp end), M5 (`slash` without the equal-commitment test), M6 (`htLe` for `htLt`), M7 (`SEALED_BID_BOUND` 1025), M8 (`HANDLE_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
-| S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | NEXT |
-| S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | |
+| S7 | `Ballot`, `Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log` (CM), `append`, `paramsAt`, `Machine` (CC), `Verdicts`, `replay`, `slashedOf` (Q-S7-1 (a) to Q-S7-10 (a)); G4 (`appendNilL`, `appendNilR`, `appendAssoc`), G5, P3 on the log (`p3Replay`); `REFUSE_REC` renamed `REFUSE_FIXPOINT`, `REFUSE_TIME` renamed `REFUSE_CLOCK`; the ballot half of `REFUSE_BOUND` (`BALLOT_BOUND` 1024); a linear `szLe`. The S7 word is `amendCheck`, not `amend`: the DAO prelude word `amend` (`src/front/front.c`) gave `REFUSE_NAME` (rule R4) in the regimes and oneuse examples. Gate: 37 examples, 17 parse refusals, 182 check refusals, 10 kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S6: examples 36 to 37 (`examples/log.lang`), check refusals 177 to 182 (`amend-self`, `bound-ballots`, `time-deadline`, `time-expires`, `time-timeout`), evals 104 to 115 (11 log rows), Wasm modules 39 to 40; all other counts are the same. Mutants M1 (the `REFUSE_FIXPOINT` site), M2 (the `eaOk` code), M3 (the `deadline` time word), M4 (`append`, cons case: a domain load failure), M5 (`paramsAt` at height 0), M6 (`entryVerdict` slash case), M7 (`entrySlashed`), M8 (`BALLOT_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
+| S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | NEXT |
 | S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
 | S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
 | S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
@@ -512,8 +528,21 @@ Design notes from S6:
   word `szEq`. Its inner elim step called `ih`, and the evaluator computes
   `ih` eagerly, so the time grows very fast: `szEq` on 14 passes, and on 44
   it fills the arena. `szEq` now reads y with two new linear words, `szIsZ`
-  and `szDec`. `szEqRefl` still checks by `ih`. The same shape is in `szLe`.
-  It is only used on small values (heights, the threshold) and stays (OI-34).
+  and `szDec`. `szEqRefl` still checks by `ih`. The same shape was in
+  `szLe`. S7 made `szLe` linear (Q-S7-9 (a), OI-34 CLOSED).
+
+Design notes from S7:
+
+- DN-3 (the word `amendCheck`). The DAO prelude has a word `amend`
+  (`src/front/front.c`). A domain word with the same name gave
+  `REFUSE_NAME` (rule R4) in 11 eval rows of the regimes and oneuse
+  examples. The S7 word is `amendCheck`.
+- DN-4 (literal Amounts in `examples/log.lang`). A guest program cannot
+  apply `amSucc` to a value that is not a literal: the check gives
+  `REFUSE_AMOUNT`. The Params `setup2` and `setupOI` use literal Amounts.
+- DN-5 (no inner `ih`). The S7 words never call `ih` in the step of an
+  inner elim on a recursive family: the evaluator computes the inner `ih`
+  at every level. They branch on `szIsZ` and call `ih` once, as `szEq`.
 
 ## 13. Open items
 
@@ -571,9 +600,11 @@ Design notes from S6:
   (Q-S4-3 (a)): in `src/front/check.c`, in the DAO prelude of
   `src/front/front.c` and in 23 `.lang` files. A port from ratify-lang or
   permit-lang must apply the same rename.
-- OI-24 G3 sets no upper law on ta (Q-S5-11 (a)). A ta above n - f stops
-  the amendments by the honest members: a loss of liveness, not of
-  safety. S7 states it.
+- OI-24 STATED at S7 (Q-S7-8 (a)). G3 sets no upper law on ta (Q-S5-11
+  (a)). A ta above n - f stops the amendments by the honest members: a loss
+  of liveness, not of safety. There is no law and no refusal. The row
+  `setupOI` in `examples/log.lang` shows it: `authorize` on all n - f
+  honest yes ballots gives `inl unit`.
 - OI-25 The `Party` key is an abstract `Size` until S8 (Q-S5-1 (a)). In
   `checkCert`, the match of an entry on its signer and message is the
   ideal signature check; at S8 it becomes the Schnorr check on a BN254 G1
@@ -587,8 +618,9 @@ Design notes from S6:
 - OI-28 `elgVrf` is an ideal check until S8b: it says yes when the root,
   the handle and the commitment of the proof match (Q-S6-5 (a)). At S8b it
   becomes the Noir verifier.
-- OI-29 `Handles`, the slashed set, is an input of `admit` until S7
-  (Q-S6-7 (a)). S7 takes it from the Log.
+- OI-29 CLOSED at S7. `replay` takes `Handles`, the slashed set, from the
+  Log (Q-S7-4 (a)). `admit` keeps its S6 signature, and `entryVerdict`
+  calls it with the handles so far.
 - OI-30 The message pairing `szPair` is the abstract Cantor code until S8
   (Q-S6-8 (a)). At S8 and T2 the message is Poseidon.
 - OI-31 `Sealed` is the clear denotation of the FHE ciphertext and the MPC
@@ -597,10 +629,14 @@ Design notes from S6:
   (design/DESIGN.md line 33).
 - OI-33 `slash` has a new `Root` argument (Q-S6-4 (a)). OI-7 stays open for
   the slot argument of `slashUsr`.
-- OI-34 `szLe` calls `ih` in its inner elim step, as `szEq` did before DN-2.
-  The evaluator computes `ih` eagerly, so the time grows very fast on large
-  values. `szLe` is only used on small values (heights, the threshold).
-  A linear form (as `szIsZ` and `szDec`) is the fix if a large use comes.
+- OI-34 CLOSED at S7. `szLe` has the linear form of `szIsZ` and `szDec`
+  (Q-S7-9 (a)). The S5 and S6 rows stay green.
+- OI-35 A release is outside the Log (Q-S7-1 (a)). The Log has the
+  amendments, the slashes and the bid claims. A later slice can add a
+  release entry.
+- OI-36 The indexed `Log` has no bound: a closed `Log` value of any length
+  passes the check. `Verdicts` has no bound too. Only `Ballots` has one
+  (Q-S7-10 (a)). The T1 entry bounds the log (S9).
 
 ## 14. Questions for the USER (S0)
 

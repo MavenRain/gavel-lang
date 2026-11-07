@@ -67,12 +67,12 @@ if ! rg -q -F 'the path at i1 is some 1201, but the type needs some 1200' "$tmp/
   fail=$((fail + 1))
 fi
 
-# A REFUSE_TIME refusal names the op-count form (S3, O3).
+# A REFUSE_CLOCK refusal names the log height form (S3, O3; S7).
 time_hint=0
 build/langc $(kit test/check/kit.txt time-block.lang) check test/check/time-block.lang 2>"$tmp/err" >/dev/null || true
 time_hint=$((time_hint + 1))
-if ! rg -q -F 'count operations: a position is `len r` (an OpPos) and a deadline is a count of later operations' "$tmp/err"; then
-  echo "FAIL time-block.lang: the message does not name the op-count form"
+if ! rg -q -F 'time is the log height: use a `Height` (a position in the log)' "$tmp/err"; then
+  echo "FAIL time-block.lang: the message does not name the log height form"
   fail=$((fail + 1))
 fi
 echo "time hint: $time_hint checked"
