@@ -1,0 +1,14 @@
+-- REFUSE_PEEK (S6, P2, Q-S6-2 (a)): the release certificate is on the stamp end height 1, not on the release height 2
+def s1 : Size := szS sz0
+def s2 : Size := szS (szS sz0)
+def s3 : Size := szS (szS (szS sz0))
+def p0 : Party := party sz0
+def p1 : Party := party s1
+def p2 : Party := party s2
+def p3 : Party := party s3
+def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
+def board : Committee := committee members s3 s1 refl refl
+def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
+def auc : AucID := aucId s1
+def msgEarly : Hash := openMsg auc (height s1)
+def openEarly : Opening := opening auc setup (ctCons p1 msgEarly (ctCons p2 msgEarly (ctCons p3 msgEarly ctNil))) refl

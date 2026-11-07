@@ -1,0 +1,3 @@
+-- REFUSE_PEEK (S6, P1, Q-S6-3 (a)): a guest def reads a sealed value with an elim
+def s : Sealed Amount := seal Amount (amSucc amZero)
+def peek : Amount := elim (fun (k : Sealed Amount) => Amount) (fun (a : Amount) => a) s

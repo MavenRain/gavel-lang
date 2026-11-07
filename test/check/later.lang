@@ -1,2 +1,2 @@
-def early : Nat := late
-def late : Nat := 1
+def fwdUse : Nat := fwdDef
+def fwdDef : Nat := 1

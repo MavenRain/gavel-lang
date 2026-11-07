@@ -120,6 +120,54 @@ certificate has an entry with that signer and that message, and accepts
 when the count is at least t. Equal entries count one time. At S8 the
 entry match becomes the Schnorr check.
 
+## The sealed bid
+
+S6 adds the sealed-bid words (`docs/PLAN.md` section 1, Q-S6-1 (b) to
+Q-S6-9 (a)).
+
+| Kind | Names |
+|---|---|
+| Families | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `SealedBids`, `Handles`, `Reason`, `Verdict`, `Opening` |
+| Deadline fields of `Params` | `prSlot`, `prStampEnd`, `prRelease`, and the proof field `prOrder` |
+| Height words | `htLe`, `htLt` |
+| Sealed words | `seal`, `sealOf` (the sealed family), `release` |
+| Bid words | `admit`, `slash`, `elgVrf`, `vdCheck`, `hlHas` |
+| Message words | `stampMsg`, `openMsg`, `szPair`, `szTri` |
+| Linear Size words | `szIsZ`, `szDec` (S5 `szEq` reads y with them) |
+| The laws | `p3Slash` (P3), `szEqRefl`, and the proof field `opOk` of `Opening` (P2) |
+
+`Sealed` is a sealed family: `seal` builds a value, and `sealOf` reads it.
+A guest program def that elims, folds or projects a sealed family gives
+`REFUSE_PEEK`. Only the domain word `release` reads one. This file is
+exempt. The check records reads while elaborating the written type and
+body of the def. Quoting types and generating proofs can unfold a domain
+def, so those normal forms do not count as guest reads. A `refl` proof
+about an authorized `release` call is allowed.
+
+`release` takes an `Opening` and a `SealedBids` list and gives `Bids`. An
+`Opening` holds the auction, the `Params`, a certificate and the proof
+field `opOk`. The type of `opOk` says that `checkCert` accepts the
+certificate on `openMsg` at `prRelease`. A field that does not check gives
+`REFUSE_PEEK` (P2).
+
+`admit` checks a sealed bid against the `Params`, the slashed set
+`Handles`, the root, the height and the certificate. It gives a `Verdict`,
+which is `valid` or `invalid` with a `Reason`. `slash` gives `valid` when
+both `elgVrf` checks say yes and the two commitments differ. For equal
+commitments it gives `invalid notAccepted`, and `p3Slash` proves it (P3).
+
+`stampMsg` and `openMsg` pair a tag with a `Size` through `szPair`
+(Cantor), so the two messages differ. At S8 the message is Poseidon.
+`szIsZ` and `szDec` are linear words: they do not call `ih` in a step.
+The evaluator computes `ih` eagerly, so a step that calls it grows very
+fast. `szEq` reads y with them. `szLe` still calls `ih` and stays for small
+values.
+
+`prOrder` is a proof field after `prFork`. Its type says that
+`prStampEnd` is before `prRelease` (`htLt`). A field that does not check
+gives `REFUSE_DEADLINE`. A closed `SealedBids` or `Handles` list with more
+than 1024 entries gives `REFUSE_BOUND`.
+
 ## The IR test families
 
 S3 adds `Tree`, `Signal`, `Window`, `Hop` and `Echo` from permit-lang

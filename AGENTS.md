@@ -4,6 +4,23 @@ This file is for coding agents that work in this repo or meet gavel-lang
 code. It is a DRAFT at S0. Slice S20 makes it final (`docs/PLAN.md`
 section 12).
 
+## State at S6
+
+- S6 adds the sealed bid to `domain/domain.lang`: `Slot`, `Height`, the
+  deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease` and the
+  proof field `prOrder`), `AucID`, `Root`, `Handle`, `Commitment`,
+  `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`,
+  `Verdict`, `elgVrf`, `admit`, `slash`, `Opening` and `release`.
+- P2 is the proof field `opOk` of `Opening`. P3 is the path law `p3Slash`.
+  A guest def that elims, folds or projects a `Sealed` value gives
+  `REFUSE_PEEK`, and so does an `opOk` field that does not check. A
+  `prOrder` field that does not check gives `REFUSE_DEADLINE`. A closed
+  `SealedBids` or `Handles` list has at most 1024 entries
+  (`REFUSE_BOUND`).
+- `elgVrf` is an ideal check until S8b. `Handles` is an input of `admit`
+  until S7. The `Log` and `replay` are S7.
+- The rest of the state is as at S5, below.
+
 ## State at S5
 
 - S5 adds the committee to `domain/domain.lang`: `Hash`, `Party`,
@@ -16,8 +33,7 @@ section 12).
   n + f < ta + ta). A closed committee has at most 1024 members
   (`REFUSE_BOUND`).
 - `Party` is an abstract key and `checkCert` matches an entry on its
-  signer and message, until S8 (the Schnorr check). `Params` has no
-  deadline field until S6.
+  signer and message, until S8 (the Schnorr check).
 - The rest of the state is as at S4, below.
 
 ## State at S4

@@ -502,11 +502,18 @@ def szLe : Size -> Size -> Sum Unit Unit :=
     (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
       elim (fun (b : Size) => Sum Unit Unit) (inl unit) (fun (b : Size) (ihb : Sum Unit Unit) => ih b) y) x
 def szLt : Size -> Size -> Sum Unit Unit := fun (x : Size) (y : Size) => szLe (szS x) y
+-- szEq x y is inr unit when x = y. The step reads y with szIsZ and szDec,
+-- not with an inner elim: an inner elim whose step calls ih makes the
+-- time grow very fast (S6: szEq on 44 filled the arena).
+def szIsZ : Size -> Sum Unit Unit :=
+  fun (y : Size) => elim (fun (b : Size) => Sum Unit Unit) (inr unit) (fun (b : Size) (ihb : Sum Unit Unit) => inl unit) y
+def szDec : Size -> Size :=
+  fun (y : Size) => elim (fun (b : Size) => Size) sz0 (fun (b : Size) (ihb : Size) => b) y
 def szEq : Size -> Size -> Sum Unit Unit :=
   fun (x : Size) => elim (fun (a : Size) => Size -> Sum Unit Unit)
-    (fun (y : Size) => elim (fun (b : Size) => Sum Unit Unit) (inr unit) (fun (b : Size) (ihb : Sum Unit Unit) => inl unit) y)
+    (fun (y : Size) => szIsZ y)
     (fun (a : Size) (ih : Size -> Sum Unit Unit) => fun (y : Size) =>
-      elim (fun (b : Size) => Sum Unit Unit) (inl unit) (fun (b : Size) (ihb : Sum Unit Unit) => ih b) y) x
+      elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => ih (szDec y)) (fun (u : Unit) => inl unit) (szIsZ y)) x
 def szAdd : Size -> Size -> Size :=
   fun (x : Size) (y : Size) => elim (fun (a : Size) => Size) y (fun (a : Size) (ih : Size) => szS ih) x
 def sAnd : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
@@ -539,7 +546,19 @@ def cmG2 : Members -> Size -> Size -> Sum Unit Unit :=
 family Committee := committee (cmMembers : Members) (cmT : Size) (cmF : Size) (cmSafe : Path (Sum Unit Unit) (cmG1 cmMembers cmT cmF) (inr unit)) (cmCensor : Path (Sum Unit Unit) (cmG2 cmMembers cmT cmF) (inr unit))
 def prG3 : Committee -> Size -> Sum Unit Unit :=
   fun (c : Committee) (ta : Size) => szLt (szAdd (mbLen (cmMembers c)) (cmF c)) (szAdd ta ta)
-family Params := params (prRule : Rule) (prReserve : Amount) (prCommittee : Committee) (prAmendT : Size) (prFork : Path (Sum Unit Unit) (prG3 prCommittee prAmendT) (inr unit))
+-- The slot and the heights (S6, Q-S6-6 (a), Q-S6-1 (b)): a deposit slot is
+-- a Size tag. There is no clock: a height is a log height, and a deadline
+-- is a height that a t-of-n certificate fixes. Params keeps the slot, the
+-- stamp end prStampEnd (the last height of a bid timestamp) and the
+-- release height prRelease. The proof field prOrder (Q-S6-9 (a)) says
+-- that the stamp end is before the release; when the kernel cannot check
+-- it, the checker gives REFUSE_DEADLINE. prOrder is after prFork, so a G3
+-- failure comes first.
+family Slot := slot (soTag : Size)
+family Height := height (htOf : Size)
+def htLe : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLe (htOf g) (htOf h)
+def htLt : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLt (htOf g) (htOf h)
+family Params := params (prRule : Rule) (prReserve : Amount) (prCommittee : Committee) (prAmendT : Size) (prSlot : Slot) (prStampEnd : Height) (prRelease : Height) (prFork : Path (Sum Unit Unit) (prG3 prCommittee prAmendT) (inr unit)) (prOrder : Path (Sum Unit Unit) (htLt prStampEnd prRelease) (inr unit))
 -- The certificate (Q-S5-4 (a)): an ideal list of signatures, each a signer
 -- and a message. checkCert c h cs counts each member of c one time when cs
 -- has an entry with that signer and the message h, and accepts (inr unit)
@@ -556,3 +575,87 @@ def checkCert : Committee -> Hash -> Certificate -> Sum Unit Unit :=
   fun (c : Committee) (h : Hash) (cs : Certificate) => szLe (cmT c) (ctCount (cmMembers c) h cs)
 -- The outcome of the parameters (Q-S4-4 (a)).
 def outcomeOf : Params -> Bids -> Outcome := fun (p : Params) (bs : Bids) => outcome (prRule p) (prReserve p) bs
+-- The sealed bid (S6, design section 5, USER rulings Q-S6-1 to Q-S6-9).
+-- The auction name is a Size tag (Q-S6-6 (a)). Root, Handle and
+-- Commitment wrap a Hash; a Deposit is the owner and the secret hash, with
+-- no amount. The compare words give Sum Unit Unit: inr unit is "yes".
+family AucID := aucId (auTag : Size)
+family Root := root (rtHash : Hash)
+family Handle := handle (hdHash : Hash)
+family Commitment := commitment (coHash : Hash)
+family Deposit := deposit (dpOwner : Size) (dpSecret : Hash)
+def auEq : AucID -> AucID -> Sum Unit Unit := fun (a : AucID) (b : AucID) => szEq (auTag a) (auTag b)
+def rtEq : Root -> Root -> Sum Unit Unit := fun (a : Root) (b : Root) => hsEq (rtHash a) (rtHash b)
+def hdEq : Handle -> Handle -> Sum Unit Unit := fun (a : Handle) (b : Handle) => hsEq (hdHash a) (hdHash b)
+def coEq : Commitment -> Commitment -> Sum Unit Unit := fun (a : Commitment) (b : Commitment) => hsEq (coHash a) (coHash b)
+-- The eligibility proof is an ideal record of the statement (root, handle,
+-- commitment) (Q-S6-5 (a)): elgVrf says yes when the three match. At S8b
+-- the match becomes the Noir verifier.
+family EligibilityProof := elgProof (epRoot : Root) (epHandle : Handle) (epCommit : Commitment)
+def elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Sum Unit Unit :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) =>
+    sAnd (rtEq r (epRoot e)) (sAnd (hdEq h (epHandle e)) (coEq c (epCommit e)))
+-- The sealed value (P1, Q-S6-3 (a)) is a cell monad. A guest program makes
+-- a sealed value with seal, but an elim, a fold or a projection of Sealed
+-- in a guest program def gives REFUSE_PEEK. Only the domain word release
+-- reads sealOf. The FHE ciphertext and the MPC shares are Sealed Amount in
+-- the clear denotation until S13 and S14.
+sealed family Sealed (A : Type 0) := seal (sealOf : A)
+family SealedBid := sealedBid (sbHandle : Handle) (sbCommit : Commitment) (sbProof : EligibilityProof) (sbBid : Sealed Amount)
+family SealedBids := sbNil | sbCons (sbsHead : SealedBid) (sbsTail : SealedBids)
+-- The verdicts (Q-S6-7 (a)). Handles is the set of the slashed handles; at
+-- S7 the Log gives it.
+family Reason := badCert | badProof | late | early | slashed | notAccepted | wrongHeight | malformed
+family Verdict := valid | invalid (vdWhy : Reason)
+family Handles := hlNil | hlCons (hlHead : Handle) (hlTail : Handles)
+def hlHas : Handle -> Handles -> Sum Unit Unit :=
+  fun (h : Handle) (hs : Handles) => elim (fun (k : Handles) => Sum Unit Unit) (inl unit)
+    (fun (g : Handle) (t : Handles) (ih : Sum Unit Unit) => sOr (hdEq h g) ih) hs
+-- vdCheck s w v is v when s says yes, else invalid w.
+def vdCheck : Sum Unit Unit -> Reason -> Verdict -> Verdict :=
+  fun (s : Sum Unit Unit) (w : Reason) (v : Verdict) => elim (fun (k : Sum Unit Unit) => Verdict) (fun (u : Unit) => invalid w) (fun (u : Unit) => v) s
+-- The message words (Q-S6-8 (a)). szPair is the Cantor pairing
+-- (x + y)(x + y + 1)/2 + y, total and injective. The first pair argument is
+-- a kind tag (0 for a stamp, 1 for an opening), so a stamp message and an
+-- open message are never equal. At S8 and T2 the message is Poseidon.
+def szTri : Size -> Size :=
+  fun (x : Size) => elim (fun (a : Size) => Size) sz0 (fun (a : Size) (ih : Size) => szS (szAdd a ih)) x
+def szPair : Size -> Size -> Size := fun (x : Size) (y : Size) => szAdd (szTri (szAdd x y)) y
+def stampMsg : Commitment -> Height -> Hash :=
+  fun (c : Commitment) (h : Height) => hash (szPair sz0 (szPair (hsTag (coHash c)) (htOf h)))
+def openMsg : AucID -> Height -> Hash :=
+  fun (a : AucID) (h : Height) => hash (szPair (szS sz0) (szPair (auTag a) (htOf h)))
+-- admit p sl r b h cs (Q-S6-7 (a)) checks the bid b with the timestamp
+-- certificate cs at the height h, in this order: invalid late when h is
+-- after the stamp end, invalid badCert when cs does not certify the stamp
+-- message of b at h, invalid slashed when the handle of b is in sl,
+-- invalid badProof when the eligibility proof does not check at the root
+-- r, else valid.
+def admit : Params -> Handles -> Root -> SealedBid -> Height -> Certificate -> Verdict :=
+  fun (p : Params) (sl : Handles) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) =>
+    vdCheck (htLe h (prStampEnd p)) late
+      (vdCheck (checkCert (prCommittee p) (stampMsg (sbCommit b) h) cs) badCert
+        (vdCheck (sNot (hlHas (sbHandle b) sl)) slashed
+          (vdCheck (elgVrf r (sbHandle b) (sbCommit b) (sbProof b)) badProof valid)))
+-- slash r h c e d f (Q-S6-4 (a)) checks two bids of the handle h: invalid
+-- notAccepted when the commitments are equal, invalid badProof when one of
+-- the two proofs does not check at the root r, else valid (slash h). The
+-- log entry and replay are S7.
+def slash : Root -> Handle -> Commitment -> EligibilityProof -> Commitment -> EligibilityProof -> Verdict :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (d : Commitment) (f : EligibilityProof) =>
+    vdCheck (sNot (coEq c d)) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h d f)) badProof valid)
+-- P3 (Q-S6-4 (a)): slash on two equal commitments is never valid.
+def szEqRefl : (x : Size) -> Path (Sum Unit Unit) (szEq x x) (inr unit) :=
+  fun (x : Size) => elim (fun (a : Size) => Path (Sum Unit Unit) (szEq a a) (inr unit)) refl
+    (fun (a : Size) (ih : Path (Sum Unit Unit) (szEq a a) (inr unit)) => ih) x
+def p3Slash : (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdict (slash r h c e c f) (invalid notAccepted) :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
+    cong (fun (s : Sum Unit Unit) => vdCheck (sNot s) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h c f)) badProof valid)) (szEqRefl (hsTag (coHash c)))
+-- The opening (P2, Q-S6-2 (a)): the proof field opOk says that t members
+-- of the committee certify the open message of the auction at the release
+-- height. When the kernel cannot check opOk, the checker gives
+-- REFUSE_PEEK. release opens the whole list in one call.
+family Opening := opening (opAuc : AucID) (opParams : Params) (opCert : Certificate) (opOk : Path (Sum Unit Unit) (checkCert (prCommittee opParams) (openMsg opAuc (prRelease opParams)) opCert) (inr unit))
+def release : Opening -> SealedBids -> Bids :=
+  fun (o : Opening) (bs : SealedBids) => elim (fun (k : SealedBids) => Bids) bdNil
+    (fun (b : SealedBid) (t : SealedBids) (ih : Bids) => bdCons (sealOf (sbBid b)) ih) bs

@@ -18,16 +18,20 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S5 DONE (the committee): the Cubical TT kernel of ratify-lang
+Status: S6 DONE (the sealed bid): the Cubical TT kernel of ratify-lang
 a46d5df (a port of permit-lang 3d47120), R0 from ratify-lang 71f2c22 and
 the domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`, `outcome`,
-the laws A1, A2 and A4 (S4), and from S5 `Hash`, `Party`, `Members`,
-`Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf`, the laws
-G1 to G3 as proof fields, `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK`
-and the committee half of `REFUSE_BOUND` (Q-S5-1 (a) to Q-S5-11 (a)).
-Section 1 has the rulings. Next: S6 (`AucID`, `Slot`, `Root`, `Handle`,
-`Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`,
-`admit`, `slash`, `release`, and the deadline fields of `Params`).
+the laws A1, A2 and A4 (S4), `Hash`, `Party`, `Members`, `Committee`,
+`Certificate`, `Params`, `checkCert`, `outcomeOf`, the laws G1 to G3 as
+proof fields, `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` and the
+committee half of `REFUSE_BOUND` (S5), and from S6 `Slot`, `Height`, the
+deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
+`Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`,
+`elgVrf`, `admit`, `slash`, `Opening`, `release`, the laws P2 and P3,
+`REFUSE_PEEK`, `REFUSE_DEADLINE` and the sealed and handle half of
+`REFUSE_BOUND` (Q-S6-1 (b) to Q-S6-9 (a)). Section 1 has the rulings.
+Next: S7 (`Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
+`paramsAt`, `replay`).
 
 ## 1. Rulings
 
@@ -102,6 +106,15 @@ Section 1 has the rulings. Next: S6 (`AucID`, `Slot`, `Root`, `Handle`,
 | 2026-11-06 | Q-S5-9 "(a) Field failure = code (Recommended)": a law field that does not check gives the law code: the G1 field `REFUSE_SAFETY`, the G2 field `REFUSE_CENSOR`, the G3 field `REFUSE_FORK`. This holds for every term (`refl` on closed numbers that break the law, or no proof for open numbers). G1 to G3 hold for open inputs too: DISCHARGED by the type, as P2. Edits: sections 6, 7, 12 (S5). | USER, S5 |
 | 2026-11-06 | Q-S5-10 "(a) G1, G2 in Committee (Recommended)": `Committee := committee (cmMembers) (cmT) (cmF) (cmSafe : G1 field) (cmCensor : G2 field)`. G1: no repeated party and f < t. G2: t + f <= n. `Params := params (prRule) (prReserve) (prCommittee) (prAmendT) (prFork : G3 field)`. G3: n + f < ta + ta. Edits: sections 6, 12 (S5). | USER, S5 |
 | 2026-11-06 | Q-S5-11 "(a) G3 only (Recommended)": there is no upper law on ta. New open item: ta > n - f stops amendments by the honest members (a loss of liveness, not of safety). S7 states it. Edits: sections 12 (S5), 13 (OI-24). | USER, S5 |
+| 2026-11-06 | Q-S6-1 "(b) (a) plus an order proof": new `family Height := height (htOf : Size)`. `Params` gets `prSlot : Slot`, `prStampEnd : Height` and `prRelease : Height` before `prFork`, and a proof field after `prFork`: `prOrder : Path (Sum Unit Unit) (htLt prStampEnd prRelease) (inr unit)`. Edits: sections 4.1, 12 (S6), 13 (OI-27). | USER, S6 |
+| 2026-11-06 | Q-S6-2 "(a) Opening proof field": `family Opening := opening (opAuc : AucID) (opParams : Params) (opCert : Certificate) (opOk : Path (Sum Unit Unit) (checkCert (prCommittee opParams) (openMsg opAuc (prRelease opParams)) opCert) (inr unit))`. `release : Opening -> SealedBids -> Bids` opens the whole list in one call. A failed `opOk` gives `REFUSE_PEEK`. P2 is DISCHARGED by the type. Edits: sections 6, 7, 12 (S6). | USER, S6 |
+| 2026-11-06 | Q-S6-3 "(a) Any guest read": `sealed family Sealed (A : Type 0) := seal (sealOf : A)`. A guest program def that elims, folds or projects a sealed family gives `REFUSE_PEEK`, law-typed defs included. `REFUSE_LAW` stays for the other law-only names (decrypt, observe). The domain, where `release` is, is exempt. A build with `seal` is allowed. Edits: sections 7, 12 (S6). | USER, S6 |
+| 2026-11-06 | Q-S6-4 "(a) slash decision + law": `slash : Root -> Handle -> Commitment -> EligibilityProof -> Commitment -> EligibilityProof -> Verdict` gives `valid` when both `elgVrf` checks say yes and the two commitments differ. Else it gives `invalid badProof`, or `invalid notAccepted` for equal commitments. P3 at S6 is the path law `p3Slash` on `slash`. The log entry and `replay` are S7. The `Root` argument is new (OI-7). Edits: sections 6, 12 (S6), 13. | USER, S6 |
+| 2026-11-06 | Q-S6-5 "(a) Ideal proof record": `EligibilityProof := elgProof (epRoot : Root) (epHandle : Handle) (epCommit : Commitment)`. `elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Sum Unit Unit` says yes when the three match. At S8b the match becomes the Noir verifier. New open item. Edits: sections 12 (S6), 13. | USER, S6 |
+| 2026-11-06 | Q-S6-6 "(a) Size tags + Hash wraps": `aucId (auTag : Size)`, `slot (soTag : Size)`; `root (rtHash : Hash)`, `handle (hdHash : Hash)`, `commitment (coHash : Hash)`; `Deposit := deposit (dpOwner : Size) (dpSecret : Hash)`, with no amount. Edits: sections 4.1, 12 (S6). | USER, S6 |
+| 2026-11-06 | Q-S6-7 "(a) Verdict + Handles now": `Reason` (badCert, badProof, late, early, slashed, notAccepted, wrongHeight, malformed) and `Verdict := valid | invalid (vdWhy : Reason)`. `admit : Params -> Handles -> Root -> SealedBid -> Height -> Certificate -> Verdict`. `Handles` is the slashed set; S7 takes it from the Log. A closed `SealedBids` or `Handles` list with more than 1024 entries gives `REFUSE_BOUND` (two new bounds). Edits: sections 7, 12 (S6), 13. | USER, S6 |
+| 2026-11-06 | Q-S6-8 "(a) szPair + msg words": a total injective pairing `szPair : Size -> Size -> Size` (Cantor, by fold and `szAdd`), and a kind tag so the two messages differ: `stampMsg : Commitment -> Height -> Hash` and `openMsg : AucID -> Height -> Hash`. At S8 and T2 the message is Poseidon. Edits: sections 12 (S6), 13. | USER, S6 |
+| 2026-11-06 | Q-S6-9 "(a) New REFUSE_DEADLINE": a follow-up to Q-S6-1 (b). A failed `prOrder` gives `REFUSE_DEADLINE` (the stamp end is before the release). Section 7 has one new row. `prOrder` is after `prFork`, so `fork.lang` still fails at `prFork` first. Edits: sections 7, 12 (S6). | USER, S6 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -265,8 +278,8 @@ discharged.
 | Row | Statement | Kind | How |
 |---|---|---|---|
 | P1 | Hiding: no party learns a bid before the release | ASSUMED | scheme security (FHE, MPC, commitment) |
-| P2 | Simultaneous release: shares count only after the deadline certificate | DISCHARGED | the type of `release` |
-| P3 | No free bid withdrawal: two valid cm under one hu give a slash entry | DISCHARGED | `replay` by construction (Alg 1) |
+| P2 | Simultaneous release: an `Opening` needs t certificates of `openMsg` at `prRelease` | DISCHARGED | the type of `release`: the proof field `opOk` of `Opening` (Q-S6-2 (a)) |
+| P3 | No free bid withdrawal: a slash on two equal commitments is never valid | DISCHARGED | the path law `p3Slash` on `slash` (Q-S6-4 (a)); the log entry and `replay` are S7 |
 | P4 | Handle uniqueness for each deposit and auction | ASSUMED | collision resistance (paper Lemma 14) |
 | P5 | Completeness: an honest eligible bid is admitted | ASSUMED | proof-system completeness (paper Lemma 12) |
 | Z1 | Knowledge soundness of pi^m | ASSUMED | proof system; the paper states no such assumption |
@@ -295,21 +308,22 @@ EXTERNAL 3 (G6, A3, M2). Total 24.
 
 ## 7. Refusals
 
-New check codes (Q-S0-28 (a), Q-S1-7 (a)): twelve. Each one gets a `fix`
+New check codes (Q-S0-28 (a), Q-S1-7 (a), Q-S6-9 (a)): thirteen. Each one gets a `fix`
 hint at A2.
 
 | Code | When | Source |
 |---|---|---|
 | `REFUSE_PARTIAL` | A partial kit word. | R0 |
-| `REFUSE_BOUND` | A committee or a bid list larger than the target bound: a closed `Bids` value with more than 1024 bids (Q-S4-6 (a)), or a closed `Members` value with more than 1024 members (Q-S5-7 (a)). | R0 |
+| `REFUSE_BOUND` | A committee or a bid list larger than the target bound: a closed `Bids` value with more than 1024 bids (Q-S4-6 (a)), a closed `Members` value with more than 1024 members (Q-S5-7 (a)), or a closed `SealedBids` or `Handles` value with more than 1024 entries (Q-S6-7 (a)). | R0 |
 | `REFUSE_AMOUNT` | An `Amount` operation other than compare, select, max, second max. | R0, Q-S0-1 |
 | `REFUSE_FORMER` | A type constructor that is not CM or CC. | R1 |
 | `REFUSE_FIXPOINT` | General recursion, or `Params` that authorize themselves. | R1 |
 | `REFUSE_CLOCK` | A wall clock or a host tick. | section 5 |
-| `REFUSE_PEEK` | A read of a `Sealed` value outside `release`. | P1 |
+| `REFUSE_PEEK` | A read of a `Sealed` value by a guest def (an elim, a fold or a projection), or an `opOk` field that does not check. | P1, P2, Q-S6-2 (a), Q-S6-3 (a) |
 | `REFUSE_SAFETY` | A G1 field does not check (t <= f or a repeated party). | G1, Q-S5-9 (a) |
 | `REFUSE_CENSOR` | A G2 field does not check (n - f < t). | G2, Q-S5-9 (a) |
 | `REFUSE_FORK` | A G3 field does not check (2ta - n <= f). | G3, Q-S5-9 (a) |
+| `REFUSE_DEADLINE` | A `prOrder` field does not check (the stamp end is not before the release). | Q-S6-9 (a) |
 | `REFUSE_APPROX` | An approximate scheme (CKKS). | T3 |
 | `REFUSE_WORD` | A user program that names `Word` or a `Word` operation. | Q-S1-7 (a) |
 
@@ -462,8 +476,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S3 | Port the ratify-lang 71f2c22 R0 delta (Q-S3-1 (a), Q-S3-2 (a)): R0 in the kernel and the Wasm writer, `REFUSE_PARTIAL`, `src/wasmop.h`, `test/notraptool.c`, the trap row (OI-4). `src/front/lower.c`, `src/wasm.c` and `src/ir.h` are back in the build, with the IR rows, the Wasm modules and the differential cases (OI-20). Gate: 30 examples, 17 parse refusals, 158 check refusals, 10 kit-only refusals, 1 time hint, 79 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 33 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. These are the 71f2c22 counts: the 71f2c22 `test/gate.sh` line 287 has `test/ir/proof-trap.lang` in the Wasm and differential rows (an earlier ratify-lang S3 run had 32 modules and 958 cases). Mutants M1, M2 (`REFUSE_PARTIAL`), M3 (the div guard of the no-trap tool), M4 (`flag_norm`): KILLED. M5 (the `br_table` default) and M6 (the IF condition): equivalent. | DONE |
 | S4 | `Amount`, `Bids`, `Rule`, `Outcome`, `outcome` (Q-S4-1 (a) to Q-S4-7 (a)); A1, A2, A4 in `domain/domain.lang`; `REFUSE_AMOUNT`, `REFUSE_BOUND`; the kernel slot `DaoOutcome` (OI-23). Gate: 32 examples, 17 parse refusals, 163 check refusals, 10 kit-only refusals, 1 time hint, 83 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 35 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. `test/gate.sh` builds a Wasm module for each `examples/*.lang` file, so the two new examples add two modules. Mutants M1 (the `REFUSE_AMOUNT` site), M2 (the `REFUSE_BOUND` site), M3 (`amMax`, A1), M4 (`bdSecond`, A2), M5 (the `bdArg` tie-break, A4): KILLED. | DONE |
 | S5 | `Hash`, `Party`, `Members`, `Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf` and the Size and Sum words (Q-S5-1 (a) to Q-S5-11 (a)); G1 to G3 as proof fields (`cmSafe`, `cmCensor`, `prFork`); `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` (Q-S5-9 (a)); the committee half of `REFUSE_BOUND` (`COMMITTEE_BOUND` 1024). Gate: 34 examples, 17 parse refusals, 169 check refusals, 10 kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S4: examples 32 to 34 (`examples/committee.lang`, `examples/committee-bound-edge.lang`), check refusals 163 to 169 (6 rows), evals 83 to 89 (6 committee rows), Wasm modules 35 to 37 (the 2 new examples); all other counts are the same. Mutants M1 (the `REFUSE_SAFETY` mapping), M2 (the `REFUSE_CENSOR` mapping), M3 (the `REFUSE_FORK` mapping), M4 (`COMMITTEE_BOUND` 1025), M5 (G1 `f <= t`), M6 (G2 with f dropped), M7 (G3 with `ta` for `ta + ta`): M1 to M7 KILLED (7/7). | DONE |
-| S6 | `AucID`, `Slot`, `Hash` (kept from S5), `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`, `admit`, `slash`, `release`; P2, P3; `REFUSE_PEEK`; the deadline fields of `Params` (Q-S5-8 (a)). | NEXT |
-| S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | |
+| S6 | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`, `elgVrf`, `admit`, `slash`, `Opening`, `release`; the deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, `prOrder`); P2, P3; `REFUSE_PEEK`, `REFUSE_DEADLINE`; the sealed and handle bounds (Q-S6-1 (b) to Q-S6-9 (a)). Gate: 36 examples, 17 parse refusals, 177 check refusals, 10 kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S5: examples 34 to 36 (`examples/sealed.lang`, `examples/sealed-bound-edge.lang`), check refusals 169 to 177 (8 rows), evals 89 to 104 (15 sealed rows), Wasm modules 37 to 39; all other counts are the same. Mutants M1 (the `REFUSE_PEEK` site), M2 (the `prOrder` code), M3 (the `opOk` code), M4 (`openMsg` at the stamp end), M5 (`slash` without the equal-commitment test), M6 (`htLe` for `htLt`), M7 (`SEALED_BID_BOUND` 1025), M8 (`HANDLE_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
+| S7 | `Amendment`, `Ballot`, `Log` (CM), `Machine` (CC), `authorize`, `amend`, `paramsAt`, `replay`; G4, G5; `REFUSE_FIXPOINT`, `REFUSE_CLOCK`. | NEXT |
 | S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | |
 | S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
 | S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
@@ -483,6 +497,23 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S20 | A3, A5, B4: SKILL.md, G1 to G5, AGENTS.md and the README final. | |
 | S21 | A6: the token comparison. | |
 | S22 | Close: SPEC.md, probe/CAPABILITY.md, VALIDATION.md, B3 milestones, final gate. | |
+
+Design notes from S6:
+
+- DN-1 (the P1 site). The sealed read check records operations while
+  elaborating the written type and body of the def. Quoted types and
+  generated proof cores can unfold domain defs (`slOut`, `release`), and
+  a use of a domain def is not a read by the program def. Scanning those
+  normal forms made the S5 fronttool row `settle` (`slOut` under `Trunc1`)
+  and a `refl` proof about `release` give `REFUSE_PEEK`. Regression rows
+  also keep direct reads refused in annotations and under `Trunc1`.
+- DN-2 (against Q-S6-8 (a)). The Cantor code stays. The arena overflow (an
+  out-of-memory at 1 GiB in `admitLate` and `open-early`) came from the S5
+  word `szEq`. Its inner elim step called `ih`, and the evaluator computes
+  `ih` eagerly, so the time grows very fast: `szEq` on 14 passes, and on 44
+  it fills the arena. `szEq` now reads y with two new linear words, `szIsZ`
+  and `szDec`. `szEqRefl` still checks by `ih`. The same shape is in `szLe`.
+  It is only used on small values (heights, the threshold) and stays (OI-34).
 
 ## 13. Open items
 
@@ -550,8 +581,26 @@ One session for each slice: scope, gate, mutants, docs, close.
 - OI-26 An open committee (an input) passes the check at any size; only a
   closed `Members` value with more than 1024 members gives `REFUSE_BOUND`
   (Q-S5-7 (a)). The T1 entry bounds the open committee (S9).
-- OI-27 `Params` has no deadline field at S5 (Q-S5-8 (a)). S6 adds the
-  deadline fields with `Slot` and `release` (P2).
+- OI-27 CLOSED at S6. `Params` has the deadline fields `prSlot`,
+  `prStampEnd` and `prRelease` and the proof field `prOrder`, and `release`
+  takes an `Opening` with the proof field `opOk` (Q-S6-1 (b), Q-S6-2 (a)).
+- OI-28 `elgVrf` is an ideal check until S8b: it says yes when the root,
+  the handle and the commitment of the proof match (Q-S6-5 (a)). At S8b it
+  becomes the Noir verifier.
+- OI-29 `Handles`, the slashed set, is an input of `admit` until S7
+  (Q-S6-7 (a)). S7 takes it from the Log.
+- OI-30 The message pairing `szPair` is the abstract Cantor code until S8
+  (Q-S6-8 (a)). At S8 and T2 the message is Poseidon.
+- OI-31 `Sealed` is the clear denotation of the FHE ciphertext and the MPC
+  shares until S13 and S14 (Q-S6-3 (a)).
+- OI-32 The root certificate of a slot is not yet an argument of `admit`
+  (design/DESIGN.md line 33).
+- OI-33 `slash` has a new `Root` argument (Q-S6-4 (a)). OI-7 stays open for
+  the slot argument of `slashUsr`.
+- OI-34 `szLe` calls `ih` in its inner elim step, as `szEq` did before DN-2.
+  The evaluator computes `ih` eagerly, so the time grows very fast on large
+  values. `szLe` is only used on small values (heights, the threshold).
+  A linear form (as `szIsZ` and `szDec`) is the fix if a large use comes.
 
 ## 14. Questions for the USER (S0)
 

@@ -1,0 +1,2 @@
+-- REFUSE_PEEK (S6, P1, Q-S6-3 (a)): a law type (a Path codomain) does not let a guest def read a sealed value
+def peekLaw : (s : Sealed Amount) -> Path Amount (sealOf s) (sealOf s) := fun (s : Sealed Amount) => refl

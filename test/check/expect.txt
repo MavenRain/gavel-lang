@@ -167,3 +167,11 @@ safety-open.lang REFUSE_SAFETY
 censor.lang REFUSE_CENSOR
 fork.lang REFUSE_FORK
 bound-committee.lang REFUSE_BOUND
+peek-proj.lang REFUSE_PEEK
+peek-elim.lang REFUSE_PEEK
+peek-fold.lang REFUSE_PEEK
+peek-law.lang REFUSE_PEEK
+open-early.lang REFUSE_PEEK
+order.lang REFUSE_DEADLINE
+bound-sealed.lang REFUSE_BOUND
+bound-handles.lang REFUSE_BOUND

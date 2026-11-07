@@ -1,0 +1,11 @@
+-- REFUSE_BOUND (S6, Q-S6-7 (a)): a closed sealed bid list with 1025 sealed bids
+def hZero : Handle := handle (hash sz0)
+def cmZero : Commitment := commitment (hash sz0)
+def bidZero : SealedBid := sealedBid hZero cmZero (elgProof (root (hash sz0)) hZero cmZero) (seal Amount amZero)
+def addBid : SealedBids -> SealedBids := fun (bs : SealedBids) => sbCons bidZero bs
+def addBid4 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid (addBid (addBid (addBid bs)))
+def addBid16 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid4 (addBid4 (addBid4 (addBid4 bs)))
+def addBid64 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid16 (addBid16 (addBid16 (addBid16 bs)))
+def addBid256 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid64 (addBid64 (addBid64 (addBid64 bs)))
+def addBid1024 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid256 (addBid256 (addBid256 (addBid256 bs)))
+def big : SealedBids := addBid (addBid1024 sbNil)

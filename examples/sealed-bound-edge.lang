@@ -1,0 +1,23 @@
+-- The sealed bid and handle bounds (S6, USER ruling Q-S6-7 (a)), guest
+-- mode: a closed SealedBids value with exactly 1024 sealed bids and a
+-- closed Handles value with exactly 1024 handles pass.
+-- test/check/bound-sealed.lang and test/check/bound-handles.lang have 1025
+-- entries and give REFUSE_BOUND. An open list (addBid1024 itself) passes
+-- at check time; the T1 entry bounds it (S9).
+def hZero : Handle := handle (hash sz0)
+def cmZero : Commitment := commitment (hash sz0)
+def bidZero : SealedBid := sealedBid hZero cmZero (elgProof (root (hash sz0)) hZero cmZero) (seal Amount amZero)
+def addBid : SealedBids -> SealedBids := fun (bs : SealedBids) => sbCons bidZero bs
+def addBid4 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid (addBid (addBid (addBid bs)))
+def addBid16 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid4 (addBid4 (addBid4 (addBid4 bs)))
+def addBid64 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid16 (addBid16 (addBid16 (addBid16 bs)))
+def addBid256 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid64 (addBid64 (addBid64 (addBid64 bs)))
+def addBid1024 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid256 (addBid256 (addBid256 (addBid256 bs)))
+def addHandle : Handles -> Handles := fun (hs : Handles) => hlCons hZero hs
+def addHandle4 : Handles -> Handles := fun (hs : Handles) => addHandle (addHandle (addHandle (addHandle hs)))
+def addHandle16 : Handles -> Handles := fun (hs : Handles) => addHandle4 (addHandle4 (addHandle4 (addHandle4 hs)))
+def addHandle64 : Handles -> Handles := fun (hs : Handles) => addHandle16 (addHandle16 (addHandle16 (addHandle16 hs)))
+def addHandle256 : Handles -> Handles := fun (hs : Handles) => addHandle64 (addHandle64 (addHandle64 (addHandle64 hs)))
+def addHandle1024 : Handles -> Handles := fun (hs : Handles) => addHandle256 (addHandle256 (addHandle256 (addHandle256 hs)))
+def edgeBids : SealedBids := addBid1024 sbNil
+def edgeHandles : Handles := addHandle1024 hlNil

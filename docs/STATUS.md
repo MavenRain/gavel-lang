@@ -1,13 +1,13 @@
 # gavel-lang status
 
-The build implements slice S5 of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S6 of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
-Q-S4-7 (a)) and the committee (Q-S5-1 (a) to Q-S5-11 (a)). It does not
-complete M0. The next slice is S6: `AucID`, `Slot`, `Root`, `Handle`,
-`Commitment`, `Deposit`, `EligibilityProof`, `SealedBid`, `elgVrf`,
-`admit`, `slash`, `release`, and the deadline fields of `Params`.
+Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
+(Q-S6-1 (b) to Q-S6-9 (a)). It does not complete M0. The next slice is
+S7: `Amendment`, `Ballot`, `Log`, `Machine`, `authorize`, `amend`,
+`paramsAt` and `replay`.
 
 ## Implemented
 
@@ -38,6 +38,16 @@ complete M0. The next slice is S6: `AucID`, `Slot`, `Root`, `Handle`,
   as types. A field that does not check gives `REFUSE_SAFETY` (G1),
   `REFUSE_CENSOR` (G2) or `REFUSE_FORK` (G3). A closed committee with more
   than 1024 members gives `REFUSE_BOUND`.
+- The sealed bid in `domain/domain.lang` (S6): `Slot`, `Height`, the
+  deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, and the
+  proof field `prOrder`), `AucID`, `Root`, `Handle`, `Commitment`,
+  `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`,
+  `Verdict`, `elgVrf`, `admit`, `slash`, `Opening` and `release`. P2 is the
+  proof field `opOk` of `Opening`. P3 is the path law `p3Slash` on `slash`.
+  A guest def that reads a `Sealed` value, or an `opOk` field that does
+  not check, gives `REFUSE_PEEK`. A `prOrder` field that does not check
+  gives `REFUSE_DEADLINE`. A closed `SealedBids` or `Handles` list with
+  more than 1024 entries gives `REFUSE_BOUND`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -45,18 +55,18 @@ complete M0. The next slice is S6: `AucID`, `Slot`, `Root`, `Handle`,
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 34 examples, 17 parse refusals, 169 check refusals, 10
-  kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir
+- The gate: 36 examples, 17 parse refusals, 177 check refusals, 10
+  kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir
   refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine
-  evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches;
+  evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S6 to S8c: the governance and crypto layers of `docs/PLAN.md` section
-   12 (`SealedBid`, `Log`, `Machine`, the crypto prelude). Each slice
-   needs the slice before it; S6 needs the S5 commit first.
+1. S7 to S8c: the governance and crypto layers of `docs/PLAN.md` section
+   12 (`Log`, `Machine`, the crypto prelude). Each slice needs the slice
+   before it; S7 needs the S6 commit first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
@@ -78,7 +88,12 @@ complete M0. The next slice is S6: `AucID`, `Slot`, `Root`, `Handle`,
   (OI-26).
 - G3 sets no upper law on ta. A ta above n - f stops the amendments by
   the honest members (OI-24).
-- `Params` has no deadline field. S6 adds it (OI-27).
+- `elgVrf` is an ideal check until S8b (OI-28). The slashed set `Handles`
+  is an input of `admit` until S7 (OI-29). The message pairing is the
+  abstract Cantor code until S8 (OI-30). `Sealed` is the clear denotation
+  of the ciphertext and the shares until S13 and S14 (OI-31).
+- `szLe` calls `ih` in its inner elim step, so it is slow on large values.
+  It is only used on small values (OI-34).
 
 ## Internal boundaries
 

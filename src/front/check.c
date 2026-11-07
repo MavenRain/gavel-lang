@@ -56,6 +56,7 @@ typedef struct {
   uint32_t field_top;
   int field_dep;
   int field_rec;
+  int sealed_read; /* a fold, elim or projection elaborated in this declaration */
   CheckMode mode; /* orbit-lang S3: guest or kit */
 } Checker;
 
@@ -359,6 +360,13 @@ static const Core *core_op(Checker *c, Op op, uint32_t inst, uint32_t field, con
   k->field = field;
   k->args = copy;
   k->argc = n;
+  /* Record reads while elaborating source operations. quote_value can
+     unfold domain words inside generated proofs, but those operations
+     are not guest reads and do not pass through this constructor. */
+  if ((op == OP_FOLD_FAMILY && c->m->families[inst].sealed)
+      || (op == OP_ELIM && field != 0u && c->m->families[field - 1u].sealed)
+      || (op == OP_PROJ && c->m->families[c->m->ctors[inst].family].sealed))
+    c->sealed_read = 1;
   return k;
 }
 
@@ -2429,16 +2437,21 @@ static const Core *family_app(Call *k, uint32_t fam) {
 
 /* Q-S5-9 (a): the law fields of the domain. The field type is the law, so
    a kernel failure of the field already stops the check; the failure gets
-   the law code (G1 cmSafe, G2 cmCensor, G3 prFork) for every term. */
+   the law code (G1 cmSafe, G2 cmCensor, G3 prFork) for every term. S6: the
+   deadline order prOrder (Q-S6-9 (a)) and the release certificate opOk of
+   an Opening (P2, Q-S6-2 (a)). */
 static const struct {
   const char *family;
   const char *field;
   const char *code;
   const char *law;
+  const char *ruling;
 } LAW_FIELDS[] = {
-  {"Committee", "cmSafe", "REFUSE_SAFETY", "G1 (the members are distinct and f < t)"},
-  {"Committee", "cmCensor", "REFUSE_CENSOR", "G2 (t + f <= n)"},
-  {"Params", "prFork", "REFUSE_FORK", "G3 (n + f < ta + ta, that is 2ta - n > f)"},
+  {"Committee", "cmSafe", "REFUSE_SAFETY", "G1 (the members are distinct and f < t)", "Q-S5-9 (a)"},
+  {"Committee", "cmCensor", "REFUSE_CENSOR", "G2 (t + f <= n)", "Q-S5-9 (a)"},
+  {"Params", "prFork", "REFUSE_FORK", "G3 (n + f < ta + ta, that is 2ta - n > f)", "Q-S5-9 (a)"},
+  {"Params", "prOrder", "REFUSE_DEADLINE", "of the deadline order (prStampEnd < prRelease)", "Q-S6-9 (a)"},
+  {"Opening", "opOk", "REFUSE_PEEK", "P2 (t members certify the release at prRelease)", "Q-S6-2 (a)"},
 };
 
 static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
@@ -2451,7 +2464,7 @@ static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
   for (i = 0; i < (uint32_t)(sizeof LAW_FIELDS / sizeof LAW_FIELDS[0]); i++) {
     if (strcmp(fam, LAW_FIELDS[i].family) == 0 && strcmp(field, LAW_FIELDS[i].field) == 0) {
       d->code = LAW_FIELDS[i].code;
-      snprintf(d->msg, sizeof d->msg, "%s: the proof field %s of %s does not check, so the law %s does not hold; Q-S5-9 (a)", d->def, field, ci->name, LAW_FIELDS[i].law);
+      snprintf(d->msg, sizeof d->msg, "%s: the proof field %s of %s does not check, so the law %s does not hold; %s", d->def, field, ci->name, LAW_FIELDS[i].law, LAW_FIELDS[i].ruling);
       return;
     }
   }
@@ -3979,10 +3992,9 @@ static int kernel_sig(Checker *c, const Decl *d) {
 
 static uint32_t find_family(const Machine *m, const char *name);
 
-/* Rule O7 (S5, Q-S5-2 (a)). 1 if the core term T uses a law-only name: a
-   law-only def, or an elim, a fold or a projection of a sealed family. The
-   arguments of the type former TRUNC (Trunc1) are skipped: an end point
-   under Trunc1 comes out only into a proposition. */
+/* Rule O7 (S5, Q-S5-2 (a)). A law-only def used outside Trunc1 marks the
+   containing definition law-only. Sealed reads are tracked separately
+   during elaboration, before normalization unfolds domain words. */
 static int law_uses(const Machine *m, uint32_t trunc, const Core *t) {
   uint32_t i;
   if (t == NULL)
@@ -4013,9 +4025,6 @@ static int law_uses(const Machine *m, uint32_t trunc, const Core *t) {
   }
   if (t->op == OP_FAMILY && t->inst == trunc)
     return 0;
-  /* OP_ELIM keeps the family + 1 in FIELD (0 for Sum and Unit). */
-  if ((t->op == OP_FOLD_FAMILY && m->families[t->inst].sealed) || (t->op == OP_ELIM && t->field != 0u && m->families[t->field - 1u].sealed) || (t->op == OP_PROJ && m->families[m->ctors[t->inst].family].sealed))
-    return 1;
   for (i = 0; i < t->argc; i++) {
     if (law_uses(m, trunc, t->args[i]))
       return 1;
@@ -4105,6 +4114,25 @@ static int amount_read(const Machine *m, const Core *type, const Core *body) {
 #define BID_LIST_BOUND 1024u
 /* Q-S5-7 (a): the largest closed committee. */
 #define COMMITTEE_BOUND 1024u
+/* Q-S6-7 (a): the largest closed sealed bid list and handle list. */
+#define SEALED_BID_BOUND 1024u
+#define HANDLE_BOUND 1024u
+
+/* The bounded list families of a guest program: the family, its two
+   constructors, the bound and the REFUSE_BOUND text. */
+static const struct {
+  const char *family;
+  const char *nil;
+  const char *cons;
+  uint32_t bound;
+  const char *what;
+  const char *why;
+} LIST_BOUNDS[] = {
+  {"Bids", "bdNil", "bdCons", BID_LIST_BOUND, "bid list with more than 1024 bids", "an open list passes and the T1 entry bounds it; Q-S4-6 (a)"},
+  {"Members", "mbNil", "mbCons", COMMITTEE_BOUND, "committee with more than 1024 members", "an open committee passes and the T1 entry bounds it; Q-S5-7 (a)"},
+  {"SealedBids", "sbNil", "sbCons", SEALED_BID_BOUND, "sealed bid list with more than 1024 sealed bids", "an open list passes and the T1 entry bounds it; Q-S6-7 (a)"},
+  {"Handles", "hlNil", "hlCons", HANDLE_BOUND, "handle list with more than 1024 handles", "an open list passes and the T1 entry bounds it; Q-S6-7 (a)"},
+};
 
 /* A bounded list family (Bids or Members): the family, its two
    constructors (the tail is the last argument of CONS) and the largest
@@ -4337,6 +4365,7 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   int program = d->origin == ORIGIN_PROGRAM;
   const Core *tc;
   int law;
+  int sealed;
   if (body == NULL || !check_sig(c, d, tv))
     return 0;
   if (has_history(m) && strcmp(d->name, "init") != 0 && !is_family(tv, m->state_family) && !history_ok(c, body, mentions_state(m, c->level, tv), 0, NULL))
@@ -4348,34 +4377,40 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
   if (program && tc == NULL)
     return FAIL(c, "OOM", "out of memory");
   law = program ? law_uses(m, trunc, syntax_type) || law_uses(m, trunc, tc) || law_uses(m, trunc, body) : d->is_law;
+  sealed = program && c->sealed_read;
+  /* P1 (S6, Q-S6-3 (a)): a guest program def does not read a sealed value,
+     also when its type is a law. The domain (release) is exempt, and the
+     constructor seal is not a read. core_op records reads in the written
+     type and body. Quoting a type or a generated proof can unfold domain
+     defs (slOut, release), which is not a read by the program def. */
+  if (sealed && guest(c))
+    return FAIL(c, "REFUSE_PEEK", "%s reads a sealed value (an elim, a fold or a projection of a sealed family); only the domain word release opens a sealed bid; P1, Q-S6-3 (a)", d->name);
   if (law && guest(c) && !law_type(m, c->level, trunc, tv))
-    return FAIL(c, "REFUSE_LAW", "%s uses a law-only name (decrypt, observe, an elim, fold or projection of a sealed family) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
+    return FAIL(c, "REFUSE_LAW", "%s uses a law-only name (decrypt, observe or a law-only def) but its type is not a law (a Path or Trunc1 codomain); rule O7", d->name);
   /* Q-S4-1 (a): a guest program reads an Amount only through amLe, amSelect,
      amMax and amMin. The domain file is exempt (program), as is kit mode. */
   if (program && guest(c) && amount_read(m, syntax_type, body))
     return FAIL(c, "REFUSE_AMOUNT", "%s reads an Amount by an elim, a fold, a projection or amSucc on a term that is not a literal; a program uses only amLe (compare), amSelect (select), amMax (max) and amMin (second max); Q-S0-1 (a), Q-S4-1 (a)", d->name);
   /* Q-S4-6 (a): a closed bid list has at most 1024 bids. Q-S5-7 (a): a
-     closed committee has at most 1024 members. */
+     closed committee has at most 1024 members. Q-S6-7 (a): a closed sealed
+     bid list and a closed handle list have at most 1024 entries. */
   if (program && guest(c)) {
-    ListBound bids = list_bound(m, "Bids", "bdNil", "bdCons", BID_LIST_BOUND);
-    ListBound members = list_bound(m, "Members", "mbNil", "mbCons", COMMITTEE_BOUND);
-    int over = bound_def(c, &bids, tv, syntax_type, body);
-    if (m->diag->code != NULL)
-      return 0;
-    if (over)
-      return FAIL(c, "REFUSE_BOUND", "%s has a closed bid list with more than 1024 bids; an open list passes and the T1 entry bounds it; Q-S4-6 (a)", d->name);
-    over = bound_def(c, &members, tv, syntax_type, body);
-    if (m->diag->code != NULL)
-      return 0;
-    if (over)
-      return FAIL(c, "REFUSE_BOUND", "%s has a closed committee with more than 1024 members; an open committee passes and the T1 entry bounds it; Q-S5-7 (a)", d->name);
+    uint32_t i;
+    for (i = 0; i < (uint32_t)(sizeof LIST_BOUNDS / sizeof LIST_BOUNDS[0]); i++) {
+      ListBound b = list_bound(m, LIST_BOUNDS[i].family, LIST_BOUNDS[i].nil, LIST_BOUNDS[i].cons, LIST_BOUNDS[i].bound);
+      int over = bound_def(c, &b, tv, syntax_type, body);
+      if (m->diag->code != NULL)
+        return 0;
+      if (over)
+        return FAIL(c, "REFUSE_BOUND", "%s has a closed %s; %s", d->name, LIST_BOUNDS[i].what, LIST_BOUNDS[i].why);
+    }
   }
   info->name = d->name;
   info->origin = d->origin;
   info->body = body;
   info->type = tv;
   info->value = NULL;
-  info->law_only = law;
+  info->law_only = law || sealed;
   m->def_count++;
   return 1;
 }
@@ -4738,6 +4773,7 @@ static void cocell_text(Text *t, const Decl *d, uint64_t n, const CocellField *k
 /* A fresh context for the declaration NAME at INDEX of the list. */
 static void checker_reset(Checker *c, size_t index, const char *name) {
   c->decl_index = index;
+  c->sealed_read = 0;
   c->scope = NULL;
   c->env = NULL;
   c->level = 0;

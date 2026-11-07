@@ -17,7 +17,8 @@ def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
 def board : Committee := committee members s3 s1 refl refl
 -- G3 on ta = 3: n + f = 5 < ta + ta = 6.
 def bids : Bids := bdCons (amSucc amZero) (bdCons (amSucc (amSucc amZero)) bdNil)
-def setup : Params := params secondPrice (amSucc amZero) board s3 refl
+-- The deadlines (S6): the stamp end 1 is before the release 2.
+def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
 def msg : Hash := hash s2
 def other : Hash := hash s3
 -- Three distinct signers on msg: accept.

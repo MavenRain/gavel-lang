@@ -1,0 +1,9 @@
+-- REFUSE_BOUND (S6, Q-S6-7 (a)): a closed handle list with 1025 handles
+def hZero : Handle := handle (hash sz0)
+def addHandle : Handles -> Handles := fun (hs : Handles) => hlCons hZero hs
+def addHandle4 : Handles -> Handles := fun (hs : Handles) => addHandle (addHandle (addHandle (addHandle hs)))
+def addHandle16 : Handles -> Handles := fun (hs : Handles) => addHandle4 (addHandle4 (addHandle4 (addHandle4 hs)))
+def addHandle64 : Handles -> Handles := fun (hs : Handles) => addHandle16 (addHandle16 (addHandle16 (addHandle16 hs)))
+def addHandle256 : Handles -> Handles := fun (hs : Handles) => addHandle64 (addHandle64 (addHandle64 (addHandle64 hs)))
+def addHandle1024 : Handles -> Handles := fun (hs : Handles) => addHandle256 (addHandle256 (addHandle256 (addHandle256 hs)))
+def big : Handles := addHandle (addHandle1024 hlNil)

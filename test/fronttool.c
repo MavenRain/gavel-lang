@@ -290,10 +290,54 @@ static int committee_bounds(void) {
   return ok;
 }
 
+/* Q-S6-7 (a): a closed sealed bid list and a closed handle list have at
+   most 1024 entries, also when a closed helper consumes the list. */
+static int sealed_bounds(void) {
+  const char *prelude =
+    "family Amount := amZero | amSucc (amPred : Amount)\n"
+    "family SealedBid := sealedBid (sbTag : Amount)\n"
+    "family SealedBids := sbNil | sbCons (sbsHead : SealedBid) (sbsTail : SealedBids)\n"
+    "family Handle := handle (hdTag : Amount)\n"
+    "family Handles := hlNil | hlCons (hlHead : Handle) (hlTail : Handles)\n"
+    "def addBid : SealedBids -> SealedBids := fun (bs : SealedBids) => sbCons (sealedBid amZero) bs\n"
+    "def addBid4 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid (addBid (addBid (addBid bs)))\n"
+    "def addBid16 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid4 (addBid4 (addBid4 (addBid4 bs)))\n"
+    "def addBid64 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid16 (addBid16 (addBid16 (addBid16 bs)))\n"
+    "def addBid256 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid64 (addBid64 (addBid64 (addBid64 bs)))\n"
+    "def addBid1024 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid256 (addBid256 (addBid256 (addBid256 bs)))\n"
+    "def addHandle : Handles -> Handles := fun (hs : Handles) => hlCons (handle amZero) hs\n"
+    "def addHandle4 : Handles -> Handles := fun (hs : Handles) => addHandle (addHandle (addHandle (addHandle hs)))\n"
+    "def addHandle16 : Handles -> Handles := fun (hs : Handles) => addHandle4 (addHandle4 (addHandle4 (addHandle4 hs)))\n"
+    "def addHandle64 : Handles -> Handles := fun (hs : Handles) => addHandle16 (addHandle16 (addHandle16 (addHandle16 hs)))\n"
+    "def addHandle256 : Handles -> Handles := fun (hs : Handles) => addHandle64 (addHandle64 (addHandle64 (addHandle64 hs)))\n"
+    "def addHandle1024 : Handles -> Handles := fun (hs : Handles) => addHandle256 (addHandle256 (addHandle256 (addHandle256 hs)))\n";
+  int ok = 1;
+  ok &= checked_in(prelude,
+    "def big : SealedBids := addBid (addBid1024 sbNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consumed : Unit := fold unit (fun (b : SealedBid) (t : Unit) => t) (addBid (addBid1024 sbNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def edge : SealedBids := addBid1024 sbNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  ok &= checked_in(prelude,
+    "def big : Handles := addHandle (addHandle1024 hlNil)",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def consumed : Unit := fold unit (fun (h : Handle) (t : Unit) => t) (addHandle (addHandle1024 hlNil))",
+    ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_BOUND");
+  ok &= checked_in(prelude,
+    "def edge : Handles := addHandle1024 hlNil",
+    ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+  return ok;
+}
+
 int main(void) {
   int ok = 1;
   ok &= amount_bounds();
   ok &= committee_bounds();
+  ok &= sealed_bounds();
   ok &= checked_fixture("test/ir/lazy.lang");
   ok &= checked_fixture("test/ir/proof-trap.lang");
   /* Diagnostics can print binders while constructor slots are still unnamed. */
@@ -601,6 +645,15 @@ int main(void) {
   ok &= law_guest("def peek : Sl Size -> Size := fun c => slOut Size c", "REFUSE_LAW");
   ok &= law_guest("def settle : (c : Sl Size) -> Trunc1 (Path Size (slOut Size c) sz0) -> Size :=\n"
                   "  fun c p => sz0", NULL);
+  /* refl quotes its endpoint and unfolds the domain word slOut. That
+     generated fold is not a guest read. Direct reads in annotations and
+     under Trunc1 still are guest reads. */
+  ok &= law_guest("def releaseRefl : (c : Sl Size) -> Path Size (slOut Size c) (slOut Size c) :=\n"
+                  "  fun c => refl", NULL);
+  ok &= law_guest("def annotationPeek : Unit :=\n"
+                  "  (fun (p : Path Size (slOf (slEta Size sz0)) sz0) => unit) refl", "REFUSE_PEEK");
+  ok &= law_guest("def truncPeek : (c : Sl Size) -> Trunc1 (Path Size (slOf c) (slOf c)) :=\n"
+                  "  fun c => trunc1 (Path Size (slOf c) (slOf c)) refl", "REFUSE_PEEK");
   ok &= law_guest("def slOut : Size := sz0", "REFUSE_NAME");
   /* The generated names are R4 names: a bisimulation name, a destructor
      name and a corecursor name that an earlier def holds are refused. */
