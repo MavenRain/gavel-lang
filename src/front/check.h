@@ -12,6 +12,7 @@
 typedef struct {
   uint32_t param_count;
   int param_flag[ENTRY_PARAMS_MAX];
+  int param_word[ENTRY_PARAMS_MAX]; /* S8: the parameter is a Word */
   int result_flag;
   int result_option;
 } Entry;

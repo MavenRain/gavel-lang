@@ -49,7 +49,7 @@ uses `natMul`, and the kernel has no `natMul`.
 
 | Kind | Names |
 |---|---|
-| Families | `S1`, `Trunc1`, `Trunc0`, `Size`, `Parity`, `Empty`, `Bag`, `FreeMon`, `Pos`, `Word`, `ChoiceBag`, `OrbitN`, `Charter` |
+| Families | `S1`, `Trunc1`, `Trunc0`, `Size`, `Parity`, `Empty`, `Bag`, `FreeMon`, `Pos`, `SwapWord`, `ChoiceBag`, `OrbitN`, `Charter` |
 | Path operations | `transport`, `subst`, `J`, `JRefl`, `trans`, `isProp`, `isSet` |
 | Size and word operations | `sExtend`, `sDuplicate`, `sizeFlip`, `sizeEven`, `sizePred`, `OpPos`, `consP`, `swapFront`, `actW` |
 | Free monoid operations | `fmCons`, `fmIsSet`, `fmFold`, `fmBind`, `fmMap` |
@@ -219,6 +219,51 @@ cannot apply `amSucc` to a value that is not a literal (`REFUSE_AMOUNT`),
 so `setup2` and `setupOI` use literal Amounts. The row `setupOI` states the
 liveness item OI-24: with ta above n - f, `authorize` on all n - f honest
 yes ballots gives `inl unit` (no).
+
+## The field
+
+S8 adds the machine `Word` and the BN254 field (`docs/PLAN.md` section 1,
+Q-S8-1 (a) to Q-S8-9 (a)).
+
+`Word` is a uint32 value that wraps. The ops are `wAdd`, `wSub`, `wMul`,
+`wMulHi` (the high word of the 64-bit product), `wAnd`, `wOr`, `wXor`,
+`wNot`, `wShl`, `wShr`, `wRotl`, `wRotr`, `wLt` and `wEq`. A compare gives
+`Sum Unit Unit`. The literals are `0x1fw` and `31w`; a value above
+0xffffffff gives `LEX_WORD_RANGE`. A guest program that names the type, an
+op or a literal gives `REFUSE_WORD`. Only this file and `langc --kit` may.
+`Word` lowers to masked Wasm i64 ops. The old bag family `Word` is now `SwapWord`;
+its constructors and fields keep their names.
+
+| Kind | Names |
+|---|---|
+| Family | `Fe` (8 Words, least significant first), `FeMod` (`modM`, `modN0`, `modR2`, `modR1`, `modE`) |
+| Moduli | `frMod`, `fpMod` |
+| Field ops | `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv` |
+| Types | `Fr`, `Fp` (each is `Fe`) |
+
+An `Fe` holds a value in Montgomery form. `feMul` is the CIOS multiply with
+8 rounds, unrolled. A value is canonical (below the modulus) at each
+boundary: the ops take and give canonical values. `feInv` is a power by m
+minus 2. The constants come from quorum-lang `bn254.h`.
+
+The C oracle is `build/cryptotool`. `src/crypto` is a byte copy of
+quorum-lang 8d1a113 (`u256`, `bn254`, `keccak`, `poseidon`). The tool
+prints 424 rows `FILE NAME ARGS => RESULT` from a fixed seed and known
+answers. `examples/crypto.lang` has the 360 Word rows (it lowers).
+`test/crypto/crypto.lang` has the 64 field rows (add 9, sub 9, mul 8, inv
+6 for each of `Fr` and `Fp`). `test/gate.sh` evaluates each row with `langc
+--kit eval` and prints `crypto oracle: 424 rows, 0 mismatches`.
+
+The field rows are outside the Wasm set. The lowering refuses `frInv` with
+`EVAL_DEPTH`, because it nests deeper than 2000 levels. The evaluator
+handles it: `feMul` costs 9182 eval steps, and the `frInv` row costs
+3713353 steps and 303.4 MiB. The limits are `EVAL_FUEL_STEPS` 20M and the
+1 GiB arena. A def that calls `feInv` on a concrete modulus costs about
+3.3M steps and 300 MiB at check time, so the row helpers take the modulus
+as a binder.
+
+`double` and `float` are approximate words now (`REFUSE_APPROX`), so no def
+or binder can take them.
 
 ## The IR test families
 

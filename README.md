@@ -5,7 +5,9 @@ under an off-chain threshold authority that amends itself. It comes from
 lang-template with the tcc-wasm host. The reference is arXiv:2606.14939
 (see `design/DIGEST-2606.14939.md`). No program can have a runtime error.
 
-Status: S7 (the log): the Cubical TT kernel of ratify-lang
+Status: S8 DONE (commit pending), S8a NEXT. S8 adds the machine `Word`,
+the field `Fr` and `Fp`, the C oracle and `REFUSE_APPROX`. S7 (the log):
+the Cubical TT kernel of ratify-lang
 a46d5df, R0 from ratify-lang 71f2c22 (total Nat operations,
 `REFUSE_PARTIAL`, and a Wasm writer that emits no trap form), and the
 gavel-lang words in `domain/domain.lang`: `Amount`, `Bids`, `Rule`,
@@ -18,7 +20,7 @@ gavel-lang words in `domain/domain.lang`: `Amount`, `Bids`, `Rule`,
 `REFUSE_PEEK` and `REFUSE_DEADLINE` (S6), and `Ballot`, `Amendment`,
 `authorize`, `amendCheck`, `Entry`, `Log`, `append`, `paramsAt`, `Machine`,
 `replay`, the laws G4 and G5, `REFUSE_FIXPOINT` and `REFUSE_CLOCK` (S7).
-The crypto layers and the targets do not exist yet.
+The rest of the crypto layers and the targets do not exist yet.
 `docs/PLAN.md` gives the readings, the route and the slices.
 
 ## When to reach for gavel-lang (DRAFT)
@@ -42,5 +44,8 @@ The crypto layers and the targets do not exist yet.
   status on the tcc-wasm host.
 - `probe/CAPABILITY.md`: the host probe.
 - `docs/STATUS.md` and `docs/VALIDATION.md`: the status and the gate results.
+- `test/crypto/crypto.lang` and `build/cryptotool`: the C oracle for the Word
+  and field ops (`src/crypto` is from quorum-lang 8d1a113). `test/gate.sh`
+  evaluates its 424 rows.
 - `docs/host/README.md`: how to build and test the host kit, and how to
   replace the sample domain in `domain/`.

@@ -1,0 +1,19 @@
+-- The machine Word ops (S8). Each def applies one op of the kernel Word type.
+-- This is a kit file (examples/kit.txt): a guest program cannot use Word.
+-- A compare gives Sum Unit Unit (inr unit when the test holds); wlt and weq
+-- make it a Nat (1 when the test holds).
+def wadd : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wAdd x y
+def wsub : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wSub x y
+def wmul : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wMul x y
+def wmulhi : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wMulHi x y
+def wand : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wAnd x y
+def wor : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wOr x y
+def wxor : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wXor x y
+def wshl : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wShl x y
+def wshr : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wShr x y
+def wrotl : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wRotl x y
+def wrotr : Word -> Word -> Word := fun (x : Word) => fun (y : Word) => wRotr x y
+def wnot : Word -> Word := fun (x : Word) => wNot x
+def wlit : Word -> Word := fun (x : Word) => wXor x 0xdeadbeefw
+def wlt : Word -> Word -> Nat := fun (x : Word) => fun (y : Word) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (wLt x y)
+def weq : Word -> Word -> Nat := fun (x : Word) => fun (y : Word) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (wEq x y)

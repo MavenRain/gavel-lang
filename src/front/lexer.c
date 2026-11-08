@@ -38,6 +38,7 @@ const char *tok_kind_name(TokKind kind) {
     case TOK_EOF: return "end of input";
     case TOK_IDENT: return "a name";
     case TOK_NAT: return "a Nat literal";
+    case TOK_WORD: return "a Word literal";
     case TOK_LPAREN: return "'('";
     case TOK_RPAREN: return "')'";
     case TOK_COLON: return "':'";
@@ -137,18 +138,59 @@ static int lex_ident(Lexer *lx) {
   return 1;
 }
 
+/* S8 (USER ruling Q-S8-3 (a)): the value of a lower-case hex digit, or 16. */
+static unsigned hex_value(char c) {
+  unsigned d = (unsigned)(unsigned char)c - (unsigned)'0';
+  unsigned h = (unsigned)(unsigned char)c - (unsigned)'a';
+  if (d <= 9u)
+    return d;
+  return h <= 5u ? h + 10u : 16u;
+}
+
+/* A Word literal: VALUE is the number before the w. A Word is below 2^32. */
+static int lex_word(Lexer *lx, size_t start, int line, int col, uint64_t value, int overflow) {
+  advance(lx, 1);
+  if (overflow || value > 0xffffffffu)
+    return diag_fail(lx->diag, "LEX_WORD_RANGE", NULL, "%s:%d:%d: a Word literal is larger than 0xffffffff", lx->source, line, col);
+  if (is_ident_start(peek(lx, 0)) || is_digit(peek(lx, 0)))
+    return diag_fail(lx->diag, "LEX_CHAR", NULL, "%s:%d:%d: a letter follows a Word literal", lx->source, lx->line, lx->col);
+  push(lx, TOK_WORD, start, line, col)->nat = value;
+  return 1;
+}
+
+/* 0x, hex digits and w: only a Word literal has the 0x form. */
+static int lex_hex(Lexer *lx, size_t start, int line, int col) {
+  uint64_t value = 0;
+  int overflow = 0;
+  int digits = 0;
+  advance(lx, 2);
+  while (hex_value(peek(lx, 0)) < 16u) {
+    overflow |= value > 0xffffffffu;
+    value = value * 16u + hex_value(peek(lx, 0));
+    digits++;
+    advance(lx, 1);
+  }
+  if (digits == 0 || peek(lx, 0) != 'w')
+    return diag_fail(lx->diag, "LEX_CHAR", NULL, "%s:%d:%d: a hex literal is 0x, hex digits (0-9, a-f) and w", lx->source, lx->line, lx->col);
+  return lex_word(lx, start, line, col, value, overflow);
+}
+
 static int lex_nat(Lexer *lx) {
   size_t start = lx->pos;
   int line = lx->line;
   int col = lx->col;
   uint64_t value = 0;
   int overflow = 0;
+  if (peek(lx, 0) == '0' && peek(lx, 1) == 'x')
+    return lex_hex(lx, start, line, col);
   while (is_digit(peek(lx, 0))) {
     uint64_t digit = (uint64_t)(peek(lx, 0) - '0');
     overflow |= value > (UINT64_MAX - digit) / 10u;
     value = value * 10u + digit;
     advance(lx, 1);
   }
+  if (peek(lx, 0) == 'w')
+    return lex_word(lx, start, line, col, value, overflow);
   if (overflow) {
     return diag_fail(lx->diag, "LEX_NAT_RANGE", NULL, "%s:%d:%d: a Nat literal is larger than 2^64 - 1", lx->source, line, col);
   }

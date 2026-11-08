@@ -12,3 +12,4 @@ no-keyword.lang
 state-no-ctor.lang
 system-top.lang
 unclosed.lang
+word-range.lang

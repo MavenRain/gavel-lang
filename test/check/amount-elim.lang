@@ -1,2 +1,2 @@
 -- REFUSE_AMOUNT (S4, Q-S4-1 (a)): a program reads an Amount by an elim; it uses only amLe, amSelect, amMax and amMin
-def double : Amount -> Amount := fun (a : Amount) => elim (fun (x : Amount) => Amount) amZero (fun (x : Amount) (ih : Amount) => amSucc (amSucc ih)) a
+def twice : Amount -> Amount := fun (a : Amount) => elim (fun (x : Amount) => Amount) amZero (fun (x : Amount) (ih : Amount) => amSucc (amSucc ih)) a

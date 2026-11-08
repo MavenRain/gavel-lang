@@ -18,7 +18,10 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S7 DONE (the log): the Cubical TT kernel of ratify-lang
+Status: S8 DONE (commit pending), S8a NEXT. S8 adds the machine `Word`
+and its ops, the `SwapWord` rename, the BN254 field `Fr` and `Fp`, the C
+oracle, `REFUSE_WORD` and `REFUSE_APPROX` (Q-S8-1 (a) to Q-S8-9 (a)).
+S7 DONE (the log): the Cubical TT kernel of ratify-lang
 a46d5df (a port of permit-lang 3d47120), R0 from ratify-lang 71f2c22 and
 the domain words are in: `Amount`, `Bids`, `Rule`, `Outcome`, `outcome`,
 the laws A1, A2 and A4 (S4), `Hash`, `Party`, `Members`, `Committee`,
@@ -34,7 +37,7 @@ deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
 `append`, `paramsAt`, `Machine`, `Verdicts`, `replay`, `slashedOf`, the
 laws G4 and G5, `REFUSE_FIXPOINT`, `REFUSE_CLOCK` and the ballot half of
 `REFUSE_BOUND` (Q-S7-1 (a) to Q-S7-10 (a)). Section 1 has the rulings.
-Next: S8 (the crypto prelude part 1).
+Next: S8a (Poseidon, keccak-256, the G1 curve and the Schnorr check).
 
 ## 1. Rulings
 
@@ -128,6 +131,15 @@ Next: S8 (the crypto prelude part 1).
 | 2026-11-07 | Q-S7-8 "(a) State OI-24": OI-24 is stated, with no law and no refusal. One closed eval row: ta > n - f, and `authorize` on all n - f honest yes ballots gives `inl unit`. | USER, S7 |
 | 2026-11-07 | Q-S7-9 "(a) Linear szLe": `szLe` uses the linear words `szIsZ` and `szDec`, and `szLt` is below `szDec`. The S5 and S6 rows stay green. OI-34 is CLOSED. | USER, S7 |
 | 2026-11-07 | Q-S7-10 "(a) Ballot bound": `BALLOT_BOUND` is 1024u, with the `LIST_BOUNDS` row `Ballots`. A closed `Ballots` value with more than 1024 ballots gives `REFUSE_BOUND`. New test `test/check/bound-ballots.lang`. The indexed `Log` has no bound (OI-36), and `Verdicts` has no bound. | USER, S7 |
+| 2026-11-07 | Q-S8-1 "(a) Two commits": S8 is `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, `REFUSE_APPROX`, the C oracle tool with the field rows and the ASSUMED rows. The new row S8a is Poseidon, keccak-256, the G1 curve, the Schnorr check, the Party key and the Poseidon message words (it closes OI-25 and OI-30). S8b and S8c do not change. Each part ends in a USER commit. `elgVrf` stays ideal until S8b (OI-28). | USER, S8 |
+| 2026-11-07 | Q-S8-2 "(a) Rename bag to SwapWord": only the domain family `Word` (bag words of adjacent swaps) is now `SwapWord`. Its constructors and fields keep their names. The machine type is `Word` (Q-S1-7 (a)). | USER, S8 |
+| 2026-11-07 | Q-S8-3 "(a) Native uint32 value": `CORE_WORD` and `VAL_WORD` (uint32, wrapping). O(1) ops `wAdd`, `wSub`, `wMul`, `wMulHi`, `wAnd`, `wOr`, `wXor`, `wNot`, `wShl`, `wShr`, `wRotl`, `wRotr`, `wLt`, `wEq` (a compare gives `Sum Unit Unit`). Literals `0x1fw` and `31w` (`LEX_WORD_RANGE` above 0xffffffff). A guest program that names them gets `REFUSE_WORD`; only the domain file and the kit mode may. `Word` lowers to Wasm i32 ops. | USER, S8 |
+| 2026-11-07 | Q-S8-4 "(a) 8 limbs, Montgomery": `Fr` and `Fp` are 8 Words, least significant first. The form is Montgomery inside (CIOS multiply) and canonical (value below the modulus) at each boundary. The curve at S8a is BN254 G1 only, type `Pt1`, affine with (0, 0) as infinity at the boundary and Jacobian inside the scalar multiply. G2 waits for the pairing (S8b). | USER, S8 |
+| 2026-11-07 | Q-S8-5 "(a) circomlib t=3" (built at S8a): Poseidon is circomlib width 3 (2 inputs) on Fr, alpha 5, R_F 8, R_P 57, with the quorum-lang constants. `Hash` carries an Fr. Each message is poseidon2(tag, poseidon2(x, y)) with the kind tags 0, 1, 2; `szPair` and `szTri` go. The Merkle leaf and node encoding stay open in OI-8 for T2. | USER, S8 |
+| 2026-11-07 | Q-S8-6 "(a) ratify scheme, Pt1 key" (built at S8a): `party (ptKey : Pt1)`, and `ptEq` compares canonical points. A certificate entry gains (ctR : Pt1) and (ctS : Fr). `schnorrCheck` tests s*G == R + e*P with e = keccak256(R.x, R.y, P.x, P.y, m) mod r, where m is the 32-byte big-endian Hash value. `checkCert` counts the members whose entry passes. The nonce rule is signer side, not in the prelude. | USER, S8 |
+| 2026-11-07 | Q-S8-7 "(a) cryptotool + kit example": `src/crypto` is a byte copy of quorum-lang 8d1a113 (u256, bn254, keccak, poseidon). `test/cryptotool.c` builds `build/cryptotool`, which prints `FILE NAME ARGS => RESULT` rows from a fixed seed and known answers. `test/gate.sh` evaluates each row with `langc --kit eval` and prints `crypto oracle: N rows, M mismatches`. Q-S8-9 (a) moved the field rows to `test/crypto/crypto.lang` (outside the Wasm set); the Word rows stay in `examples/crypto.lang`. | USER, S8 |
+| 2026-11-07 | Q-S8-8 "(a) 3 rows + ratify list": section 6 gets three ASSUMED rows (K1 Poseidon collision resistance, K2 keccak-256 as a random oracle for the challenge, K3 Schnorr EUF-CMA under discrete log on BN254 G1) and one EXTERNAL row (E1, the Word and field ops equal the C oracle). `REFUSE_APPROX` has the list `ckks`, `approx`, `approximate`, `float`, `double` (from ratify-lang 2aaaac6), checked right after `time_word` at the four `REFUSE_CLOCK` sites. Tests `approx-ckks` and `approx-float`. | USER, S8 |
+| 2026-11-08 | Q-S8-9 "(a) test/crypto/crypto.lang": the field oracle rows (add, sub, mul, inv on Fr and Fp) are in the new kit file `test/crypto/crypto.lang`, outside the Wasm set. The Word rows stay in `examples/crypto.lang`. Cause: the lowering refuses `frInv` with `EVAL_DEPTH` (more than 2000 levels). S8a rows use the same file. | USER, S8 |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -317,10 +329,18 @@ discharged.
 | M2 | Private, authenticated channels between members | EXTERNAL | the TLS proxy of each member (Q-S1-9 (b)) |
 | M3 | The OS seed is uniform and fresh for each run | ASSUMED | getentropy (Q-S1-10 (a)) |
 | Z5 | Soundness of the TFHE share proof | ASSUMED | proof system (Q-S1-8 (a)) |
+| K1 | Poseidon is collision resistant | ASSUMED | the S8a def of Poseidon (Q-S8-5 (a), Q-S8-8 (a)) |
+| K2 | keccak-256 is a random oracle for the Schnorr challenge | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
+| K3 | Schnorr is EUF-CMA under discrete log on BN254 G1 | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
+| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 424 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
 
 Count at S1: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
 ASSUMED 9 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3), AT TARGET 2 (F1, Z4),
 EXTERNAL 3 (G6, A3, M2). Total 24.
+
+Count at S8: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
+ASSUMED 12 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3, K1, K2, K3), AT TARGET 2
+(F1, Z4), EXTERNAL 4 (G6, A3, M2, E1). Total 28.
 
 ## 7. Refusals
 
@@ -340,8 +360,8 @@ hint at A2.
 | `REFUSE_CENSOR` | A G2 field does not check (n - f < t). | G2, Q-S5-9 (a) |
 | `REFUSE_FORK` | A G3 field does not check (2ta - n <= f). | G3, Q-S5-9 (a) |
 | `REFUSE_DEADLINE` | A `prOrder` field does not check (the stamp end is not before the release). | Q-S6-9 (a) |
-| `REFUSE_APPROX` | An approximate scheme (CKKS). | T3 |
-| `REFUSE_WORD` | A user program that names `Word` or a `Word` operation. | Q-S1-7 (a) |
+| `REFUSE_APPROX` | A declaration or a name is an approximate word: `ckks`, `approx`, `approximate`, `float` or `double` (an exact name match). | T3, Q-S8-8 (a) |
+| `REFUSE_WORD` | A guest program names the `Word` type, a `Word` op or a `Word` literal. Only `domain/domain.lang` and `langc --kit` may. | Q-S1-7 (a), Q-S8-3 (a) |
 
 ## 8. Route
 
@@ -494,7 +514,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S5 | `Hash`, `Party`, `Members`, `Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf` and the Size and Sum words (Q-S5-1 (a) to Q-S5-11 (a)); G1 to G3 as proof fields (`cmSafe`, `cmCensor`, `prFork`); `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` (Q-S5-9 (a)); the committee half of `REFUSE_BOUND` (`COMMITTEE_BOUND` 1024). Gate: 34 examples, 17 parse refusals, 169 check refusals, 10 kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S4: examples 32 to 34 (`examples/committee.lang`, `examples/committee-bound-edge.lang`), check refusals 163 to 169 (6 rows), evals 83 to 89 (6 committee rows), Wasm modules 35 to 37 (the 2 new examples); all other counts are the same. Mutants M1 (the `REFUSE_SAFETY` mapping), M2 (the `REFUSE_CENSOR` mapping), M3 (the `REFUSE_FORK` mapping), M4 (`COMMITTEE_BOUND` 1025), M5 (G1 `f <= t`), M6 (G2 with f dropped), M7 (G3 with `ta` for `ta + ta`): M1 to M7 KILLED (7/7). | DONE |
 | S6 | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`, `elgVrf`, `admit`, `slash`, `Opening`, `release`; the deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, `prOrder`); P2, P3; `REFUSE_PEEK`, `REFUSE_DEADLINE`; the sealed and handle bounds (Q-S6-1 (b) to Q-S6-9 (a)). Gate: 36 examples, 17 parse refusals, 177 check refusals, 10 kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S5: examples 34 to 36 (`examples/sealed.lang`, `examples/sealed-bound-edge.lang`), check refusals 169 to 177 (8 rows), evals 89 to 104 (15 sealed rows), Wasm modules 37 to 39; all other counts are the same. Mutants M1 (the `REFUSE_PEEK` site), M2 (the `prOrder` code), M3 (the `opOk` code), M4 (`openMsg` at the stamp end), M5 (`slash` without the equal-commitment test), M6 (`htLe` for `htLt`), M7 (`SEALED_BID_BOUND` 1025), M8 (`HANDLE_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
 | S7 | `Ballot`, `Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log` (CM), `append`, `paramsAt`, `Machine` (CC), `Verdicts`, `replay`, `slashedOf` (Q-S7-1 (a) to Q-S7-10 (a)); G4 (`appendNilL`, `appendNilR`, `appendAssoc`), G5, P3 on the log (`p3Replay`); `REFUSE_REC` renamed `REFUSE_FIXPOINT`, `REFUSE_TIME` renamed `REFUSE_CLOCK`; the ballot half of `REFUSE_BOUND` (`BALLOT_BOUND` 1024); a linear `szLe`. The S7 word is `amendCheck`, not `amend`: the DAO prelude word `amend` (`src/front/front.c`) gave `REFUSE_NAME` (rule R4) in the regimes and oneuse examples. Gate: 37 examples, 17 parse refusals, 182 check refusals, 10 kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S6: examples 36 to 37 (`examples/log.lang`), check refusals 177 to 182 (`amend-self`, `bound-ballots`, `time-deadline`, `time-expires`, `time-timeout`), evals 104 to 115 (11 log rows), Wasm modules 39 to 40; all other counts are the same. Mutants M1 (the `REFUSE_FIXPOINT` site), M2 (the `eaOk` code), M3 (the `deadline` time word), M4 (`append`, cons case: a domain load failure), M5 (`paramsAt` at height 0), M6 (`entryVerdict` slash case), M7 (`entrySlashed`), M8 (`BALLOT_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
-| S8 | The crypto prelude part 1 (Q-S0-13 (b), Q-S1-3 (b)): `Word` and `REFUSE_WORD` (Q-S1-7 (a)), the BN254 field and curve, Poseidon, keccak-256, the Schnorr check, the C oracle rows; the ASSUMED rows, `REFUSE_APPROX`. | NEXT |
+| S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` 20M and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
+| S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). | NEXT |
 | S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
 | S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
 | S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
@@ -563,6 +584,9 @@ Design notes from S7:
   (digest, Alg 1).
 - OI-8 The paper gives no leaf encoding, node hash, Poseidon parameters or
   field encoding of hu, cm and root (digest, sec 6). T2 must fix them.
+  S8 fixes the field encoding (Q-S8-4 (a)): 8 Words, Montgomery inside,
+  canonical at each boundary. Poseidon is ruled for S8a (Q-S8-5 (a)). The
+  Merkle leaf and node encoding stay open for T2.
 - OI-9 Committee loss can freeze the system. Recovery needs a clock. Not a
   v1 feature (ratify-lang OI-1).
 - OI-10 The outcome leaks the winner and the price. T5 states it.
@@ -605,10 +629,11 @@ Design notes from S7:
   of liveness, not of safety. There is no law and no refusal. The row
   `setupOI` in `examples/log.lang` shows it: `authorize` on all n - f
   honest yes ballots gives `inl unit`.
-- OI-25 The `Party` key is an abstract `Size` until S8 (Q-S5-1 (a)). In
+- OI-25 RULED at S8 (Q-S8-6 (a)), built at S8a. The `Party` key is an
+  abstract `Size` until S8a (Q-S5-1 (a)). In
   `checkCert`, the match of an entry on its signer and message is the
-  ideal signature check; at S8 it becomes the Schnorr check on a BN254 G1
-  key (Q-S5-4 (a)).
+  ideal signature check; at S8a it becomes the Schnorr check on a BN254 G1
+  key `Pt1` (Q-S5-4 (a), Q-S8-6 (a)).
 - OI-26 An open committee (an input) passes the check at any size; only a
   closed `Members` value with more than 1024 members gives `REFUSE_BOUND`
   (Q-S5-7 (a)). The T1 entry bounds the open committee (S9).
@@ -621,8 +646,9 @@ Design notes from S7:
 - OI-29 CLOSED at S7. `replay` takes `Handles`, the slashed set, from the
   Log (Q-S7-4 (a)). `admit` keeps its S6 signature, and `entryVerdict`
   calls it with the handles so far.
-- OI-30 The message pairing `szPair` is the abstract Cantor code until S8
-  (Q-S6-8 (a)). At S8 and T2 the message is Poseidon.
+- OI-30 RULED at S8 (Q-S8-5 (a)), built at S8a. The message pairing
+  `szPair` is the abstract Cantor code until S8a (Q-S6-8 (a)). At S8a each
+  message is poseidon2(tag, poseidon2(x, y)).
 - OI-31 `Sealed` is the clear denotation of the FHE ciphertext and the MPC
   shares until S13 and S14 (Q-S6-3 (a)).
 - OI-32 The root certificate of a slot is not yet an argument of `admit`
@@ -661,7 +687,7 @@ which S1 asked and ruled; section 1 has them too.
   fixed for each `AucID`.
 - Q-S0-7 RULED (a). The price list. (a) rec: a deploy setting, not in `Params`. (b) In
   `Params`.
-- Q-S0-8 RULED (a). Hash. (a) rec: abstract `Hash`; Poseidon at T2 and in `gaveld`.
+- Q-S0-8 RULED (a). Hash. (a) rec: abstract `Hash`; Poseidon at T2 and, by Q-S0-13 (b), in the crypto prelude, not in `gaveld`.
   (b) Poseidon fixed in the language.
 - Q-S0-9 RULED (a). Proof of the outcome. (a) rec: a T2 proof of the auction outcome
   (the paper has an auction proof, Table 1). (b) t attestations of correct

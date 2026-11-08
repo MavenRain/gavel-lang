@@ -97,6 +97,34 @@ while IFS= read -r line; do
 done <test/eval/expect.txt
 echo "evals: $evals checked"
 
+# Each line of `build/cryptotool` is `FILE NAME ARGS => RESULT` (S8, Q-S8-7 (a),
+# Q-S8-9 (a)): FILE is the path of a kit file without `.lang`. `langc --kit
+# eval` must exit 0 and print RESULT.
+crypto=0
+cryptobad=0
+status=0
+build/cryptotool >"$tmp/crypto.txt" 2>"$tmp/err" || status=$?
+if [ "$status" -ne 0 ]; then
+  echo "FAIL cryptotool: exit $status: $(head -n 1 "$tmp/err")"
+  fail=$((fail + 1))
+fi
+while IFS= read -r line; do
+  want=${line#* => }
+  set -- ${line%% => *}
+  file=$1
+  name=$2
+  shift 2
+  status=0
+  got=$(build/langc --kit eval "$file.lang" "$name" "$@" 2>"$tmp/err") || status=$?
+  first=$(head -n 1 "$tmp/err")
+  crypto=$((crypto + 1))
+  case "$status|$got|$first" in
+    "0|$want|"*) ;;
+    *) echo "FAIL crypto $file $name $*: want $want, got exit $status: $got $first"; cryptobad=$((cryptobad + 1)); fail=$((fail + 1)) ;;
+  esac
+done <"$tmp/crypto.txt"
+echo "crypto oracle: $crypto rows, $cryptobad mismatches"
+
 # eval_refused STATUS CODE NAME [ARGS]: `langc --kit eval examples/entries.lang
 # NAME ARGS` must exit STATUS and print `langc: CODE: NAME: ...` on stderr.
 eval_refused() {
@@ -300,6 +328,8 @@ for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-tr
     status=0
     want=$(build/langc $(difkit "$f") eval "$f" $call 2>/dev/null) || status=$?
     [ "$status" -eq 0 ] || want="eval-exit-$status"
+    # A Word result (S8) prints as 0x0000000fw in eval; node prints 15.
+    case "$want" in 0x*w) want=$((${want%w})) ;; esac
     echo "$want" >>"$tmp/want.txt"
   done <"$tmp/cases.txt"
   if ! node test/run-wasm.mjs "$w" - <"$tmp/cases.txt" >"$tmp/got.txt" 2>"$tmp/w.err"; then
@@ -323,6 +353,12 @@ echo "differential: $cases cases, $mismatches mismatches"
 # trap.
 got=$(node test/run-wasm.mjs "$tmp/entries.wasm" pick 2 4 9 2>&1) || true
 [ "$got" = "4" ] || { echo "FAIL wasm pick 2 4 9: want 4, got $got"; fail=$((fail + 1)); }
+# A Word argument of 2^32 or more (S8). The entry keeps the low 32 bits of a
+# Word argument (flag_norm in src/wasm.c), so weq 4294967297 1 gives 1.
+# Without the mask, the module compares 2^32 + 1 with 1 and gives 0.
+build/langc $(kit examples/kit.txt crypto.lang) build examples/crypto.lang -o "$tmp/crypto.wasm" 2>/dev/null || true
+got=$(node test/run-wasm.mjs "$tmp/crypto.wasm" weq 4294967297 1 2>&1) || true
+[ "$got" = "1" ] || { echo "FAIL wasm weq 4294967297 1: want 1, got $got"; fail=$((fail + 1)); }
 
 status=0
 build/langc 2>/dev/null || status=$?

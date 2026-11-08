@@ -140,9 +140,9 @@ family Pos : Size -> Type 0 := posFirst (firstSize : Size) : Pos (szS firstSize)
 -- then swaps the first two positions, and wordLift applies the inner
 -- word to the tail, then the rest. The orbits of a word action are the
 -- orbits of the symmetric group.
-family Word : Size -> Type 0 := wordNil (nilSize : Size) : Word nilSize
-  | wordSwap (wordAt : Size) (wordRest : Word (szS (szS wordAt))) : Word (szS (szS wordAt))
-  | wordLift (liftSize : Size) (liftInner : Word liftSize) (liftRest : Word (szS liftSize)) : Word (szS liftSize)
+family SwapWord : Size -> Type 0 := wordNil (nilSize : Size) : SwapWord nilSize
+  | wordSwap (wordAt : Size) (wordRest : SwapWord (szS (szS wordAt))) : SwapWord (szS (szS wordAt))
+  | wordLift (liftSize : Size) (liftInner : SwapWord liftSize) (liftRest : SwapWord (szS liftSize)) : SwapWord (szS liftSize)
 -- The choice bags and the orbits at each size (S3, design C section 3,
 -- USER ruling Q-S3-6 (a)). ChoiceBag is the old cons Bag at the choice
 -- type Sum Unit Unit, and OrbitN n is the quotient of the configurations
@@ -159,12 +159,12 @@ def consP : (n : Size) -> Sum Unit Unit -> (Pos n -> Sum Unit Unit) -> Pos (szS 
 def swapFront : (m : Size) -> (Pos (szS (szS m)) -> Sum Unit Unit) -> Pos (szS (szS m)) -> Sum Unit Unit :=
   fun (m : Size) (c : Pos (szS (szS m)) -> Sum Unit Unit) =>
     consP (szS m) (c (posNext (szS m) (posFirst m))) (consP m (c (posFirst (szS m))) (fun (p : Pos m) => c (posNext (szS m) (posNext m p))))
-def actW : (n : Size) -> Word n -> (Pos n -> Sum Unit Unit) -> Pos n -> Sum Unit Unit :=
-  fun (n : Size) (w : Word n) => elim (fun (k : Size) (v : Word k) => (Pos k -> Sum Unit Unit) -> Pos k -> Sum Unit Unit)
+def actW : (n : Size) -> SwapWord n -> (Pos n -> Sum Unit Unit) -> Pos n -> Sum Unit Unit :=
+  fun (n : Size) (w : SwapWord n) => elim (fun (k : Size) (v : SwapWord k) => (Pos k -> Sum Unit Unit) -> Pos k -> Sum Unit Unit)
     (fun (k : Size) => fun (d : Pos k -> Sum Unit Unit) => d)
-    (fun (m : Size) (v : Word (szS (szS m))) (ih : (Pos (szS (szS m)) -> Sum Unit Unit) -> Pos (szS (szS m)) -> Sum Unit Unit) =>
+    (fun (m : Size) (v : SwapWord (szS (szS m))) (ih : (Pos (szS (szS m)) -> Sum Unit Unit) -> Pos (szS (szS m)) -> Sum Unit Unit) =>
       fun (d : Pos (szS (szS m)) -> Sum Unit Unit) => swapFront m (ih d))
-    (fun (m : Size) (u : Word m) (ihu : (Pos m -> Sum Unit Unit) -> Pos m -> Sum Unit Unit) (v : Word (szS m)) (ihv : (Pos (szS m) -> Sum Unit Unit) -> Pos (szS m) -> Sum Unit Unit) =>
+    (fun (m : Size) (u : SwapWord m) (ihu : (Pos m -> Sum Unit Unit) -> Pos m -> Sum Unit Unit) (v : SwapWord (szS m)) (ihv : (Pos (szS m) -> Sum Unit Unit) -> Pos (szS m) -> Sum Unit Unit) =>
       fun (d : Pos (szS m) -> Sum Unit Unit) => ihv (consP m (d (posFirst m)) (ihu (fun (p : Pos m) => d (posNext m p))))) w
 family ChoiceBag : Size -> Type 0 := choiceNil : ChoiceBag sz0
   | choiceCons (cbSize : Size) (cbHead : Sum Unit Unit) (cbTail : ChoiceBag cbSize) : ChoiceBag (szS cbSize)
@@ -173,7 +173,7 @@ family ChoiceBag : Size -> Type 0 := choiceNil : ChoiceBag sz0
   | choiceSquash (cbSquashSize : Size) (cbFrom : ChoiceBag cbSquashSize) (cbTo : ChoiceBag cbSquashSize) (cbLeft : Path (ChoiceBag cbSquashSize) cbFrom cbTo) (cbRight : Path (ChoiceBag cbSquashSize) cbFrom cbTo) (i : I) (j : I) : ChoiceBag cbSquashSize
     [ ~i -> cbLeft @ j, i -> cbRight @ j, ~j -> cbFrom, j -> cbTo ]
 family OrbitN : Size -> Type 0 := orbitNOf (onSize : Size) (onOf : Pos onSize -> Sum Unit Unit) : OrbitN onSize
-  | orbitNEq (onEqSize : Size) (onA : Pos onEqSize -> Sum Unit Unit) (onB : Pos onEqSize -> Sum Unit Unit) (onR : Sigma (w : Word onEqSize) (Path (Pos onEqSize -> Sum Unit Unit) (actW onEqSize w onB) onA)) (i : I) : OrbitN onEqSize
+  | orbitNEq (onEqSize : Size) (onA : Pos onEqSize -> Sum Unit Unit) (onB : Pos onEqSize -> Sum Unit Unit) (onR : Sigma (w : SwapWord onEqSize) (Path (Pos onEqSize -> Sum Unit Unit) (actW onEqSize w onB) onA)) (i : I) : OrbitN onEqSize
     [ ~i -> orbitNOf onEqSize onA, i -> orbitNOf onEqSize onB ]
   | orbitNSquash (onSqSize : Size) (onFrom : OrbitN onSqSize) (onTo : OrbitN onSqSize) (onLeft : Path (OrbitN onSqSize) onFrom onTo) (onRight : Path (OrbitN onSqSize) onFrom onTo) (i : I) (j : I) : OrbitN onSqSize
     [ ~i -> onLeft @ j, i -> onRight @ j, ~j -> onFrom, j -> onTo ]
@@ -760,3 +760,193 @@ def slashedOf : (P : Params) -> (Q : Params) -> Log P Q -> Handles :=
 def p3Replay : (P : Params) -> (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdicts (replay P P (lgCons P P P (enSlash P r h c e c f) (lgNil P))) (vdCons (invalid notAccepted) vdNil) :=
   fun (P : Params) (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
     cong (fun (v : Verdict) => vdCons v vdNil) (p3Slash r h c e f)
+-- S8: the field (USER rulings Q-S8-1 (a) and Q-S8-4 (a)). An Fe is a 256-bit
+-- value in 8 Words, least significant first. The field ops keep a value in
+-- Montgomery form (x R mod m, R = 2^256). Each operand and each result is
+-- canonical (less than the modulus m). The multiply is CIOS: each round adds
+-- a times one Word of b, then removes the low Word with q = u0 n0' mod 2^32
+-- (n0' = -m^-1 mod 2^32). The rounds and the limb chains are unrolled. Each
+-- modulus is less than 2^254, thus a round gives a value less than 2m, and
+-- this value fits in 8 Words.
+family Fe := fe (fe0 : Word) (fe1 : Word) (fe2 : Word) (fe3 : Word) (fe4 : Word) (fe5 : Word) (fe6 : Word) (fe7 : Word)
+-- A bit list, the top bit first (feInv uses the bits of m - 2).
+family FeBits := fbEnd | fbZero (fbZeroNext : FeBits) | fbOne (fbOneNext : FeBits)
+-- A modulus: m, n0', R^2 mod m, R mod m (the Montgomery form of 1) and the
+-- bits of m - 2.
+family FeMod := feMod (modM : Fe) (modN0 : Word) (modR2 : Fe) (modR1 : Fe) (modE : FeBits)
+def feNo : Sum Unit Unit := inl unit
+def feYes : Sum Unit Unit := inr unit
+-- feBit s is 1w when s is inr unit, else 0w.
+def feBit : Sum Unit Unit -> Word := fun (s : Sum Unit Unit) => either (fun (u : Unit) => 0w) (fun (u : Unit) => 1w) s
+-- feAdc a b c is the pair (a + b + c mod 2^32, carry) for a carry c of 0w or
+-- 1w. An add gives a carry when the sum is less than an operand.
+def feAdc : Word -> Word -> Word -> Prod Word Word :=
+  fun (a : Word) (b : Word) (c : Word) =>
+    (fun (t : Word) => (fun (s : Word) => pair s (wOr (feBit (wLt t a)) (feBit (wLt s t)))) (wAdd t c)) (wAdd a b)
+-- feSbb a b c is the pair (a - b - c mod 2^32, borrow) for a borrow c of 0w
+-- or 1w.
+def feSbb : Word -> Word -> Word -> Prod Word Word :=
+  fun (a : Word) (b : Word) (c : Word) =>
+    (fun (t : Word) => (fun (s : Word) => pair s (wOr (feBit (wLt a b)) (feBit (wLt t c)))) (wSub t c)) (wSub a b)
+-- feMac t a b c is the pair (low Word, high Word) of t + a b + c. The total is
+-- at most 2^64 - 1, thus the high Word does not wrap.
+def feMac : Word -> Word -> Word -> Word -> Prod Word Word :=
+  fun (t : Word) (a : Word) (b : Word) (c : Word) =>
+    (fun (lo : Word) => (fun (s : Word) => (fun (r : Word) =>
+      pair r (wAdd (wAdd (wMulHi a b) (feBit (wLt s lo))) (feBit (wLt r c))))
+    (wAdd s c)) (wAdd lo t)) (wMul a b)
+-- feThen x k is k x. It binds one step of a limb chain.
+def feThen : Prod Word Word -> (Prod Word Word -> Fe) -> Fe :=
+  fun (x : Prod Word Word) (k : Prod Word Word -> Fe) => k x
+def feZero : Fe := fe 0w 0w 0w 0w 0w 0w 0w 0w
+def feOne : Fe := fe 1w 0w 0w 0w 0w 0w 0w 0w
+-- The sum and the difference mod 2^256. The last carry or borrow is not kept.
+def feAddRaw : Fe -> Fe -> Fe :=
+  fun (a : Fe) (b : Fe) =>
+    feThen (feAdc (fe0 a) (fe0 b) 0w) (fun (c0 : Prod Word Word) =>
+    feThen (feAdc (fe1 a) (fe1 b) (second c0)) (fun (c1 : Prod Word Word) =>
+    feThen (feAdc (fe2 a) (fe2 b) (second c1)) (fun (c2 : Prod Word Word) =>
+    feThen (feAdc (fe3 a) (fe3 b) (second c2)) (fun (c3 : Prod Word Word) =>
+    feThen (feAdc (fe4 a) (fe4 b) (second c3)) (fun (c4 : Prod Word Word) =>
+    feThen (feAdc (fe5 a) (fe5 b) (second c4)) (fun (c5 : Prod Word Word) =>
+    feThen (feAdc (fe6 a) (fe6 b) (second c5)) (fun (c6 : Prod Word Word) =>
+    feThen (feAdc (fe7 a) (fe7 b) (second c6)) (fun (c7 : Prod Word Word) =>
+    fe (first c0) (first c1) (first c2) (first c3) (first c4) (first c5) (first c6) (first c7)))))))))
+def feSubRaw : Fe -> Fe -> Fe :=
+  fun (a : Fe) (b : Fe) =>
+    feThen (feSbb (fe0 a) (fe0 b) 0w) (fun (c0 : Prod Word Word) =>
+    feThen (feSbb (fe1 a) (fe1 b) (second c0)) (fun (c1 : Prod Word Word) =>
+    feThen (feSbb (fe2 a) (fe2 b) (second c1)) (fun (c2 : Prod Word Word) =>
+    feThen (feSbb (fe3 a) (fe3 b) (second c2)) (fun (c3 : Prod Word Word) =>
+    feThen (feSbb (fe4 a) (fe4 b) (second c3)) (fun (c4 : Prod Word Word) =>
+    feThen (feSbb (fe5 a) (fe5 b) (second c4)) (fun (c5 : Prod Word Word) =>
+    feThen (feSbb (fe6 a) (fe6 b) (second c5)) (fun (c6 : Prod Word Word) =>
+    feThen (feSbb (fe7 a) (fe7 b) (second c6)) (fun (c7 : Prod Word Word) =>
+    fe (first c0) (first c1) (first c2) (first c3) (first c4) (first c5) (first c6) (first c7)))))))))
+-- feCmp x y k is inr unit when x < y, inl unit when y < x, else k unit.
+def feCmp : Word -> Word -> (Unit -> Sum Unit Unit) -> Sum Unit Unit :=
+  fun (x : Word) (y : Word) (k : Unit -> Sum Unit Unit) =>
+    either (fun (u : Unit) => either k (fun (v : Unit) => feNo) (wLt y x)) (fun (u : Unit) => feYes) (wLt x y)
+-- feLt a b is inr unit when a < b. It compares from the top limb down.
+def feLt : Fe -> Fe -> Sum Unit Unit :=
+  fun (a : Fe) (b : Fe) =>
+    feCmp (fe7 a) (fe7 b) (fun (u : Unit) =>
+    feCmp (fe6 a) (fe6 b) (fun (u : Unit) =>
+    feCmp (fe5 a) (fe5 b) (fun (u : Unit) =>
+    feCmp (fe4 a) (fe4 b) (fun (u : Unit) =>
+    feCmp (fe3 a) (fe3 b) (fun (u : Unit) =>
+    feCmp (fe2 a) (fe2 b) (fun (u : Unit) =>
+    feCmp (fe1 a) (fe1 b) (fun (u : Unit) =>
+    wLt (fe0 a) (fe0 b))))))))
+-- feAll s k is k unit when s is inr unit, else inl unit.
+def feAll : Sum Unit Unit -> (Unit -> Sum Unit Unit) -> Sum Unit Unit :=
+  fun (s : Sum Unit Unit) (k : Unit -> Sum Unit Unit) => either (fun (u : Unit) => feNo) k s
+-- feEq a b is inr unit when the limbs of a and b are equal. For canonical
+-- values, this is the field equality.
+def feEq : Fe -> Fe -> Sum Unit Unit :=
+  fun (a : Fe) (b : Fe) =>
+    feAll (wEq (fe0 a) (fe0 b)) (fun (u : Unit) =>
+    feAll (wEq (fe1 a) (fe1 b)) (fun (u : Unit) =>
+    feAll (wEq (fe2 a) (fe2 b)) (fun (u : Unit) =>
+    feAll (wEq (fe3 a) (fe3 b)) (fun (u : Unit) =>
+    feAll (wEq (fe4 a) (fe4 b)) (fun (u : Unit) =>
+    feAll (wEq (fe5 a) (fe5 b)) (fun (u : Unit) =>
+    feAll (wEq (fe6 a) (fe6 b)) (fun (u : Unit) =>
+    wEq (fe7 a) (fe7 b))))))))
+def feIsZero : Fe -> Sum Unit Unit := fun (a : Fe) => feEq a feZero
+-- feCondSub m x is x - m when x is at least m, else x.
+def feCondSub : Fe -> Fe -> Fe :=
+  fun (m : Fe) (x : Fe) => either (fun (u : Unit) => feSubRaw x m) (fun (u : Unit) => x) (feLt x m)
+-- The field add and subtract for the modulus md.
+def feAdd : FeMod -> Fe -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (b : Fe) => feCondSub (modM md) (feAddRaw a b)
+def feSub : FeMod -> Fe -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (b : Fe) =>
+    either (fun (u : Unit) => feSubRaw a b) (fun (u : Unit) => feAddRaw (feSubRaw a b) (modM md)) (feLt a b)
+-- feReduce md u hi q is (u + hi 2^256 + q m) / 2^32, with q = u0 n0'.
+def feReduce : FeMod -> Fe -> Word -> Word -> Fe :=
+  fun (md : FeMod) (u : Fe) (hi : Word) (q : Word) =>
+    feThen (feMac (fe0 u) q (fe0 (modM md)) 0w) (fun (v0 : Prod Word Word) =>
+    feThen (feMac (fe1 u) q (fe1 (modM md)) (second v0)) (fun (v1 : Prod Word Word) =>
+    feThen (feMac (fe2 u) q (fe2 (modM md)) (second v1)) (fun (v2 : Prod Word Word) =>
+    feThen (feMac (fe3 u) q (fe3 (modM md)) (second v2)) (fun (v3 : Prod Word Word) =>
+    feThen (feMac (fe4 u) q (fe4 (modM md)) (second v3)) (fun (v4 : Prod Word Word) =>
+    feThen (feMac (fe5 u) q (fe5 (modM md)) (second v4)) (fun (v5 : Prod Word Word) =>
+    feThen (feMac (fe6 u) q (fe6 (modM md)) (second v5)) (fun (v6 : Prod Word Word) =>
+    feThen (feMac (fe7 u) q (fe7 (modM md)) (second v6)) (fun (v7 : Prod Word Word) =>
+    fe (first v1) (first v2) (first v3) (first v4) (first v5) (first v6) (first v7) (wAdd hi (second v7))))))))))
+-- feRound md a w t is one CIOS round: t + a w, then feReduce.
+def feRound : FeMod -> Fe -> Word -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (w : Word) (t : Fe) =>
+    feThen (feMac (fe0 t) (fe0 a) w 0w) (fun (u0 : Prod Word Word) =>
+    feThen (feMac (fe1 t) (fe1 a) w (second u0)) (fun (u1 : Prod Word Word) =>
+    feThen (feMac (fe2 t) (fe2 a) w (second u1)) (fun (u2 : Prod Word Word) =>
+    feThen (feMac (fe3 t) (fe3 a) w (second u2)) (fun (u3 : Prod Word Word) =>
+    feThen (feMac (fe4 t) (fe4 a) w (second u3)) (fun (u4 : Prod Word Word) =>
+    feThen (feMac (fe5 t) (fe5 a) w (second u4)) (fun (u5 : Prod Word Word) =>
+    feThen (feMac (fe6 t) (fe6 a) w (second u5)) (fun (u6 : Prod Word Word) =>
+    feThen (feMac (fe7 t) (fe7 a) w (second u6)) (fun (u7 : Prod Word Word) =>
+    feReduce md (fe (first u0) (first u1) (first u2) (first u3) (first u4) (first u5) (first u6) (first u7)) (second u7) (wMul (first u0) (modN0 md))))))))))
+-- feMul md a b is a b R^-1 mod m (the Montgomery product).
+def feMul : FeMod -> Fe -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (b : Fe) =>
+    feCondSub (modM md)
+      (feRound md a (fe7 b) (feRound md a (fe6 b) (feRound md a (fe5 b) (feRound md a (fe4 b) (feRound md a (fe3 b) (feRound md a (fe2 b) (feRound md a (fe1 b) (feRound md a (fe0 b) feZero))))))))
+-- feToMont md a is a R mod m. feFromMont md a is a R^-1 mod m.
+def feToMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMul md a (modR2 md)
+def feFromMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMul md a feOne
+-- The bits of r - 2 and of p - 2, the top bit first (feInv). Each def holds
+-- 32 bits and ends in the next def. The last part comes first (rule R3).
+def frE7 : FeBits :=
+  fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbEnd))))))))))))))))))))))))))))))
+def frE6 : FeBits :=
+  fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (frE7))))))))))))))))))))))))))))))))
+def frE5 : FeBits :=
+  fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (frE6))))))))))))))))))))))))))))))))
+def frE4 : FeBits :=
+  fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (frE5))))))))))))))))))))))))))))))))
+def frE3 : FeBits :=
+  fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (frE4))))))))))))))))))))))))))))))))
+def frE2 : FeBits :=
+  fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (frE3))))))))))))))))))))))))))))))))
+def frE1 : FeBits :=
+  fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (frE2))))))))))))))))))))))))))))))))
+def frE0 : FeBits :=
+  fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (frE1))))))))))))))))))))))))))))))))
+def fpE7 : FeBits :=
+  fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbEnd))))))))))))))))))))))))))))))
+def fpE6 : FeBits :=
+  fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fpE7))))))))))))))))))))))))))))))))
+def fpE5 : FeBits :=
+  fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fpE6))))))))))))))))))))))))))))))))
+def fpE4 : FeBits :=
+  fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fpE5))))))))))))))))))))))))))))))))
+def fpE3 : FeBits :=
+  fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fpE4))))))))))))))))))))))))))))))))
+def fpE2 : FeBits :=
+  fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fpE3))))))))))))))))))))))))))))))))
+def fpE1 : FeBits :=
+  fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fpE2))))))))))))))))))))))))))))))))
+def fpE0 : FeBits :=
+  fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fpE1))))))))))))))))))))))))))))))))
+-- The BN254 moduli (quorum-lang src/crypto/bn254.h): r for Fr, p for Fp.
+def frMod : FeMod := feMod (fe 0xf0000001w 0x43e1f593w 0x79b97091w 0x2833e848w 0x8181585dw 0xb85045b6w 0xe131a029w 0x30644e72w) 0xefffffffw (fe 0xae216da7w 0x1bb8e645w 0xe35c59e3w 0x53fe3ab1w 0x53bb8085w 0x8c49833dw 0x7f4e44a5w 0x0216d0b1w) (fe 0x4ffffffbw 0xac96341cw 0x9f60cd29w 0x36fc7695w 0x7879462ew 0x666ea36fw 0x9a07df2fw 0x0e0a77c1w) frE0
+def fpMod : FeMod := feMod (fe 0xd87cfd47w 0x3c208c16w 0x6871ca8dw 0x97816a91w 0x8181585dw 0xb85045b6w 0xe131a029w 0x30644e72w) 0xe4866389w (fe 0x538afa89w 0xf32cfc5bw 0xd44501fbw 0xb5e71911w 0x0a417ff6w 0x47ab1effw 0xcab8351fw 0x06d89f71w) (fe 0xc58f0d9dw 0xd35d438dw 0xf5c70b3dw 0x0a78eb28w 0x7879462cw 0x666ea36fw 0x9a07df2fw 0x0e0a77c1w) fpE0
+-- fePowFrom md a e x is x^(2^n) a^e for the n bits of e (the top bit first),
+-- in Montgomery form. Each bit squares the value, and a 1 bit then multiplies
+-- it by a.
+def fePowFrom : FeMod -> Fe -> FeBits -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (e : FeBits) => elim (fun (k : FeBits) => Fe -> Fe)
+    (fun (x : Fe) => x)
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMul md x x))
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMul md (feMul md x x) a)) e
+-- fePow md a e is a^e. The start value is R mod m (1 in Montgomery form).
+def fePow : FeMod -> Fe -> FeBits -> Fe :=
+  fun (md : FeMod) (a : Fe) (e : FeBits) => fePowFrom md a e (modR1 md)
+-- feInv md a is a^(m - 2) (Fermat). It is the inverse of a when a is not 0,
+-- and 0 when a is 0.
+def feInv : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => fePow md a (modE md)
+-- The scalar field Fr (modulus r, frMod) and the base field Fp (modulus p,
+-- fpMod). A value is an Fe in Montgomery form.
+def Fr : Type 0 := Fe
+def Fp : Type 0 := Fe

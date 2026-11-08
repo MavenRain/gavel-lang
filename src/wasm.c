@@ -135,6 +135,27 @@ static int divisor(Sink *s, uint32_t t) {
          put_byte(s, OP_I64_EQZ) && put_byte(s, OP_I64_EXTEND_I32_U) && put_byte(s, OP_I64_OR);
 }
 
+/* The value on the stack modulo 2^32: and 0xffffffff (S8). */
+static int mask32(Sink *s) {
+  return i64_const(s, 0xffffffffu) && put_byte(s, OP_I64_AND);
+}
+
+/* The count on the stack modulo 32 (S8). */
+static int count32(Sink *s) {
+  return i64_const(s, 31) && put_byte(s, OP_I64_AND);
+}
+
+/* The operands x and the count are on the stack. With n = the count
+   modulo 32, leaves ((x DIR n) or (x OTHER (32 - n))) modulo 2^32: rotl
+   when DIR is shl, rotr when DIR is shr_u. A shift by 32 of x below 2^32
+   gives 0 or a value that the mask removes, so n = 0 gives x (S8). */
+static int rotate(Sink *s, uint32_t t, unsigned dir, unsigned other) {
+  return operands(s, t) && op2(s, OP_LOCAL_GET, t) && op2(s, OP_LOCAL_GET, t + 1u) && count32(s) &&
+         op2(s, OP_LOCAL_TEE, t + 1u) && put_byte(s, dir) && op2(s, OP_LOCAL_GET, t) && i64_const(s, 32) &&
+         op2(s, OP_LOCAL_GET, t + 1u) && put_byte(s, OP_I64_SUB) && put_byte(s, other) && put_byte(s, OP_I64_OR) &&
+         mask32(s);
+}
+
 static int emit_op(Sink *s, IrOp op, uint32_t t) {
   switch (op) {
     case IR_OP_ADD:
@@ -156,6 +177,30 @@ static int emit_op(Sink *s, IrOp op, uint32_t t) {
       return divisor(s, t) && put_byte(s, OP_I64_DIV_U);
     case IR_OP_MOD:
       return divisor(s, t) && put_byte(s, OP_I64_REM_U);
+    case IR_OP_LT:
+      return put_byte(s, OP_I64_LT_U) && put_byte(s, OP_I64_EXTEND_I32_U);
+    case IR_OP_W_ADD:
+      return put_byte(s, OP_I64_ADD) && mask32(s);
+    case IR_OP_W_SUB:
+      return put_byte(s, OP_I64_SUB) && mask32(s);
+    case IR_OP_W_MUL:
+      return put_byte(s, OP_I64_MUL) && mask32(s);
+    case IR_OP_W_MULHI: /* x, y < 2^32, so x * y < 2^64 */
+      return put_byte(s, OP_I64_MUL) && i64_const(s, 32) && put_byte(s, OP_I64_SHR_U);
+    case IR_OP_W_AND:
+      return put_byte(s, OP_I64_AND);
+    case IR_OP_W_OR:
+      return put_byte(s, OP_I64_OR);
+    case IR_OP_W_XOR:
+      return put_byte(s, OP_I64_XOR);
+    case IR_OP_W_SHL:
+      return count32(s) && put_byte(s, OP_I64_SHL) && mask32(s);
+    case IR_OP_W_SHR:
+      return count32(s) && put_byte(s, OP_I64_SHR_U);
+    case IR_OP_W_ROTL:
+      return rotate(s, t, OP_I64_SHL, OP_I64_SHR_U);
+    case IR_OP_W_ROTR:
+      return rotate(s, t, OP_I64_SHR_U, OP_I64_SHL);
   }
   return 0;
 }
@@ -260,11 +305,19 @@ static int part_alloc(Sink *s, const void *arg) {
          put_byte(s, OP_I64_EXTEND_I32_U) && put_byte(s, OP_I64_ADD) && op2(s, OP_GLOBAL_SET, 0) && put_byte(s, OP_END);
 }
 
-/* A Flag parameter K is true when it is not 0: K := K = 0 ? 0 : 1. */
+/* A Flag parameter K is true when it is not 0: K := K = 0 ? 0 : 1. A Word
+   parameter K keeps its low 32 bits (S8): K := K and 0xffffffff. */
 static int flag_norm(Sink *s, const IrFunc *fn, size_t k) {
-  return fn->params[k] == IR_SCALAR_NAT ||
-         (i64_const(s, 0) && i64_const(s, 1) && op2(s, OP_LOCAL_GET, k) && put_byte(s, OP_I64_EQZ) &&
-          put_byte(s, OP_SELECT) && op2(s, OP_LOCAL_SET, k));
+  switch (fn->params[k]) {
+    case IR_SCALAR_NAT:
+      return 1;
+    case IR_SCALAR_FLAG:
+      return i64_const(s, 0) && i64_const(s, 1) && op2(s, OP_LOCAL_GET, k) && put_byte(s, OP_I64_EQZ) &&
+             put_byte(s, OP_SELECT) && op2(s, OP_LOCAL_SET, k);
+    case IR_SCALAR_WORD:
+      return op2(s, OP_LOCAL_GET, k) && mask32(s) && op2(s, OP_LOCAL_SET, k);
+  }
+  return 0;
 }
 
 static int part_entry(Sink *s, const void *arg) {

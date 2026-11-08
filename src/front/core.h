@@ -82,7 +82,24 @@ typedef enum {
      Nat is a Nat that is not 0: the type carries the fact. */
   OP_NONZERO,      /* NonZero Nat: a type */
   OP_NONZERO_OF,   /* nonZero x: some x, or none when x is 0 */
-  OP_NONZERO_VALUE /* nonZeroValue x: the base value; stuck on an open x */
+  OP_NONZERO_VALUE, /* nonZeroValue x: the base value; stuck on an open x */
+  /* S8 (USER ruling Q-S8-3 (a)): Word, the native uint32 (wrapping), and
+     its 14 O(1) ops. A compare gives Sum Unit Unit: inr tt when it holds. */
+  OP_WORD,
+  OP_W_ADD,
+  OP_W_SUB,
+  OP_W_MUL,
+  OP_W_MULHI,
+  OP_W_AND,
+  OP_W_OR,
+  OP_W_XOR,
+  OP_W_NOT,
+  OP_W_SHL,
+  OP_W_SHR,
+  OP_W_ROTL,
+  OP_W_ROTR,
+  OP_W_LT,
+  OP_W_EQ
 } Op;
 
 /* The instance of pure, map, bind and filter (formers F5 and F8). */
@@ -96,6 +113,7 @@ typedef enum {
   CORE_VAR,    /* index: de Bruijn index */
   CORE_GLOBAL, /* index: definition number */
   CORE_NAT,    /* nat */
+  CORE_WORD,   /* nat: a Word (S8), below 2^32 */
   CORE_UNIV,   /* Type nat */
   CORE_LAM,    /* fun name => b; a retains an explicit annotation for checks */
   CORE_PI,     /* (name : a) -> b */
@@ -131,6 +149,7 @@ struct Core {
 
 typedef enum {
   VAL_NAT,
+  VAL_WORD,  /* S8: a Word in nat, below 2^32 */
   VAL_UNIV,
   VAL_LAM,
   VAL_PI,
@@ -209,7 +228,7 @@ struct Env {
 
 struct Value {
   ValKind kind;
-  uint64_t nat; /* NAT: the number. UNIV: the level. VAR: the level. */
+  uint64_t nat; /* NAT: the number. WORD: the Word. UNIV: the level. VAR: the level. */
   Op op;        /* OP, STUCK */
   uint32_t inst;
   uint32_t field;
@@ -334,6 +353,7 @@ typedef struct GlueRec {
 /* Each function returns NULL (or 0) after a diagnostic. A NULL input gives a
    NULL result, so a caller can test once at the end. */
 const Value *val_nat(Machine *m, uint64_t n);
+const Value *val_word(Machine *m, uint32_t w);
 const Value *val_var(Machine *m, uint32_t level);
 /* The interval variable at LEVEL. */
 const Value *val_ivar(Machine *m, uint32_t level);

@@ -68,7 +68,10 @@ typedef enum {
   VIS_INTERNAL,
   /* A cons-list name (S3, USER ruling Q-S3-5 (a), rule R1): the kit and
      the trusted scope use it (the host ABI); a guest use gives REFUSE_CELL. */
-  VIS_CELL
+  VIS_CELL,
+  /* S8 (USER ruling Q-S8-3 (a)): the machine Word and its ops. The domain
+     file and the kit mode use them; a guest use gives REFUSE_WORD. */
+  VIS_WORD
 } Vis;
 
 typedef enum {
@@ -104,6 +107,7 @@ typedef enum {
   RULE_TRANSP,
   RULE_HCOMP,
   RULE_NAT2,
+  RULE_WORD2, /* S8: a Word op (Q-S8-3 (a)) */
   RULE_LEN, /* S3: len A r (survey section 7) */
   RULE_FLAG_IF,
   RULE_NONZERO,       /* S3: NonZero Nat */
@@ -194,6 +198,22 @@ static const Builtin BUILTINS[] = {
   {"nonZero", 1, RULE_NONZERO_OF, OP_NONZERO_OF, OP_OPTION, 0, VIS_INTERNAL},
   {"nonZeroValue", 1, RULE_NONZERO_VALUE, OP_NONZERO_VALUE, OP_NAT, 0, VIS_INTERNAL},
   {"len", 2, RULE_LEN, OP_FM_LEN, OP_NAT, 0, VIS_GUEST},
+  /* S8 (Q-S8-3 (a)): the native uint32 Word, wrapping. */
+  {"Word", 0, RULE_TYPE0, OP_WORD, OP_WORD, 0, VIS_WORD},
+  {"wAdd", 2, RULE_WORD2, OP_W_ADD, OP_WORD, 0, VIS_WORD},
+  {"wSub", 2, RULE_WORD2, OP_W_SUB, OP_WORD, 0, VIS_WORD},
+  {"wMul", 2, RULE_WORD2, OP_W_MUL, OP_WORD, 0, VIS_WORD},
+  {"wMulHi", 2, RULE_WORD2, OP_W_MULHI, OP_WORD, 0, VIS_WORD},
+  {"wAnd", 2, RULE_WORD2, OP_W_AND, OP_WORD, 0, VIS_WORD},
+  {"wOr", 2, RULE_WORD2, OP_W_OR, OP_WORD, 0, VIS_WORD},
+  {"wXor", 2, RULE_WORD2, OP_W_XOR, OP_WORD, 0, VIS_WORD},
+  {"wNot", 1, RULE_WORD2, OP_W_NOT, OP_WORD, 0, VIS_WORD},
+  {"wShl", 2, RULE_WORD2, OP_W_SHL, OP_WORD, 0, VIS_WORD},
+  {"wShr", 2, RULE_WORD2, OP_W_SHR, OP_WORD, 0, VIS_WORD},
+  {"wRotl", 2, RULE_WORD2, OP_W_ROTL, OP_WORD, 0, VIS_WORD},
+  {"wRotr", 2, RULE_WORD2, OP_W_ROTR, OP_WORD, 0, VIS_WORD},
+  {"wLt", 2, RULE_WORD2, OP_W_LT, OP_SUM, 0, VIS_WORD},
+  {"wEq", 2, RULE_WORD2, OP_W_EQ, OP_SUM, 0, VIS_WORD},
 };
 
 #define BUILTIN_COUNT ((uint32_t)(sizeof BUILTINS / sizeof BUILTINS[0]))
@@ -203,6 +223,23 @@ static const Builtin BUILTINS[] = {
    ruling): no declaration can give a type the name of a Prop-like
    universe. */
 static const char *const RESERVED[] = {"Bool", "Text", "Prop", "SProp"};
+
+/* Approximate words (S8, Q-S8-8; ratify-lang S7, E6): an approximate
+   scheme (CKKS, floating point) is not exact. No declaration can take one
+   and no name can use one (REFUSE_APPROX). A program uses an exact scheme
+   only. */
+static const char *const APPROX_WORDS[] = {"ckks", "approx", "approximate", "float", "double"};
+
+#define APPROX_HINT "%s is an approximate word; use an exact scheme only: exponential ElGamal or threshold shares over a finite field"
+
+static int approx_word(const char *name) {
+  size_t i;
+  for (i = 0; i < sizeof APPROX_WORDS / sizeof APPROX_WORDS[0]; i++) {
+    if (strcmp(APPROX_WORDS[i], name) == 0)
+      return 1;
+  }
+  return 0;
+}
 
 /* Time words (S3, O3): no declaration can take one and no name can use
    one (REFUSE_CLOCK). Time is the log height (S7): a program uses a
@@ -422,6 +459,8 @@ static int push_value(Checker *c, const char *name, const Value *type, const Val
   const Env *e;
   if (name != NULL && time_word(name))
     return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
+  if (name != NULL && approx_word(name))
+    return FAIL(c, "REFUSE_APPROX", APPROX_HINT, name);
   s = arena_alloc(c->m->arena, sizeof *s);
   e = env_push(c->m, c->env, value);
   if (type == NULL || value == NULL || s == NULL || e == NULL)
@@ -2156,6 +2195,17 @@ static const Core *rule_unglue(Call *k) {
   return core_op(c, OP_UNGLUE, 0, 0, args, 4);
 }
 
+/* The result type of a prim row: Option ARG (natAdd), Sum Unit Unit (a
+   Word compare, S8) or a 0-arity former. */
+static const Value *prim_result(Checker *c, Op result, const Value *t) {
+  const Value *u = tyop(c, OP_UNIT, 0, NULL, NULL, NULL);
+  if (result == OP_OPTION)
+    return tyop(c, OP_OPTION, 1, t, NULL, NULL);
+  if (result == OP_SUM)
+    return tyop(c, OP_SUM, 2, u, u, NULL);
+  return tyop(c, result, 0, NULL, NULL, NULL);
+}
+
 /* natAdd, natEq and the like: each argument has the type
    former ARG. natAdd gives Option ARG, none at overflow (S3). */
 static const Core *rule_prim(Call *k, Op arg) {
@@ -2163,7 +2213,7 @@ static const Core *rule_prim(Call *k, Op arg) {
   const Value *t = tyop(c, arg, 0, NULL, NULL, NULL);
   const Core *x = check(c, k->args[0], t);
   const Core *y = x == NULL || k->b->arity < 2u ? NULL : check(c, k->args[1], t);
-  k->type = k->b->result == OP_OPTION ? tyop(c, OP_OPTION, 1, t, NULL, NULL) : tyop(c, k->b->result, 0, NULL, NULL, NULL);
+  k->type = prim_result(c, k->b->result, t);
   return k->b->arity < 2u ? op3(c, k->b->op, 0, 1, x, NULL, NULL) : op3(c, k->b->op, 0, 2, x, y, NULL);
 }
 
@@ -2381,6 +2431,8 @@ static const Core *rule(Call *k) {
     return rule_unglue(k);
   case RULE_NAT2:
     return rule_prim(k, OP_NAT);
+  case RULE_WORD2:
+    return rule_prim(k, OP_WORD);
   case RULE_LEN:
     return rule_len(k);
   case RULE_FIN_OP:
@@ -2624,6 +2676,8 @@ static int unknown_name(Checker *c, const char *name) {
   const char *hint = partial_hint(c, name);
   if (time_word(name))
     return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
+  if (approx_word(name))
+    return FAIL(c, "REFUSE_APPROX", APPROX_HINT, name);
   for (i = c->decl_index; i < c->decls->count; i++) {
     if (strcmp(c->decls->items[i].name, name) == 0)
       return FAIL(c, "REFUSE_FIXPOINT", "%s is this definition or a later one; a definition can use only earlier ones (rule R3)", name);
@@ -2641,6 +2695,12 @@ static int guest(const Checker *c) {
 
 static int kit_refused(Checker *c, const char *what) {
   return FAIL(c, "REFUSE_KIT", "%s is a kit item outside the base span (PLAN section 4); only the kit mode langc --kit admits it", what);
+}
+
+/* S8 (USER ruling Q-S8-3 (a)): a guest program names the machine Word, a
+   Word op or a Word literal. */
+static int word_refused(Checker *c, const char *what) {
+  return FAIL(c, "REFUSE_WORD", "%s is a machine Word item; only domain/domain.lang and the kit mode langc --kit use the Word type, its ops and its literals", what);
 }
 
 /* An INTERNAL core name, or a family, constructor or field of origin
@@ -2673,6 +2733,8 @@ static int resolve_head(Checker *c, const Term *head, Head *h) {
     return 1;
   if (!find_known(c, head->name, h))
     return unknown_name(c, head->name);
+  if (guest(c) && h->kind == HEAD_BUILTIN && h->builtin->vis == VIS_WORD)
+    return word_refused(c, head->name);
   if (guest(c) && h->kind == HEAD_BUILTIN && h->builtin->vis == VIS_CELL)
     return FAIL(c, "REFUSE_CELL", "%s is a cons-list name, not a cell monad; a guest program uses FreeMon of domain/domain.lang (rule R1)", head->name);
   return guest(c) && kit_head(c, h) ? kit_refused(c, head->name) : 1;
@@ -2786,6 +2848,8 @@ static const Core *var_core(Checker *c, const char *name, const Value **type) {
   }
   if (time_word(name))
     return nul(FAIL(c, "REFUSE_CLOCK", TIME_HINT, name));
+  if (approx_word(name))
+    return nul(FAIL(c, "REFUSE_APPROX", APPROX_HINT, name));
   if (partial_hint(c, name) != NULL)
     return nul(FAIL(c, "REFUSE_PARTIAL", "%s is a partial name: %s", name, partial_hint(c, name)));
   return nul(FAIL(c, "NAME_UNKNOWN", "unknown name %s", name));
@@ -3045,6 +3109,13 @@ static const Core *elab_inner(Checker *c, const Term *t, const Value *hint, cons
   case TERM_VAR:
   case TERM_APP:
     return elab_spine(c, t, hint, type);
+  case TERM_WORD:
+    if (guest(c))
+      return nul(word_refused(c, "a Word literal"));
+    if (!literal_ok(c, "a Word literal"))
+      return NULL;
+    *type = tyop(c, OP_WORD, 0, NULL, NULL, NULL);
+    return finish(c, core_leaf(c, CORE_WORD, t->nat), hint, type);
   case TERM_NAT:
     if (!literal_ok(c, "a Nat literal"))
       return NULL;
@@ -3135,6 +3206,8 @@ static int name_free(Checker *c, const char *name) {
   const char *why;
   if (time_word(name))
     return FAIL(c, "REFUSE_CLOCK", TIME_HINT, name);
+  if (approx_word(name))
+    return FAIL(c, "REFUSE_APPROX", APPROX_HINT, name);
   why = name_owner(c, name);
   return why == NULL ? 1 : FAIL(c, "REFUSE_NAME", "%s is %s (rule R4)", name, why);
 }
@@ -3732,6 +3805,7 @@ static int mentions_state(Machine *m, uint32_t level, const Value *v) {
     return 1;
   switch (v->kind) {
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_UNIV:
     return 0;
   case VAL_PI:
@@ -3778,6 +3852,7 @@ static int history_ok(Checker *c, const Core *t, int typed, uint32_t depth, cons
   switch (t->kind) {
   case CORE_VAR:
   case CORE_NAT:
+  case CORE_WORD:
   case CORE_UNIV:
   case CORE_IZERO:
   case CORE_IONE:
@@ -4005,6 +4080,7 @@ static int law_uses(const Machine *m, uint32_t trunc, const Core *t) {
   switch (t->kind) {
   case CORE_VAR:
   case CORE_NAT:
+  case CORE_WORD:
   case CORE_UNIV:
   case CORE_IZERO:
   case CORE_IONE:
@@ -4073,6 +4149,7 @@ static int amount_uses(const Machine *m, uint32_t fam, uint32_t zero, uint32_t s
   case CORE_VAR:
   case CORE_GLOBAL:
   case CORE_NAT:
+  case CORE_WORD:
   case CORE_UNIV:
   case CORE_IZERO:
   case CORE_IONE:
@@ -4221,6 +4298,7 @@ static int bound_over(Machine *m, uint32_t level, const ListBound *b, const Valu
   case VAL_STUCK:
     break;
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_UNIV:
   case VAL_VAR:
   case VAL_IVAL:
@@ -4243,6 +4321,7 @@ static int list_uses(const Machine *m, uint32_t fam, unsigned char *seen, const 
   switch (t->kind) {
   case CORE_VAR:
   case CORE_NAT:
+  case CORE_WORD:
   case CORE_UNIV:
   case CORE_IZERO:
   case CORE_IONE:
@@ -4290,6 +4369,7 @@ static int bound_syntax(Machine *m, const ListBound *b, const Env *env, uint32_t
   switch (t->kind) {
   case CORE_VAR:
   case CORE_NAT:
+  case CORE_WORD:
   case CORE_UNIV:
   case CORE_IZERO:
   case CORE_IONE:
@@ -4934,9 +5014,10 @@ int entry_of(Machine *m, const Value *type, Entry *out) {
   const Value *t = type;
   memset(out, 0, sizeof *out);
   while (t != NULL && t->kind == VAL_PI && out->param_count < ENTRY_PARAMS_MAX) {
-    if (!val_is(t->dom, OP_NAT) && !val_is(t->dom, OP_FLAG))
+    if (!val_is(t->dom, OP_NAT) && !val_is(t->dom, OP_FLAG) && !val_is(t->dom, OP_WORD))
       return 0;
     out->param_flag[out->param_count] = val_is(t->dom, OP_FLAG);
+    out->param_word[out->param_count] = val_is(t->dom, OP_WORD);
     t = closure_apply(m, t, val_var(m, out->param_count));
     out->param_count++;
   }
@@ -4944,7 +5025,7 @@ int entry_of(Machine *m, const Value *type, Entry *out) {
   out->result_option = val_is(t, OP_OPTION);
   t = out->result_option ? t->args[0] : t;
   out->result_flag = val_is(t, OP_FLAG);
-  return val_is(t, OP_NAT) || val_is(t, OP_FLAG);
+  return val_is(t, OP_NAT) || val_is(t, OP_FLAG) || val_is(t, OP_WORD);
 }
 
 static int parse_u64(const char *s, uint64_t *out) {
@@ -4962,14 +5043,44 @@ static int parse_u64(const char *s, uint64_t *out) {
   return 1;
 }
 
+/* S8 (USER ruling Q-S8-3 (a)): the value of a lower-case hex digit, or 16
+   (the lexer hex_value rule). */
+static unsigned word_digit(char c) {
+  unsigned d = (unsigned)(unsigned char)c - (unsigned)'0';
+  unsigned h = (unsigned)(unsigned char)c - (unsigned)'a';
+  if (d <= 9u)
+    return d;
+  return h <= 5u ? h + 10u : 16u;
+}
+
+/* A Word argument: 31w or 0x1fw (lower-case hex), at most 0xffffffff. */
+static int parse_word(const char *s, uint64_t *out) {
+  int hex = s[0] == '0' && s[1] == 'x';
+  unsigned base = hex ? 16u : 10u;
+  size_t first = hex ? 2u : 0u;
+  uint64_t n = 0;
+  size_t i;
+  for (i = first; s[i] != '\0' && s[i] != 'w'; i++) {
+    unsigned d = word_digit(s[i]);
+    if (d >= base || n > 0xffffffffu)
+      return 0;
+    n = n * base + d;
+  }
+  if (i == first || s[i] != 'w' || s[i + 1] != '\0' || n > 0xffffffffu)
+    return 0;
+  *out = n;
+  return 1;
+}
+
 /* The type of an entry argument. */
-typedef enum { ARG_TYPE_NAT, ARG_TYPE_FLAG } ArgType;
+typedef enum { ARG_TYPE_NAT, ARG_TYPE_FLAG, ARG_TYPE_WORD } ArgType;
 
 static const char *const ARG_TEXT[] = {
-  "Nat (0 to 2^64-1)", "Flag (0 or 1)",
+  "Nat (0 to 2^64-1)", "Flag (0 or 1)", "Word (0w to 0xffffffffw)",
 };
 
-/* An entry argument: a Nat in decimal or a Flag as 0 or 1. */
+/* An entry argument: a Nat in decimal, a Flag as 0 or 1, or a Word as 31w
+   or 0x1fw. */
 static const Value *entry_arg(Machine *m, const char *text, ArgType type) {
   uint64_t n = 0;
   const Value *v = NULL;
@@ -4979,6 +5090,9 @@ static const Value *entry_arg(Machine *m, const char *text, ArgType type) {
     break;
   case ARG_TYPE_FLAG:
     v = parse_u64(text, &n) && n <= 1u ? val_make(m, n == 1u ? OP_FLAG_YES : OP_FLAG_NO, 0, 0, NULL, NULL, NULL) : NULL;
+    break;
+  case ARG_TYPE_WORD:
+    v = parse_word(text, &n) ? val_word(m, (uint32_t)n) : NULL;
     break;
   }
   if (v == NULL && m->diag->code == NULL)
@@ -4990,6 +5104,9 @@ static int print_result(Machine *m, const char *name, const Value *v, FILE *out,
   switch (v->kind) {
   case VAL_NAT:
     fprintf(out, "%llu\n", (unsigned long long)v->nat);
+    return 0;
+  case VAL_WORD:
+    fprintf(out, "0x%08xw\n", (unsigned)v->nat);
     return 0;
   case VAL_OP:
     if (val_is(v, OP_FLAG_YES) || val_is(v, OP_FLAG_NO)) {
@@ -5054,7 +5171,7 @@ int eval_command(Machine *m, const char *name, char *const *args, int arg_count,
     return 2;
   }
   for (i = 0; i < entry.param_count && v != NULL; i++) {
-    const Value *arg = entry_arg(m, args[i], entry.param_flag[i] ? ARG_TYPE_FLAG : ARG_TYPE_NAT);
+    const Value *arg = entry_arg(m, args[i], entry.param_flag[i] ? ARG_TYPE_FLAG : entry.param_word[i] ? ARG_TYPE_WORD : ARG_TYPE_NAT);
     v = arg == NULL ? NULL : apply_value(m, v, arg);
   }
   if (v == NULL)

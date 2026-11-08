@@ -2,7 +2,7 @@
    kits.
 
    Each value is one unsigned 64-bit word: a Nat, a Flag (0 or 1), a
-   constructor tag, or a heap address. Locals are numbered from 0. The
+   Word (below 2^32, S8), a constructor tag, or a heap address. Locals are numbered from 0. The
    parameters of an entry are locals 0 to param_count - 1. A heap block is a
    run of words. A target sets its own word width in memory (Wasm: 8 bytes,
    EVM: 32 bytes) and resets its bump allocator at each call. An entry has a
@@ -19,7 +19,8 @@
 
 typedef enum {
   IR_SCALAR_NAT,
-  IR_SCALAR_FLAG
+  IR_SCALAR_FLAG,
+  IR_SCALAR_WORD /* S8: a Word; the entry keeps the low 32 bits */
 } IrScalar;
 
 typedef enum {
@@ -30,7 +31,21 @@ typedef enum {
   IR_OP_LE,        /* 1 when left <= right, else 0 */
   IR_OP_ADD_CARRY, /* 1 when the sum is larger than 2^64 - 1, else 0 */
   IR_OP_DIV,       /* the quotient; the right operand is a NonZero (S3) */
-  IR_OP_MOD        /* the remainder; the right operand is a NonZero (S3) */
+  IR_OP_MOD,       /* the remainder; the right operand is a NonZero (S3) */
+  IR_OP_LT,        /* 1 when left < right, else 0 (S8: wLt) */
+  /* S8: the Word ops. Each operand of a Word op is below 2^32, and the
+     result is below 2^32. A shift count is the right operand modulo 32. */
+  IR_OP_W_ADD,     /* the sum modulo 2^32 */
+  IR_OP_W_SUB,     /* the difference modulo 2^32 */
+  IR_OP_W_MUL,     /* the product modulo 2^32 */
+  IR_OP_W_MULHI,   /* the product divided by 2^32 */
+  IR_OP_W_AND,     /* the bitwise and */
+  IR_OP_W_OR,      /* the bitwise or */
+  IR_OP_W_XOR,     /* the bitwise exclusive or */
+  IR_OP_W_SHL,     /* left shifted left by the count, modulo 2^32 */
+  IR_OP_W_SHR,     /* left shifted right by the count */
+  IR_OP_W_ROTL,    /* left rotated left by the count */
+  IR_OP_W_ROTR     /* left rotated right by the count */
 } IrOp;
 
 typedef enum {

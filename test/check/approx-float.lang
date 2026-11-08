@@ -1,0 +1,2 @@
+-- REFUSE_APPROX (S8, Q-S8-8): `float` is an approximate word; no name can use it.
+def half : Sum Unit Unit := float

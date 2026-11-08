@@ -29,7 +29,10 @@ static const char *const OP_NAMES[] = {
   [OP_SYSTEM] = "system", [OP_HCOMP] = "hcomp", [OP_FIN] = "Fin",
   [OP_FIN_ADD] = "finAdd", [OP_FIN_NEG] = "finNeg", [OP_FIN_CASE] = "finCase",
   [OP_GLUE] = "Glue", [OP_GLUE_ELEM] = "glue", [OP_UNGLUE] = "unglue",
-  [OP_NONZERO] = "NonZero", [OP_NONZERO_OF] = "nonZero", [OP_NONZERO_VALUE] = "nonZeroValue"
+  [OP_NONZERO] = "NonZero", [OP_NONZERO_OF] = "nonZero", [OP_NONZERO_VALUE] = "nonZeroValue",
+  [OP_WORD] = "Word",
+  [OP_W_ADD] = "wAdd", [OP_W_SUB] = "wSub", [OP_W_MUL] = "wMul", [OP_W_MULHI] = "wMulHi", [OP_W_AND] = "wAnd", [OP_W_OR] = "wOr", [OP_W_XOR] = "wXor",
+  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -46,6 +49,8 @@ static const unsigned char OP_ARITY[] = {
   [OP_PAYLOAD] = 1, [OP_NAT_ADD] = 2, [OP_NAT_SUB] = 2,
   [OP_NAT_EQ] = 2, [OP_NAT_LE] = 2, [OP_FLAG_IF] = 3,
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_FM_LEN] = 2,
+  [OP_WORD] = 0, [OP_W_ADD] = 2, [OP_W_SUB] = 2, [OP_W_MUL] = 2, [OP_W_MULHI] = 2, [OP_W_AND] = 2, [OP_W_OR] = 2, [OP_W_XOR] = 2,
+  [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
   [OP_INTERVAL] = 0, [OP_TRANSP] = 3,
   [OP_SYSTEM] = VARIES, [OP_HCOMP] = 4, [OP_FIN] = 1, [OP_FIN_ADD] = 3,
@@ -114,6 +119,14 @@ const Value *val_nat(Machine *m, uint64_t n) {
   Value *v = new_value(m, VAL_NAT);
   if (v != NULL)
     v->nat = n;
+  return v;
+}
+
+/* S8: a Word value (uint32). */
+const Value *val_word(Machine *m, uint32_t w) {
+  Value *v = new_value(m, VAL_WORD);
+  if (v != NULL)
+    v->nat = w;
   return v;
 }
 
@@ -512,6 +525,7 @@ static Scrut scrut_of(const Value *v) {
   case VAL_PAPP:
     return SCRUT_NEUTRAL;
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_UNIV:
   case VAL_LAM:
   case VAL_PI:
@@ -620,6 +634,7 @@ const Value *apply_value(Machine *m, const Value *fn, const Value *arg) {
     v->arg = arg;
     return v;
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_UNIV:
   case VAL_PI:
   case VAL_SIGMA:
@@ -1383,6 +1398,101 @@ static const Value *nat_test(Machine *m, Op op, const Value *const *a, uint32_t 
   return flag(m, op == OP_NAT_EQ ? x == y : x <= y);
 }
 
+/* S8 (USER ruling Q-S8-3 (a)): the Word ops, uint32 and wrapping. 1 when
+   each argument is a Word. Else *OUT is the stuck operation. wNot has one
+   argument (*Y = 0). */
+static int word_args(Machine *m, Op op, const Value *const *a, uint32_t n, uint32_t *x, uint32_t *y, const Value **out) {
+  if (blocked(m, a[0], op, 0, 0, a, n, out) || (n > 1u && blocked(m, a[1], op, 0, 0, a, n, out)))
+    return 0;
+  if (a[0]->kind != VAL_WORD || (n > 1u && a[1]->kind != VAL_WORD)) {
+    *out = internal(m, "a Word operation on a value that is not a Word");
+    return 0;
+  }
+  *x = (uint32_t)a[0]->nat;
+  *y = n > 1u ? (uint32_t)a[1]->nat : 0u;
+  return 1;
+}
+
+static uint32_t w_add(uint32_t x, uint32_t y) {
+  return x + y;
+}
+
+static uint32_t w_sub(uint32_t x, uint32_t y) {
+  return x - y;
+}
+
+static uint32_t w_mul(uint32_t x, uint32_t y) {
+  return x * y;
+}
+
+/* The high word of the 64-bit product. */
+static uint32_t w_mulhi(uint32_t x, uint32_t y) {
+  return (uint32_t)(((uint64_t)x * (uint64_t)y) >> 32);
+}
+
+static uint32_t w_and(uint32_t x, uint32_t y) {
+  return x & y;
+}
+
+static uint32_t w_or(uint32_t x, uint32_t y) {
+  return x | y;
+}
+
+static uint32_t w_xor(uint32_t x, uint32_t y) {
+  return x ^ y;
+}
+
+static uint32_t w_not(uint32_t x, uint32_t y) {
+  (void)y;
+  return ~x;
+}
+
+/* Each shift count is total: the count mod 32. */
+static uint32_t w_shl(uint32_t x, uint32_t y) {
+  return x << (y % 32u);
+}
+
+static uint32_t w_shr(uint32_t x, uint32_t y) {
+  return x >> (y % 32u);
+}
+
+static uint32_t w_rotl(uint32_t x, uint32_t y) {
+  uint32_t s = y % 32u;
+  return s == 0u ? x : (x << s) | (x >> (32u - s));
+}
+
+static uint32_t w_rotr(uint32_t x, uint32_t y) {
+  return w_rotl(x, (32u - y % 32u) % 32u);
+}
+
+static uint32_t w_lt(uint32_t x, uint32_t y) {
+  return x < y;
+}
+
+static uint32_t w_eq(uint32_t x, uint32_t y) {
+  return x == y;
+}
+
+static const Value *word_op(Machine *m, Op op, const Value *const *a, uint32_t n, uint32_t (*f)(uint32_t, uint32_t)) {
+  const Value *out;
+  uint32_t x = 0;
+  uint32_t y = 0;
+  if (!word_args(m, op, a, n, &x, &y, &out))
+    return out;
+  return val_word(m, f(x, y));
+}
+
+/* wLt and wEq: a Sum Unit Unit, inr tt when the test holds (the domain
+   reads inr unit as yes, as szLe does). */
+static const Value *word_test(Machine *m, Op op, const Value *const *a, uint32_t n, uint32_t (*f)(uint32_t, uint32_t)) {
+  const Value *out;
+  uint32_t x = 0;
+  uint32_t y = 0;
+  if (!word_args(m, op, a, n, &x, &y, &out))
+    return out;
+  return make(m, VAL_OP, f(x, y) != 0u ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
+}
+
 static const Value *reduce_flag_if(Machine *m, const Value *const *a, uint32_t n) {
   const Value *out;
   if (blocked(m, a[0], OP_FLAG_IF, 0, 0, a, n, &out))
@@ -1883,6 +1993,7 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   int neutral = scrut_of(base) == SCRUT_NEUTRAL;
   switch (head->op) {
   case OP_NAT: /* R27: a base former has no path structure */
+  case OP_WORD:
   case OP_FIN:
   case OP_FLAG:
   case OP_UNIT:
@@ -1957,6 +2068,20 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
+  case OP_W_ADD:
+  case OP_W_SUB:
+  case OP_W_MUL:
+  case OP_W_MULHI:
+  case OP_W_AND:
+  case OP_W_OR:
+  case OP_W_XOR:
+  case OP_W_NOT:
+  case OP_W_SHL:
+  case OP_W_SHR:
+  case OP_W_ROTL:
+  case OP_W_ROTR:
+  case OP_W_LT:
+  case OP_W_EQ:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
   case OP_NAT_LE:
@@ -2020,6 +2145,7 @@ static const Value *transp(Machine *m, const Value *line, const Value *phi, cons
   case VAL_SIGMA: /* rule 6 */
     return transp_sigma(m, line, face, base);
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_LAM:
   case VAL_PLAM:
   case VAL_IVAL:
@@ -2193,8 +2319,8 @@ static int same_head_at(Machine *m, const Value *b, const Value *v) {
   const Value *x = closure_apply(m, b, fresh_ivar(m));
   if (x == NULL)
     return 0;
-  if (v->kind == VAL_NAT)
-    return x->kind == VAL_NAT && x->nat == v->nat;
+  if (v->kind == VAL_NAT || v->kind == VAL_WORD)
+    return x->kind == v->kind && x->nat == v->nat;
   return x->kind == VAL_OP && x->op == v->op && x->inst == v->inst && x->argc == v->argc;
 }
 
@@ -2208,7 +2334,7 @@ static const Value *hcomp_data(Machine *m, const Value *ty, const Value *phi, co
   uint32_t k;
   if (hit_type(m, ty))
     return hcomp_formal(m, ty, phi, sys, base);
-  if (val_is(ty, OP_FAMILY) || scrut_of(base) == SCRUT_NEUTRAL || (base->kind != VAL_NAT && base->kind != VAL_OP))
+  if (val_is(ty, OP_FAMILY) || scrut_of(base) == SCRUT_NEUTRAL || (base->kind != VAL_NAT && base->kind != VAL_WORD && base->kind != VAL_OP))
     return hcomp_stuck(m, ty, phi, sys, base);
   for (k = 0; k + 1u < sys->argc; k += 2u)
     if (!ival_is_end(face_norm(m, sys->args[k]), 0) && !same_head_at(m, sys->args[k + 1u], base))
@@ -2323,6 +2449,7 @@ static const Value *hcomp(Machine *m, const Value *ty, const Value *phi, const V
   case VAL_UNIV:
     return hcomp_univ(m, face, sys, base);
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_LAM:
   case VAL_PLAM:
   case VAL_IVAL:
@@ -2597,6 +2724,7 @@ static const Value *val_isubst(Machine *m, const Value *v, uint32_t level, const
     break;
   case VAL_UNIV:
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_VAR:
     break;
   case VAL_OP:
@@ -2838,6 +2966,7 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return internal(m, "an operation with the wrong number of arguments");
   switch (op) {
   case OP_NAT:
+  case OP_WORD:
   case OP_FIN:
   case OP_FLAG:
   case OP_UNIT:
@@ -2916,6 +3045,34 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
   case OP_NAT_DIV:
   case OP_NAT_MOD:
     return nat_divmod(m, op, a, n);
+  case OP_W_ADD:
+    return word_op(m, op, a, n, w_add);
+  case OP_W_SUB:
+    return word_op(m, op, a, n, w_sub);
+  case OP_W_MUL:
+    return word_op(m, op, a, n, w_mul);
+  case OP_W_MULHI:
+    return word_op(m, op, a, n, w_mulhi);
+  case OP_W_AND:
+    return word_op(m, op, a, n, w_and);
+  case OP_W_OR:
+    return word_op(m, op, a, n, w_or);
+  case OP_W_XOR:
+    return word_op(m, op, a, n, w_xor);
+  case OP_W_NOT:
+    return word_op(m, op, a, n, w_not);
+  case OP_W_SHL:
+    return word_op(m, op, a, n, w_shl);
+  case OP_W_SHR:
+    return word_op(m, op, a, n, w_shr);
+  case OP_W_ROTL:
+    return word_op(m, op, a, n, w_rotl);
+  case OP_W_ROTR:
+    return word_op(m, op, a, n, w_rotr);
+  case OP_W_LT:
+    return word_test(m, op, a, n, w_lt);
+  case OP_W_EQ:
+    return word_test(m, op, a, n, w_eq);
   case OP_NONZERO_OF:
     return nonzero_of(m, a, n);
   case OP_NONZERO_VALUE:
@@ -2980,6 +3137,8 @@ static const Value *eval_inner(Machine *m, const Env *env, const Core *c) {
     return def_value(m, c->index);
   case CORE_NAT:
     return val_nat(m, c->nat);
+  case CORE_WORD:
+    return val_word(m, (uint32_t)c->nat);
   case CORE_UNIV:
     return val_univ(m, c->nat);
   case CORE_LAM:
@@ -3093,6 +3252,7 @@ static int conv_loop(Machine *m, uint32_t level, const Value *a, const Value *b)
       return 0;
     switch (a->kind) {
     case VAL_NAT:
+    case VAL_WORD:
     case VAL_UNIV:
     case VAL_VAR:
       return a->nat == b->nat;
@@ -3306,6 +3466,8 @@ static const Core *quote_inner(Machine *m, uint32_t level, const Value *v) {
   switch (v->kind) {
   case VAL_NAT:
     return core_leaf(m, CORE_NAT, v->nat);
+  case VAL_WORD:
+    return core_leaf(m, CORE_WORD, v->nat);
   case VAL_UNIV:
     return core_leaf(m, CORE_UNIV, v->nat);
   case VAL_VAR:
@@ -3486,6 +3648,7 @@ static void print_binder(Printer *p, const Value *v) {
     put(p, ") ");
     break;
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_UNIV:
   case VAL_OP:
   case VAL_VAR:
@@ -3608,6 +3771,10 @@ static void print_other(Printer *p, const Value *v, int atom) {
     snprintf(num, sizeof num, "%llu", (unsigned long long)v->nat);
     put(p, num);
     return;
+  case VAL_WORD:
+    snprintf(num, sizeof num, "0x%08xw", (unsigned)v->nat);
+    put(p, num);
+    return;
   case VAL_VAR:
     put(p, var_name(p, v->nat));
     return;
@@ -3653,6 +3820,7 @@ static void print_other(Printer *p, const Value *v, int atom) {
     print_value(p, v->arg, 1);
     break;
   case VAL_NAT:
+  case VAL_WORD:
   case VAL_VAR:
   case VAL_OP:
   case VAL_STUCK:

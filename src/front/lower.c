@@ -394,6 +394,30 @@ static const char *op_word(IrOp op) {
     return "div";
   case IR_OP_MOD:
     return "mod";
+  case IR_OP_LT:
+    return "lt";
+  case IR_OP_W_ADD:
+    return "w_add";
+  case IR_OP_W_SUB:
+    return "w_sub";
+  case IR_OP_W_MUL:
+    return "w_mul";
+  case IR_OP_W_MULHI:
+    return "w_mulhi";
+  case IR_OP_W_AND:
+    return "w_and";
+  case IR_OP_W_OR:
+    return "w_or";
+  case IR_OP_W_XOR:
+    return "w_xor";
+  case IR_OP_W_SHL:
+    return "w_shl";
+  case IR_OP_W_SHR:
+    return "w_shr";
+  case IR_OP_W_ROTL:
+    return "w_rotl";
+  case IR_OP_W_ROTR:
+    return "w_rotr";
   }
   return "?";
 }
@@ -512,6 +536,8 @@ static const char *scalar_word(IrScalar s) {
     return "nat";
   case IR_SCALAR_FLAG:
     return "flag";
+  case IR_SCALAR_WORD:
+    return "word";
   }
   return "?";
 }
@@ -587,6 +613,7 @@ static int lower_ctor(Low *l, Buf *b, const Value *v, Operand *out) {
 static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   switch (v->op) {
   case OP_NAT:
+  case OP_WORD:
   case OP_FLAG:
   case OP_UNIT:
   case OP_PROD:
@@ -634,6 +661,20 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_WITNESS:
   case OP_PAYLOAD:
   case OP_NAT_ADD:
+  case OP_W_ADD:
+  case OP_W_SUB:
+  case OP_W_MUL:
+  case OP_W_MULHI:
+  case OP_W_AND:
+  case OP_W_OR:
+  case OP_W_XOR:
+  case OP_W_NOT:
+  case OP_W_SHL:
+  case OP_W_SHR:
+  case OP_W_ROTL:
+  case OP_W_ROTR:
+  case OP_W_LT:
+  case OP_W_EQ:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
   case OP_NAT_LE:
@@ -665,7 +706,7 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   return internal(l, "an unknown operation");
 }
 
-/* A Nat operation on the two arguments of V. Each op is total. */
+/* A Nat or Word operation on the two arguments of V. Each op is total. */
 static int nat_bin(Low *l, Buf *b, const Value *v, IrOp op, Operand *out) {
   Operand x;
   Operand y;
@@ -673,6 +714,34 @@ static int nat_bin(Low *l, Buf *b, const Value *v, IrOp op, Operand *out) {
     return 0;
   *out = operand(atom(l, b, ex_bin(l, op, x.w, y.w)));
   return out->w != NULL;
+}
+
+/* wNot X: X xor 0xffffffff (S8). */
+static int word_not(Low *l, Buf *b, const Value *v, Operand *out) {
+  Operand x;
+  if (!lower(l, b, v->args[0], &x))
+    return 0;
+  *out = operand(atom(l, b, ex_bin(l, IR_OP_W_XOR, x.w, ex_const(l, 0xffffffffu))));
+  return out->w != NULL;
+}
+
+/* wLt X Y and wEq X Y: a Sum Unit Unit block. The test OP selects the tag:
+   inr unit when the test holds, else inl unit (S8). */
+static int word_cmp(Low *l, Buf *b, const Value *v, IrOp op, Operand *out) {
+  Operand x;
+  Operand y;
+  Operand unit = operand(ex_const(l, 0));
+  Operand yes;
+  Operand no;
+  Slot res = slot_new(l);
+  Buf holds = buf_under(b);
+  Buf fails = buf_under(b);
+  *out = slot_get(l, res);
+  if (!lower(l, b, v->args[0], &x) || !lower(l, b, v->args[1], &y))
+    return 0;
+  return unit.w != NULL && block_ops(l, &holds, 1, &unit, 1, &yes) && store(l, &holds, res, yes) &&
+         block_ops(l, &fails, 0, &unit, 1, &no) && store(l, &fails, res, no) &&
+         if_flag(l, b, ex_bin(l, op, x.w, y.w), &holds, &fails);
 }
 
 /* natAdd X Y: an Option block. ADD_CARRY selects the tag: none when the sum
@@ -1139,6 +1208,7 @@ static int fold_nat(Low *l, Buf *b, const Value *v, Operand *out) {
 static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   switch (v->op) {
   case OP_NAT:
+  case OP_WORD:
   case OP_FLAG:
   case OP_UNIT:
   case OP_PROD:
@@ -1205,6 +1275,34 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return nat_bin(l, b, v, IR_OP_DIV, out);
   case OP_NAT_MOD:
     return nat_bin(l, b, v, IR_OP_MOD, out);
+  case OP_W_ADD:
+    return nat_bin(l, b, v, IR_OP_W_ADD, out);
+  case OP_W_SUB:
+    return nat_bin(l, b, v, IR_OP_W_SUB, out);
+  case OP_W_MUL:
+    return nat_bin(l, b, v, IR_OP_W_MUL, out);
+  case OP_W_MULHI:
+    return nat_bin(l, b, v, IR_OP_W_MULHI, out);
+  case OP_W_AND:
+    return nat_bin(l, b, v, IR_OP_W_AND, out);
+  case OP_W_OR:
+    return nat_bin(l, b, v, IR_OP_W_OR, out);
+  case OP_W_XOR:
+    return nat_bin(l, b, v, IR_OP_W_XOR, out);
+  case OP_W_SHL:
+    return nat_bin(l, b, v, IR_OP_W_SHL, out);
+  case OP_W_SHR:
+    return nat_bin(l, b, v, IR_OP_W_SHR, out);
+  case OP_W_ROTL:
+    return nat_bin(l, b, v, IR_OP_W_ROTL, out);
+  case OP_W_ROTR:
+    return nat_bin(l, b, v, IR_OP_W_ROTR, out);
+  case OP_W_NOT:
+    return word_not(l, b, v, out);
+  case OP_W_LT:
+    return word_cmp(l, b, v, IR_OP_LT, out);
+  case OP_W_EQ:
+    return word_cmp(l, b, v, IR_OP_EQ, out);
   case OP_NONZERO_OF:
     return nonzero_of(l, b, v, out);
   case OP_NONZERO_VALUE:
@@ -1233,6 +1331,7 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
 static int lower_value(Low *l, Buf *b, const Value *v, Operand *out) {
   switch (v->kind) {
   case VAL_NAT:
+  case VAL_WORD:
     return give(l, out, v->nat);
   case VAL_UNIV:
   case VAL_PI:
@@ -1351,7 +1450,7 @@ static int lower_entry(Machine *m, uint32_t index, const Entry *e, IrFunc *fn) {
     return oom(&l);
   v = def_value(m, index);
   for (k = 0; k < e->param_count && v != NULL; k++) {
-    params[k] = e->param_flag[k] ? IR_SCALAR_FLAG : IR_SCALAR_NAT;
+    params[k] = e->param_flag[k] ? IR_SCALAR_FLAG : e->param_word[k] ? IR_SCALAR_WORD : IR_SCALAR_NAT;
     x = fresh(&l, operand(ex_local(&l, k)));
     v = x == NULL ? NULL : apply_value(m, v, x);
   }

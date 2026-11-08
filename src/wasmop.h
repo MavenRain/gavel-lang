@@ -51,7 +51,11 @@ enum {
   X(OP_I64_MUL, 0x7E, WASM_IMM_NONE)          \
   X(OP_I64_DIV_U, 0x80, WASM_IMM_NONE)        \
   X(OP_I64_REM_U, 0x82, WASM_IMM_NONE)        \
+  X(OP_I64_AND, 0x83, WASM_IMM_NONE)          \
   X(OP_I64_OR, 0x84, WASM_IMM_NONE)           \
+  X(OP_I64_XOR, 0x85, WASM_IMM_NONE)          \
+  X(OP_I64_SHL, 0x86, WASM_IMM_NONE)          \
+  X(OP_I64_SHR_U, 0x88, WASM_IMM_NONE)        \
   X(OP_I32_WRAP_I64, 0xA7, WASM_IMM_NONE)     \
   X(OP_I64_EXTEND_I32_U, 0xAD, WASM_IMM_NONE)
 

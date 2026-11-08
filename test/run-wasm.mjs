@@ -11,11 +11,12 @@ if (file === undefined || name === undefined) {
 }
 const instance = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(file)), {});
 
+// A Word argument (S8) has the eval form 31w or 0x1fw: the w is dropped.
 const call = ([entry, ...words]) => {
   const fn = instance.exports[entry];
   if (typeof fn !== "function") throw new Error(`no exported entry '${entry}'`);
   try {
-    return BigInt.asUintN(64, fn(...words.map(BigInt))).toString();
+    return BigInt.asUintN(64, fn(...words.map((w) => BigInt(w.replace(/w$/, ""))))).toString();
   } catch (e) {
     if (e instanceof WebAssembly.RuntimeError) return "trap";
     throw e;

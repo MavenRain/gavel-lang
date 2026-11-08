@@ -8,6 +8,7 @@ typedef enum {
   TOK_EOF,
   TOK_IDENT,
   TOK_NAT,
+  TOK_WORD, /* S8: 31w or 0x1fw, below 2^32 */
   TOK_LPAREN,
   TOK_RPAREN,
   TOK_COLON,

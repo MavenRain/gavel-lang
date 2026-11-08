@@ -180,3 +180,7 @@ order.lang REFUSE_DEADLINE
 bound-sealed.lang REFUSE_BOUND
 bound-handles.lang REFUSE_BOUND
 bound-ballots.lang REFUSE_BOUND
+word-type.lang REFUSE_WORD
+word-op.lang REFUSE_WORD
+approx-ckks.lang REFUSE_APPROX
+approx-float.lang REFUSE_APPROX

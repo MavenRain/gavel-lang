@@ -1,12 +1,14 @@
 # gavel-lang status
 
-The build implements slice S7 of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S8 of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
 Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
-(Q-S6-1 (b) to Q-S6-9 (a)) and the log (Q-S7-1 (a) to Q-S7-10 (a)). It
-does not complete M0. The next slice is S8: the crypto prelude part 1.
+(Q-S6-1 (b) to Q-S6-9 (a)) the log (Q-S7-1 (a) to Q-S7-10 (a)) and the machine `Word`, the field and
+the C oracle (Q-S8-1 (a) to Q-S8-9 (a)). It does not complete M0. S8 is
+DONE (commit pending). The next slice is S8a: Poseidon, keccak-256, the G1
+curve and the Schnorr check.
 
 ## Implemented
 
@@ -58,6 +60,21 @@ does not complete M0. The next slice is S8: the crypto prelude part 1.
   is the log height. A closed `Ballots` list with more than 1024 ballots
   gives `REFUSE_BOUND`. The S7 word is `amendCheck`, not `amend`, because
   the DAO prelude has a word `amend`.
+- The machine `Word` (S8): a uint32 value that wraps, with the ops `wAdd`,
+  `wSub`, `wMul`, `wMulHi`, `wAnd`, `wOr`, `wXor`, `wNot`, `wShl`, `wShr`,
+  `wRotl`, `wRotr`, `wLt` and `wEq`, and the literals `0x1fw` and `31w`
+  (`LEX_WORD_RANGE` above 0xffffffff). A guest program that names the
+  type, an op or a literal gives `REFUSE_WORD`; only `domain/domain.lang`
+  and `langc --kit` may. The old bag family `Word` is now `SwapWord`.
+  `Word` lowers to Wasm i32 ops (`examples/crypto.lang`).
+- The field (S8): `Fe` (8 Words, Montgomery form inside, canonical at each
+  boundary), `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`,
+  `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr` and `Fp`. The C oracle
+  is `build/cryptotool` (`src/crypto` from quorum-lang 8d1a113). It prints
+  424 rows, and `test/gate.sh` evaluates each one (`test/crypto/crypto.lang`
+  holds the field rows, outside the Wasm set). A declaration or a name
+  `ckks`, `approx`, `approximate`, `float` or `double` gives
+  `REFUSE_APPROX`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -65,17 +82,18 @@ does not complete M0. The next slice is S8: the crypto prelude part 1.
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 37 examples, 17 parse refusals, 182 check refusals, 10
-  kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir
-  refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine
-  evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches;
+- The gate: 38 examples, 18 parse refusals, 186 check refusals, 10
+  kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0
+  mismatches, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4
+  notrap modules, 7 notrap bad rows, 10 spine evals, 41 Wasm modules
+  valid, 1846 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S8 to S8c: the crypto layers of `docs/PLAN.md` section 12 (the crypto
-   prelude). Each slice needs the slice before it; S8 needs the S7 commit
+1. S8a to S8c: the crypto layers of `docs/PLAN.md` section 12 (the crypto
+   prelude). Each slice needs the slice before it; S8a needs the S8 commit
    first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
@@ -92,14 +110,14 @@ does not complete M0. The next slice is S8: the crypto prelude part 1.
 - An open bid list passes the check at any length. The T1 entry bounds it
   (OI-22).
 - The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
-- The `Party` key is an abstract `Size` until S8, and `checkCert` matches
+- The `Party` key is an abstract `Size` until S8a, and `checkCert` matches
   an entry on its signer and message (OI-25).
 - An open committee passes the check at any size. The T1 entry bounds it
   (OI-26).
 - G3 sets no upper law on ta. A ta above n - f stops the amendments by
   the honest members (OI-24).
 - `elgVrf` is an ideal check until S8b (OI-28). The message pairing is the
-  abstract Cantor code until S8 (OI-30). `Sealed` is the clear denotation
+  abstract Cantor code until S8a (OI-30). `Sealed` is the clear denotation
   of the ciphertext and the shares until S13 and S14 (OI-31).
 - A release is outside the Log (OI-35). The Log and `Verdicts` have no
   bound; only `Ballots` has one (OI-36).

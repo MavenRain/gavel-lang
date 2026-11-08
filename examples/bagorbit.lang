@@ -16,12 +16,12 @@ def rebuildPath : (k : Size) -> (e : Pos k -> Choice) -> Path (Pos k -> Choice) 
   fun (k : Size) (e : Pos k -> Choice) => fun (i : I) => fun (q : Pos k) => rebuildEta k q e @ i
 
 -- liftFront applies a word to the tail (consP, swapFront and actW are in domain.lang).
-def liftFront : (m : Size) -> Word m -> (Pos (szS m) -> Choice) -> Pos (szS m) -> Choice :=
-  fun (m : Size) (u : Word m) (d : Pos (szS m) -> Choice) => consP m (d (posFirst m)) (actW m u (fun (p : Pos m) => d (posNext m p)))
+def liftFront : (m : Size) -> SwapWord m -> (Pos (szS m) -> Choice) -> Pos (szS m) -> Choice :=
+  fun (m : Size) (u : SwapWord m) (d : Pos (szS m) -> Choice) => consP m (d (posFirst m)) (actW m u (fun (p : Pos m) => d (posNext m p)))
 
 -- swapR is the relation of the kernel Orbit and of OrbitN (domain.lang). Both families are sets by their squash.
 def swapR : (n : Size) -> (Pos n -> Choice) -> (Pos n -> Choice) -> Type 0 :=
-  fun (n : Size) (c : Pos n -> Choice) (d : Pos n -> Choice) => Sigma (w : Word n) (Path (Pos n -> Choice) (actW n w d) c)
+  fun (n : Size) (c : Pos n -> Choice) (d : Pos n -> Choice) => Sigma (w : SwapWord n) (Path (Pos n -> Choice) (actW n w d) c)
 def isSetOrbitN : (k : Size) -> isSet (OrbitN k) :=
   fun (k : Size) (x : OrbitN k) (y : OrbitN k) (p : Path (OrbitN k) x y) (q : Path (OrbitN k) x y) =>
     fun (i : I) => fun (j : I) => orbitNSquash k x y p q i j
@@ -37,15 +37,15 @@ def listB : (k : Size) -> (Pos k -> Choice) -> ChoiceBag k :=
 def swapList : (m : Size) -> (c : Pos (szS (szS m)) -> Choice) -> Path (ChoiceBag (szS (szS m))) (listB (szS (szS m)) (swapFront m c)) (listB (szS (szS m)) c) :=
   fun (m : Size) (c : Pos (szS (szS m)) -> Choice) => fun (i : I) =>
     choiceSwap m (c (posNext (szS m) (posFirst m))) (c (posFirst (szS m))) (listB m (fun (p : Pos m) => c (posNext (szS m) (posNext m p)))) i
-def listAct : (n : Size) -> (w : Word n) -> (d : Pos n -> Choice) -> Path (ChoiceBag n) (listB n (actW n w d)) (listB n d) :=
-  fun (n : Size) (w : Word n) => elim (fun (k : Size) (v : Word k) => (d : Pos k -> Choice) -> Path (ChoiceBag k) (listB k (actW k v d)) (listB k d))
+def listAct : (n : Size) -> (w : SwapWord n) -> (d : Pos n -> Choice) -> Path (ChoiceBag n) (listB n (actW n w d)) (listB n d) :=
+  fun (n : Size) (w : SwapWord n) => elim (fun (k : Size) (v : SwapWord k) => (d : Pos k -> Choice) -> Path (ChoiceBag k) (listB k (actW k v d)) (listB k d))
     (fun (k : Size) => fun (d : Pos k -> Choice) => refl)
-    (fun (m : Size) (v : Word (szS (szS m))) (ih : (d : Pos (szS (szS m)) -> Choice) -> Path (ChoiceBag (szS (szS m))) (listB (szS (szS m)) (actW (szS (szS m)) v d)) (listB (szS (szS m)) d)) =>
+    (fun (m : Size) (v : SwapWord (szS (szS m))) (ih : (d : Pos (szS (szS m)) -> Choice) -> Path (ChoiceBag (szS (szS m))) (listB (szS (szS m)) (actW (szS (szS m)) v d)) (listB (szS (szS m)) d)) =>
       fun (d : Pos (szS (szS m)) -> Choice) =>
         trans (ChoiceBag (szS (szS m))) (listB (szS (szS m)) (swapFront m (actW (szS (szS m)) v d))) (listB (szS (szS m)) (actW (szS (szS m)) v d)) (listB (szS (szS m)) d)
           (swapList m (actW (szS (szS m)) v d)) (ih d))
-    (fun (m : Size) (u : Word m) (ihu : (d : Pos m -> Choice) -> Path (ChoiceBag m) (listB m (actW m u d)) (listB m d))
-      (v : Word (szS m)) (ihv : (d : Pos (szS m) -> Choice) -> Path (ChoiceBag (szS m)) (listB (szS m) (actW (szS m) v d)) (listB (szS m) d)) =>
+    (fun (m : Size) (u : SwapWord m) (ihu : (d : Pos m -> Choice) -> Path (ChoiceBag m) (listB m (actW m u d)) (listB m d))
+      (v : SwapWord (szS m)) (ihv : (d : Pos (szS m) -> Choice) -> Path (ChoiceBag (szS m)) (listB (szS m) (actW (szS m) v d)) (listB (szS m) d)) =>
       fun (d : Pos (szS m) -> Choice) =>
         trans (ChoiceBag (szS m)) (listB (szS m) (actW (szS m) v (liftFront m u d))) (listB (szS m) (liftFront m u d)) (listB (szS m) d)
           (ihv (liftFront m u d)) (fun (i : I) => choiceCons m (d (posFirst m)) (ihu (fun (p : Pos m) => d (posNext m p)) @ i))) w
@@ -197,12 +197,12 @@ def bagOrbitW : SwapCase -> (k : Size) -> Equiv (OrbitN k) (ChoiceBag k) :=
     (toFrom (fromBagW sw) (fromBagNil sw) (fromBagCons sw) k) (fromTo (fromBagW sw) (fromBagNil sw) (fromBagCons sw) k)
 def bagOrbit : (k : Size) -> Equiv (OrbitN k) (ChoiceBag k) := bagOrbitW swapO
 
--- The example row: a DAO program with Member Pos n0 and Group Word n0 at three positions. The kernel gives
+-- The example row: a DAO program with Member Pos n0 and Group SwapWord n0 at three positions. The kernel gives
 -- the family Orbit after act (S3, design C 2a). Orbit and OrbitN n0 have the same point and path constructors,
 -- so toOrbitN (a fold) and fromOrbitN (fromAt n0) are inverse, orbitRow is ua of that iso, and bagOrbit n0 gives its bags.
 def n0 : Size := szS (szS (szS sz0))
 def Member : Type 0 := Pos n0
-def Group : Type 0 := Word n0
+def Group : Type 0 := SwapWord n0
 def act : Group -> (Member -> Choice) -> Member -> Choice := actW n0
 def isSetOrbit : isSet Orbit :=
   fun (x : Orbit) (y : Orbit) (p : Path Orbit x y) (q : Path Orbit x y) => fun (i : I) => fun (j : I) => orbitSquash x y p q i j

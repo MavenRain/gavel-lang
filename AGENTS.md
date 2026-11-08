@@ -4,6 +4,31 @@ This file is for coding agents that work in this repo or meet gavel-lang
 code. It is a DRAFT at S0. Slice S20 makes it final (`docs/PLAN.md`
 section 12).
 
+## State at S8
+
+- S8 adds the machine `Word` (uint32, wraps) and its ops `wAdd`, `wSub`,
+  `wMul`, `wMulHi`, `wAnd`, `wOr`, `wXor`, `wNot`, `wShl`, `wShr`, `wRotl`,
+  `wRotr`, `wLt` and `wEq`, and the literals `0x1fw` and `31w`. A guest
+  program that names them gives `REFUSE_WORD`. Only `domain/domain.lang`
+  and `langc --kit` may.
+- The old bag family `Word` is now `SwapWord`. Its constructors and fields
+  keep their names.
+- The field is in `domain/domain.lang`: `Fe` (8 Words, Montgomery inside,
+  canonical at each boundary), `FeMod`, `frMod`, `fpMod`, the field ops,
+  `Fr` and `Fp`. Eval cost: `feMul` 9182 steps, `frInv` 3713353 steps and
+  303.4 MiB, under the fuel limit of 20M and the 1 GiB arena.
+- The C oracle is `build/cryptotool`. `src/crypto` is a byte copy of
+  quorum-lang 8d1a113. The gate evaluates its 424 rows: the Word rows in
+  `examples/crypto.lang`, the field rows in `test/crypto/crypto.lang`
+  (outside the Wasm set: the lowering refuses `frInv` with `EVAL_DEPTH`).
+- `ckks`, `approx`, `approximate`, `float` and `double` are approximate
+  words (`REFUSE_APPROX`, an exact name match). No def or binder can take
+  them. Use `twice`, not `double`. `block` is a `REFUSE_CLOCK` word.
+- A def that calls `feInv` on a concrete modulus costs about 3.3M steps and
+  300 MiB at check time. The oracle helpers take the modulus as a binder.
+- Next is S8a: Poseidon, keccak-256, `Pt1`, `schnorrCheck`. The rest of the
+  state is as at S7, below.
+
 ## State at S7
 
 - S7 adds the log to `domain/domain.lang`: `Ballot`, `Ballots`,
