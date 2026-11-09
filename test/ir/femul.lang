@@ -1,0 +1,5 @@
+-- feMulC (S8a, USER ruling Q-S8a-6 (a)): langc eval runs the C builtin,
+-- and the Wasm target runs the domain def feMul in its place. The
+-- differential compares the two. mulLow x y is limb 0 of the Montgomery
+-- product of x and y (each the low limb of an Fe) for the BN254 base field.
+def mulLow : Word -> Word -> Word := fun (x : Word) (y : Word) => fe0 (feMulC fpMod (fe x 0w 0w 0w 0w 0w 0w 0w) (fe y 0w 0w 0w 0w 0w 0w 0w))

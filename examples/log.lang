@@ -3,21 +3,21 @@
 def s1 : Size := szS sz0
 def s2 : Size := szS (szS sz0)
 def s3 : Size := szS (szS (szS sz0))
-def p0 : Party := party sz0
-def p1 : Party := party s1
-def p2 : Party := party s2
-def p3 : Party := party s3
+def p0 : Party := party fxKey1
+def p1 : Party := party fxKey2
+def p2 : Party := party fxKey3
+def p3 : Party := party fxKey4
 def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
 def board : Committee := committee members s3 s1 refl refl
 -- G3 on ta = 3, and the stamp end 1 is before the release 2.
 def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
 def auc : AucID := aucId s1
-def rootA : Root := root (hash s1)
-def rootB : Root := root (hash s2)
-def hA : Handle := handle (hash s1)
-def hB : Handle := handle (hash s2)
-def cmA : Commitment := commitment (hash s1)
-def cmB : Commitment := commitment (hash s2)
+def rootA : Root := root (hsOf s1)
+def rootB : Root := root (hsOf s2)
+def hA : Handle := handle (hsOf s1)
+def hB : Handle := handle (hsOf s2)
+def cmA : Commitment := commitment (hsOf s1)
+def cmB : Commitment := commitment (hsOf s2)
 -- The proofs name the root rootA.
 def proofA : EligibilityProof := elgProof rootA hA cmA
 def proofB : EligibilityProof := elgProof rootA hA cmB
@@ -26,13 +26,13 @@ def bidB : SealedBid := sealedBid hB cmB (elgProof rootA hB cmB) (seal Amount (a
 def stampA : Hash := stampMsg cmA (height s1)
 def stampLate : Hash := stampMsg cmA (height s2)
 -- Three members certify the stamp of cmA at height 1.
-def certA : Certificate := ctCons p0 stampA (ctCons p1 stampA (ctCons p2 stampA ctNil))
+def certA : Certificate := ctCons p0 fxStAK1R fxStAK1S (ctCons p1 fxStAK2R fxStAK2S (ctCons p2 fxStAK3R fxStAK3S ctNil))
 -- setup2 is setup with the reserve 1 and the amend threshold 4.
 def setup2 : Params := params (prRule setup) (amSucc amZero) (prCommittee setup) (szS (szS (szS (szS sz0)))) (prSlot setup) (prStampEnd setup) (prRelease setup) refl refl
 def topicA : Hash := amendMsg (amendment sz0 setup2 blNil)
 def yesA : Party -> Ballot := fun (p : Party) => ballot p topicA (inr unit)
 def ballotsA : Ballots := blCons (yesA p0) (blCons (yesA p1) (blCons (yesA p2) (blCons (yesA p3) blNil)))
-def certAm : Certificate := ctCons p0 topicA (ctCons p1 topicA (ctCons p2 topicA (ctCons p3 topicA ctNil)))
+def certAm : Certificate := ctCons p0 fxAmAK1R fxAmAK1S (ctCons p1 fxAmAK2R fxAmAK2S (ctCons p2 fxAmAK3R fxAmAK3S (ctCons p3 fxAmAK4R fxAmAK4S ctNil)))
 def amA : Amendment := amendment sz0 setup2 ballotsA
 -- Four yes ballots and four signers: valid.
 def amendValid : Verdict := amendCheck setup amA certAm
@@ -41,7 +41,7 @@ def amendNoBallots : Verdict := amendCheck setup (amendment sz0 setup2 blNil) ce
 -- Four no ballots: not accepted.
 def amendNoVotes : Verdict := amendCheck setup (amendment sz0 setup2 (blCons (ballot p0 topicA (inl unit)) (blCons (ballot p1 topicA (inl unit)) (blCons (ballot p2 topicA (inl unit)) (blCons (ballot p3 topicA (inl unit)) blNil))))) certAm
 -- One signer only.
-def amendOneSigner : Verdict := amendCheck setup amA (ctCons p0 topicA ctNil)
+def amendOneSigner : Verdict := amendCheck setup amA (ctCons p0 fxAmAK1R fxAmAK1S ctNil)
 -- The log: the amendment, then a slash of hA (cmA and cmB differ), then a
 -- claim of the bid of hA.
 def entryA : Entry setup setup2 := enAmend setup setup2 sz0 ballotsA certAm refl

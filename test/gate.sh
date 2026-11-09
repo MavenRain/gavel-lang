@@ -214,6 +214,7 @@ ir_lowered natops.lang
 cmp -s "$tmp/natops.lang.ir" test/ir/natops.ir || { echo "FAIL natops.lang: the IR text is not test/ir/natops.ir"; fail=$((fail + 1)); }
 ir_lowered block.lang
 cmp -s "$tmp/block.lang.ir" test/ir/block.ir || { echo "FAIL block.lang: the IR text is not test/ir/block.ir"; fail=$((fail + 1)); }
+ir_lowered femul.lang
 echo "ir lowerings: $irlowered lowered"
 
 # The writer (S3): `langc --kit build
@@ -312,7 +313,7 @@ difkit() {
     *) kit examples/kit.txt "$(basename "$1")" ;;
   esac
 }
-for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-trap.lang; do
+for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-trap.lang test/ir/femul.lang; do
   w="$tmp/$(basename "$f" .lang).wasm"
   wasms=$((wasms + 1))
   if ! build/langc $(difkit "$f") build "$f" -o "$w" 2>"$tmp/w.err" || ! wasm-validate "$w" 2>>"$tmp/w.err" ||

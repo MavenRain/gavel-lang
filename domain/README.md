@@ -94,9 +94,9 @@ Q-S5-11 (a)).
 | Kind | Names |
 |---|---|
 | Families | `Hash`, `Party`, `Members`, `Committee`, `Params`, `Certificate` |
-| Constructors and fields | `hash`, `hsTag`, `party`, `ptKey`, `mbNil`, `mbCons`, `mbHead`, `mbTail`, `committee`, `cmMembers`, `cmT`, `cmF`, `cmSafe`, `cmCensor`, `params`, `prRule`, `prReserve`, `prCommittee`, `prAmendT`, `prFork`, `ctNil`, `ctCons`, `ctSigner`, `ctMsg`, `ctRest` |
+| Constructors and fields | `hash`, `hsTag`, `party`, `ptKey`, `mbNil`, `mbCons`, `mbHead`, `mbTail`, `committee`, `cmMembers`, `cmT`, `cmF`, `cmSafe`, `cmCensor`, `params`, `prRule`, `prReserve`, `prCommittee`, `prAmendT`, `prFork`, `ctNil`, `ctCons`, `ctSigner`, `ctR`, `ctS`, `ctRest` |
 | Size and Sum words | `szLe`, `szLt`, `szEq`, `szAdd`, `sAnd`, `sOr`, `sNot` (the result `Sum Unit Unit`: `inr unit` is yes) |
-| Party, hash and member words | `ptEq`, `hsEq`, `mbLen`, `mbHas`, `mbDistinct` |
+| Party, hash and member words | `ptEq`, `hsEq`, `hsOf`, `mbLen`, `mbHas`, `mbDistinct` |
 | The laws | `cmG1` (G1: no repeated party and f < t), `cmG2` (G2: t + f <= n), `prG3` (G3: n + f < ta + ta) |
 | The certificate | `ctHas`, `ctCount`, `checkCert` |
 | The rule on `Params` | `outcomeOf` |
@@ -115,10 +115,10 @@ exempt from all of them.
 - `REFUSE_BOUND` (committee): a closed `Members` value with more than
   1024 members. An open committee passes; the T1 entry bounds it.
 
-`checkCert` counts each member of the committee one time when the
-certificate has an entry with that signer and that message, and accepts
-when the count is at least t. Equal entries count one time. At S8 the
-entry match becomes the Schnorr check.
+`checkCert c h e` counts each member of the committee one time when the
+certificate e has an entry by that member with a valid Schnorr signature
+on the message h (`ctHas`, S8a), and accepts when the count is at least
+t. Two entries by one member count one time.
 
 ## The sealed bid
 
@@ -132,7 +132,7 @@ Q-S6-9 (a)).
 | Height words | `htLe`, `htLt` |
 | Sealed words | `seal`, `sealOf` (the sealed family), `release` |
 | Bid words | `admit`, `slash`, `elgVrf`, `vdCheck`, `hlHas` |
-| Message words | `stampMsg`, `openMsg`, `szPair`, `szTri` |
+| Message words | `stampMsg`, `openMsg` (`szPair` and `szTri` are out at S8a) |
 | Linear Size words | `szIsZ`, `szDec` (S5 `szEq` reads y with them) |
 | The laws | `p3Slash` (P3), `szEqRefl`, and the proof field `opOk` of `Opening` (P2) |
 
@@ -156,8 +156,12 @@ which is `valid` or `invalid` with a `Reason`. `slash` gives `valid` when
 both `elgVrf` checks say yes and the two commitments differ. For equal
 commitments it gives `invalid notAccepted`, and `p3Slash` proves it (P3).
 
-`stampMsg` and `openMsg` pair a tag with a `Size` through `szPair`
-(Cantor), so the two messages differ. At S8 the message is Poseidon.
+`hsCanonical` checks whether a hash tag is below r. `admit` gives
+`invalid badCert` when the commitment tag is at least r.
+This keeps a stamp certificate from accepting another tag congruent mod r.
+
+`stampMsg` and `openMsg` give `hash (hsMsg t x y)` with the kind tag t
+(0 for a stamp, 1 for an open), so the two messages differ (S8a).
 `szIsZ` and `szDec` are linear words: they do not call `ih` in a step.
 The evaluator computes `ih` eagerly, so a step that calls it grows very
 fast. `szEq` reads y with them. `szLe` still calls `ih` and stays for small
@@ -248,11 +252,11 @@ minus 2. The constants come from quorum-lang `bn254.h`.
 
 The C oracle is `build/cryptotool`. `src/crypto` is a byte copy of
 quorum-lang 8d1a113 (`u256`, `bn254`, `keccak`, `poseidon`). The tool
-prints 424 rows `FILE NAME ARGS => RESULT` from a fixed seed and known
-answers. `examples/crypto.lang` has the 360 Word rows (it lowers).
+prints 501 rows (424 at S8) `FILE NAME ARGS => RESULT` from a fixed
+seed and known answers. `examples/crypto.lang` has the 360 Word rows (it lowers).
 `test/crypto/crypto.lang` has the 64 field rows (add 9, sub 9, mul 8, inv
 6 for each of `Fr` and `Fp`). `test/gate.sh` evaluates each row with `langc
---kit eval` and prints `crypto oracle: 424 rows, 0 mismatches`.
+--kit eval` and prints `crypto oracle: 501 rows, 0 mismatches`.
 
 The field rows are outside the Wasm set. The lowering refuses `frInv` with
 `EVAL_DEPTH`, because it nests deeper than 2000 levels. The evaluator
@@ -264,6 +268,72 @@ as a binder.
 
 `double` and `float` are approximate words now (`REFUSE_APPROX`), so no def
 or binder can take them.
+
+## The crypto prelude part 1
+
+S8a adds the first crypto layer (`docs/PLAN.md` section 1, Q-S8a-1 (a) to
+Q-S8a-10 (a)). A guest program can name its defs. It cannot name the
+`Word` type, the `Word` ops, the `Word` literals or the kit builtins
+(`REFUSE_WORD`). The guest examples use the fixtures and the committee
+words.
+
+| Kind | Names |
+|---|---|
+| keccak-256 | `Lane`, `lnXor`, `lnChi`, `lnRot`, `lnSwap`, `KState`, `KRcs`, `keccakF`, `kcRcs`, `kcHash160`, `kcChallenge` |
+| Poseidon | `PsState`, `PsMds`, `PsRcs`, `poseidonPerm`, `poseidon2`, `psMdsFr`, `psRcsFr` |
+| The G1 curve | `Pt1`, `Jac`, `ptDbl`, `ptMadd`, `ptToAffine`, `ptMul`, `g1Gen` |
+| Schnorr | `scOnCurve`, `scValid`, `scPtEq`, `scEquation`, `schnorrCheck` |
+| Messages | `szToFe`, `hsMsg`, `hsOf` |
+| Fixtures | `fxKey1` to `fxKey5`, `fx<MSG>K<k>R`, `fx<MSG>K<k>S` |
+| Kit builtins | `feMulC`, `ptMulC` |
+
+`feMulC md a b` is the C Montgomery multiply, and `ptMulC md k p` is the
+C scalar multiply k p on G1 (Q-S8a-6 (a), Q-S8a-7 (a)). The guest `feMul`
+and `ptMul` stay the spec: oracle rows compare each builtin with its spec,
+and the Wasm lowering runs the spec. A guest program that names a builtin
+gets `REFUSE_WORD`.
+
+A keccak lane is two Words (lo, hi), little-endian. `keccakF` runs its
+rounds by an elim over a `KRcs` list, so the check does not unroll them.
+`poseidon2` is circomlib width 3 (2 inputs) on Fr, alpha 5, 8 full and 57
+partial rounds. Its 195 round constants (`psRcsFr`) and 9 MDS values
+(`psMdsFr`) are data in Montgomery form. `build/cryptotool poseidon`
+prints the same values (Q-S8a-2 (a)).
+
+`schnorrCheck rcs P R s m` is the ratify-lang scheme. The challenge e is
+keccak-256 reduced mod r (`kcChallenge`), and the check is s G = R + e P
+on canonical points. `ptMul` uses Jacobian points; `schnorrCheck` uses
+`ptMulC`.
+
+`szToFe n` gives the Fe of a `Size` n. `hsMsg t x y` is poseidon2(t,
+poseidon2(x, y)) on Fr. `hsOf n` is the `Hash` of the canonical Fe of n,
+so a test can write `hsOf 2` for a message.
+
+The committee words change at S8a (OI-25, OI-30). `Hash` is `hash (hsTag
+: Fe)` (a canonical Fr value), and `hsEq` is `feEq` on the tags. `Party`
+is `party (ptKey : Pt1)`, and `ptEq` is `scPtEq` on the keys. A
+certificate entry is `ctCons (ctSigner : Party) (ctR : Pt1) (ctS : Fe)
+(ctRest : Certificate)`. `ctHas p h c` runs `schnorrCheck` only on the
+entries whose signer is p. `stampMsg`, `openMsg` and `amendMsg` give
+`hash (hsMsg t x y)` with the kind tag t (0, 1 or 2). `szPair` and
+`szTri` are out.
+
+The fixtures (Q-S8a-3 (a)): `fxKey1` to `fxKey5` are the public keys of
+fixed secret keys. Each signed entry has the names `fx<MSG>K<k>R` and
+`fx<MSG>K<k>S` for the message MSG and the key k. The messages are Hs2
+(`hsOf 2`), Hs3, StA, StL, OpA, OpE and AmA. `build/cryptotool fixtures`
+prints the same 49 def lines. The keys are for tests only.
+
+`hsMsg` and `schnorrCheck` are sealed defs (Q-S8a-9 (a)): they unfold
+only on closed arguments. A memo keeps each closed value (Q-S8a-10 (a)).
+`docs/PLAN.md` section 8.1 gives the kernel rules.
+
+Costs in eval steps (measured early in S8a, before the switch of `Hash`,
+`Party` and the certificate): `feMulC` 68 (the guest `feMul` about
+8926), one `poseidon2` about 476000, one `schnorrCheck` about 828000.
+
+The oracle has 501 rows at S8a: `test/crypto/crypto.lang` adds the
+keccak, Poseidon, curve, `ptMulC`, Schnorr, `hsMsg` and fixture rows.
 
 ## The IR test families
 

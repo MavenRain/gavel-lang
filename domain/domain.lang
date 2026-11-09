@@ -487,15 +487,6 @@ def a4 : (h : Amount) -> (t : Bids) -> Path Amount (bdTop t) h -> Path Size (bdA
     trans Size (bdArg (bdCons h t)) (amSelect Size h h sz0 (szS (bdArg t))) sz0
       (cong (fun (m : Amount) => amSelect Size m h sz0 (szS (bdArg t))) p)
       (selRefl Size h sz0 (szS (bdArg t)))
--- The committee (S5, design section 4, USER rulings Q-S5-1 to Q-S5-11).
--- Hash and Party are abstract: a Size tag and a Size key (Q-S5-3 (a),
--- Q-S5-1 (a)); S8 makes the key a BN254 G1 key. Members is the list of
--- the committee members and n is its length. t, n, f and the amend
--- threshold ta are Size values (Q-S5-2 (a)). The compare and the test
--- words give Sum Unit Unit as amLe: inr unit is "yes".
-family Hash := hash (hsTag : Size)
-family Party := party (ptKey : Size)
-family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)
 -- szEq x y is inr unit when x = y. The step reads y with szIsZ and szDec,
 -- not with an inner elim: an inner elim whose step calls ih makes the
 -- time grow very fast (S6: szEq on 44 filled the arena).
@@ -524,242 +515,6 @@ def sOr : Sum Unit Unit -> Sum Unit Unit -> Sum Unit Unit :=
   fun (a : Sum Unit Unit) (b : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => b) (fun (u : Unit) => inr unit) a
 def sNot : Sum Unit Unit -> Sum Unit Unit :=
   fun (a : Sum Unit Unit) => elim (fun (s : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) a
-def ptEq : Party -> Party -> Sum Unit Unit := fun (p : Party) (q : Party) => szEq (ptKey p) (ptKey q)
-def hsEq : Hash -> Hash -> Sum Unit Unit := fun (g : Hash) (h : Hash) => szEq (hsTag g) (hsTag h)
-def mbLen : Members -> Size :=
-  fun (ms : Members) => elim (fun (k : Members) => Size) sz0 (fun (h : Party) (t : Members) (ih : Size) => szS ih) ms
-def mbHas : Party -> Members -> Sum Unit Unit :=
-  fun (p : Party) (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inl unit)
-    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sOr (ptEq p h) ih) ms
-def mbDistinct : Members -> Sum Unit Unit :=
-  fun (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inr unit)
-    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sAnd (sNot (mbHas h t)) ih) ms
--- The laws G1 to G3 are proof fields (Q-S5-5 (c), Q-S5-10 (a)): each value
--- of Committee and Params carries its proofs, so the laws hold for open
--- inputs too. G1 (cmSafe): no party is in the members two times, and f < t.
--- G2 (cmCensor): t + f <= n. G3 (prFork, on ta, Q-S5-6 (b)): n + f <
--- ta + ta, that is 2ta - n > f. When the kernel cannot check a proof
--- field, the checker gives the law code: REFUSE_SAFETY, REFUSE_CENSOR or
--- REFUSE_FORK (Q-S5-9 (a)).
-def cmG1 : Members -> Size -> Size -> Sum Unit Unit :=
-  fun (ms : Members) (t : Size) (f : Size) => sAnd (mbDistinct ms) (szLt f t)
-def cmG2 : Members -> Size -> Size -> Sum Unit Unit :=
-  fun (ms : Members) (t : Size) (f : Size) => szLe (szAdd t f) (mbLen ms)
-family Committee := committee (cmMembers : Members) (cmT : Size) (cmF : Size) (cmSafe : Path (Sum Unit Unit) (cmG1 cmMembers cmT cmF) (inr unit)) (cmCensor : Path (Sum Unit Unit) (cmG2 cmMembers cmT cmF) (inr unit))
-def prG3 : Committee -> Size -> Sum Unit Unit :=
-  fun (c : Committee) (ta : Size) => szLt (szAdd (mbLen (cmMembers c)) (cmF c)) (szAdd ta ta)
--- The slot and the heights (S6, Q-S6-6 (a), Q-S6-1 (b)): a deposit slot is
--- a Size tag. There is no clock: a height is a log height, and a deadline
--- is a height that a t-of-n certificate fixes. Params keeps the slot, the
--- stamp end prStampEnd (the last height of a bid timestamp) and the
--- release height prRelease. The proof field prOrder (Q-S6-9 (a)) says
--- that the stamp end is before the release; when the kernel cannot check
--- it, the checker gives REFUSE_DEADLINE. prOrder is after prFork, so a G3
--- failure comes first.
-family Slot := slot (soTag : Size)
-family Height := height (htOf : Size)
-def htLe : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLe (htOf g) (htOf h)
-def htLt : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLt (htOf g) (htOf h)
-family Params := params (prRule : Rule) (prReserve : Amount) (prCommittee : Committee) (prAmendT : Size) (prSlot : Slot) (prStampEnd : Height) (prRelease : Height) (prFork : Path (Sum Unit Unit) (prG3 prCommittee prAmendT) (inr unit)) (prOrder : Path (Sum Unit Unit) (htLt prStampEnd prRelease) (inr unit))
--- The certificate (Q-S5-4 (a)): an ideal list of signatures, each a signer
--- and a message. checkCert c h cs counts each member of c one time when cs
--- has an entry with that signer and the message h, and accepts (inr unit)
--- when the count is at least t. Two equal entries count one time. At S8
--- the entry match becomes the Schnorr check.
-family Certificate := ctNil | ctCons (ctSigner : Party) (ctMsg : Hash) (ctRest : Certificate)
-def ctHas : Party -> Hash -> Certificate -> Sum Unit Unit :=
-  fun (p : Party) (h : Hash) (cs : Certificate) => elim (fun (k : Certificate) => Sum Unit Unit) (inl unit)
-    (fun (s : Party) (g : Hash) (r : Certificate) (ih : Sum Unit Unit) => sOr (sAnd (ptEq p s) (hsEq h g)) ih) cs
-def ctCount : Members -> Hash -> Certificate -> Size :=
-  fun (ms : Members) (h : Hash) (cs : Certificate) => elim (fun (k : Members) => Size) sz0
-    (fun (q : Party) (t : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (ctHas q h cs)) ms
-def checkCert : Committee -> Hash -> Certificate -> Sum Unit Unit :=
-  fun (c : Committee) (h : Hash) (cs : Certificate) => szLe (cmT c) (ctCount (cmMembers c) h cs)
--- The outcome of the parameters (Q-S4-4 (a)).
-def outcomeOf : Params -> Bids -> Outcome := fun (p : Params) (bs : Bids) => outcome (prRule p) (prReserve p) bs
--- The sealed bid (S6, design section 5, USER rulings Q-S6-1 to Q-S6-9).
--- The auction name is a Size tag (Q-S6-6 (a)). Root, Handle and
--- Commitment wrap a Hash; a Deposit is the owner and the secret hash, with
--- no amount. The compare words give Sum Unit Unit: inr unit is "yes".
-family AucID := aucId (auTag : Size)
-family Root := root (rtHash : Hash)
-family Handle := handle (hdHash : Hash)
-family Commitment := commitment (coHash : Hash)
-family Deposit := deposit (dpOwner : Size) (dpSecret : Hash)
-def auEq : AucID -> AucID -> Sum Unit Unit := fun (a : AucID) (b : AucID) => szEq (auTag a) (auTag b)
-def rtEq : Root -> Root -> Sum Unit Unit := fun (a : Root) (b : Root) => hsEq (rtHash a) (rtHash b)
-def hdEq : Handle -> Handle -> Sum Unit Unit := fun (a : Handle) (b : Handle) => hsEq (hdHash a) (hdHash b)
-def coEq : Commitment -> Commitment -> Sum Unit Unit := fun (a : Commitment) (b : Commitment) => hsEq (coHash a) (coHash b)
--- The eligibility proof is an ideal record of the statement (root, handle,
--- commitment) (Q-S6-5 (a)): elgVrf says yes when the three match. At S8b
--- the match becomes the Noir verifier.
-family EligibilityProof := elgProof (epRoot : Root) (epHandle : Handle) (epCommit : Commitment)
-def elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Sum Unit Unit :=
-  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) =>
-    sAnd (rtEq r (epRoot e)) (sAnd (hdEq h (epHandle e)) (coEq c (epCommit e)))
--- The sealed value (P1, Q-S6-3 (a)) is a cell monad. A guest program makes
--- a sealed value with seal, but an elim, a fold or a projection of Sealed
--- in a guest program def gives REFUSE_PEEK. Only the domain word release
--- reads sealOf. The FHE ciphertext and the MPC shares are Sealed Amount in
--- the clear denotation until S13 and S14.
-sealed family Sealed (A : Type 0) := seal (sealOf : A)
-family SealedBid := sealedBid (sbHandle : Handle) (sbCommit : Commitment) (sbProof : EligibilityProof) (sbBid : Sealed Amount)
-family SealedBids := sbNil | sbCons (sbsHead : SealedBid) (sbsTail : SealedBids)
--- The verdicts (Q-S6-7 (a)). Handles is the set of the slashed handles; at
--- S7 the Log gives it.
-family Reason := badCert | badProof | late | early | slashed | notAccepted | wrongHeight | malformed
-family Verdict := valid | invalid (vdWhy : Reason)
-family Handles := hlNil | hlCons (hlHead : Handle) (hlTail : Handles)
-def hlHas : Handle -> Handles -> Sum Unit Unit :=
-  fun (h : Handle) (hs : Handles) => elim (fun (k : Handles) => Sum Unit Unit) (inl unit)
-    (fun (g : Handle) (t : Handles) (ih : Sum Unit Unit) => sOr (hdEq h g) ih) hs
--- vdCheck s w v is v when s says yes, else invalid w.
-def vdCheck : Sum Unit Unit -> Reason -> Verdict -> Verdict :=
-  fun (s : Sum Unit Unit) (w : Reason) (v : Verdict) => elim (fun (k : Sum Unit Unit) => Verdict) (fun (u : Unit) => invalid w) (fun (u : Unit) => v) s
--- The message words (Q-S6-8 (a)). szPair is the Cantor pairing
--- (x + y)(x + y + 1)/2 + y, total and injective. The first pair argument is
--- a kind tag (0 for a stamp, 1 for an opening), so a stamp message and an
--- open message are never equal. At S8 and T2 the message is Poseidon.
-def szTri : Size -> Size :=
-  fun (x : Size) => elim (fun (a : Size) => Size) sz0 (fun (a : Size) (ih : Size) => szS (szAdd a ih)) x
-def szPair : Size -> Size -> Size := fun (x : Size) (y : Size) => szAdd (szTri (szAdd x y)) y
-def stampMsg : Commitment -> Height -> Hash :=
-  fun (c : Commitment) (h : Height) => hash (szPair sz0 (szPair (hsTag (coHash c)) (htOf h)))
-def openMsg : AucID -> Height -> Hash :=
-  fun (a : AucID) (h : Height) => hash (szPair (szS sz0) (szPair (auTag a) (htOf h)))
--- admit p sl r b h cs (Q-S6-7 (a)) checks the bid b with the timestamp
--- certificate cs at the height h, in this order: invalid late when h is
--- after the stamp end, invalid badCert when cs does not certify the stamp
--- message of b at h, invalid slashed when the handle of b is in sl,
--- invalid badProof when the eligibility proof does not check at the root
--- r, else valid.
-def admit : Params -> Handles -> Root -> SealedBid -> Height -> Certificate -> Verdict :=
-  fun (p : Params) (sl : Handles) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) =>
-    vdCheck (htLe h (prStampEnd p)) late
-      (vdCheck (checkCert (prCommittee p) (stampMsg (sbCommit b) h) cs) badCert
-        (vdCheck (sNot (hlHas (sbHandle b) sl)) slashed
-          (vdCheck (elgVrf r (sbHandle b) (sbCommit b) (sbProof b)) badProof valid)))
--- slash r h c e d f (Q-S6-4 (a)) checks two bids of the handle h: invalid
--- notAccepted when the commitments are equal, invalid badProof when one of
--- the two proofs does not check at the root r, else valid (slash h). The
--- log entry and replay are S7.
-def slash : Root -> Handle -> Commitment -> EligibilityProof -> Commitment -> EligibilityProof -> Verdict :=
-  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (d : Commitment) (f : EligibilityProof) =>
-    vdCheck (sNot (coEq c d)) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h d f)) badProof valid)
--- P3 (Q-S6-4 (a)): slash on two equal commitments is never valid.
-def szEqRefl : (x : Size) -> Path (Sum Unit Unit) (szEq x x) (inr unit) :=
-  fun (x : Size) => elim (fun (a : Size) => Path (Sum Unit Unit) (szEq a a) (inr unit)) refl
-    (fun (a : Size) (ih : Path (Sum Unit Unit) (szEq a a) (inr unit)) => ih) x
-def p3Slash : (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdict (slash r h c e c f) (invalid notAccepted) :=
-  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
-    cong (fun (s : Sum Unit Unit) => vdCheck (sNot s) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h c f)) badProof valid)) (szEqRefl (hsTag (coHash c)))
--- The opening (P2, Q-S6-2 (a)): the proof field opOk says that t members
--- of the committee certify the open message of the auction at the release
--- height. When the kernel cannot check opOk, the checker gives
--- REFUSE_PEEK. release opens the whole list in one call.
-family Opening := opening (opAuc : AucID) (opParams : Params) (opCert : Certificate) (opOk : Path (Sum Unit Unit) (checkCert (prCommittee opParams) (openMsg opAuc (prRelease opParams)) opCert) (inr unit))
-def release : Opening -> SealedBids -> Bids :=
-  fun (o : Opening) (bs : SealedBids) => elim (fun (k : SealedBids) => Bids) bdNil
-    (fun (b : SealedBid) (t : SealedBids) (ih : Bids) => bdCons (sealOf (sbBid b)) ih) bs
--- S7: the log (design section 6, USER rulings Q-S7-1 to Q-S7-10).
--- A ballot is the vote of a party on a topic hash; blYes inr unit is "yes".
--- authorize p t bs counts each committee member one time when bs has a yes
--- ballot of that member on t, and accepts (inr unit) when the count is at
--- least the amend threshold ta (Q-S7-2 (a)). G1 makes the members distinct.
-family Ballot := ballot (blVoter : Party) (blTopic : Hash) (blYes : Sum Unit Unit)
-family Ballots := blNil | blCons (blHead : Ballot) (blTail : Ballots)
-def blHas : Party -> Hash -> Ballots -> Sum Unit Unit :=
-  fun (p : Party) (t : Hash) (bs : Ballots) => elim (fun (k : Ballots) => Sum Unit Unit) (inl unit)
-    (fun (b : Ballot) (r : Ballots) (ih : Sum Unit Unit) => sOr (sAnd (ptEq (blVoter b) p) (sAnd (hsEq (blTopic b) t) (blYes b))) ih) bs
-def blCount : Members -> Hash -> Ballots -> Size :=
-  fun (ms : Members) (t : Hash) (bs : Ballots) => elim (fun (k : Members) => Size) sz0
-    (fun (q : Party) (r : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (blHas q t bs)) ms
-def authorize : Params -> Hash -> Ballots -> Sum Unit Unit :=
-  fun (p : Params) (t : Hash) (bs : Ballots) => szLe (prAmendT p) (blCount (cmMembers (prCommittee p)) t bs)
--- An amendment moves the Params to amTo; the ballots are in the
--- amendment. amendMsg has the kind tag 2 (Q-S7-2 (a)). amendCheck p a cs gives
--- invalid notAccepted when the ballots do not authorize a, invalid badCert
--- when cs does not certify the amend message, else valid.
-family Amendment := amendment (amTag : Size) (amTo : Params) (amBallots : Ballots)
-def amendMsg : Amendment -> Hash := fun (a : Amendment) => hash (szPair (szS (szS sz0)) (amTag a))
-def amendCheck : Params -> Amendment -> Certificate -> Verdict :=
-  fun (p : Params) (a : Amendment) (cs : Certificate) =>
-    vdCheck (authorize p (amendMsg a) (amBallots a)) notAccepted
-      (vdCheck (checkCert (prCommittee p) (amendMsg a) cs) badCert valid)
--- A log entry (Q-S7-1 (a)) is an amendment from eaFrom to eaTo, a slash or
--- a bid claim. The proof field eaOk says that the EARLIER Params accept the
--- amendment (G5): Params cannot authorize themselves. When the kernel
--- cannot check eaOk, the checker gives REFUSE_FIXPOINT. A slash and a
--- claim keep the Params. A release is not a log entry (OI-35).
-family Entry : Params -> Params -> Type 0 := enAmend (eaFrom : Params) (eaTo : Params) (eaTag : Size) (eaBallots : Ballots) (eaCert : Certificate) (eaOk : Path Verdict (amendCheck eaFrom (amendment eaTag eaTo eaBallots) eaCert) valid) : Entry eaFrom eaTo
-  | enSlash (esAt : Params) (esRoot : Root) (esHandle : Handle) (esC : Commitment) (esE : EligibilityProof) (esD : Commitment) (esF : EligibilityProof) : Entry esAt esAt
-  | enAdmit (edAt : Params) (edRoot : Root) (edBid : SealedBid) (edHeight : Height) (edCert : Certificate) : Entry edAt edAt
--- The log (CM, Q-S7-1 (a)): the free category on the entries, nil, cons
--- and append. G4 (Q-S7-5 (a)): nil is a unit and append is associative
--- (paths by induction). The log has no bound (OI-36).
-family Log : Params -> Params -> Type 0 := lgNil (lgNilOf : Params) : Log lgNilOf lgNilOf
-  | lgCons (lgFrom : Params) (lgMid : Params) (lgTo : Params) (lgHead : Entry lgFrom lgMid) (lgTail : Log lgMid lgTo) : Log lgFrom lgTo
-def append : (P : Params) -> (Q : Params) -> (R : Params) -> Log P Q -> Log Q R -> Log P R :=
-  fun (P : Params) (Q : Params) (R : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Log q R -> Log p R)
-    (fun (n : Params) => fun (m : Log n R) => m)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Log z R -> Log y R) => fun (m : Log z R) => lgCons x y R hd (ih m)) l
-def appendNilL : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P P Q (lgNil P) l) l :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => fun (i : I) => l
-def appendNilR : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P Q Q l (lgNil Q)) l :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Path (Log p q) (append p q q k (lgNil q)) k)
-    (fun (n : Params) => fun (i : I) => lgNil n)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Path (Log y z) (append y z z tl (lgNil z)) tl) => fun (i : I) => lgCons x y z hd (ih @ i)) l
-def appendAssoc : (P : Params) -> (Q : Params) -> (R : Params) -> (S : Params) -> (a : Log P Q) -> (b : Log Q R) -> (c : Log R S) -> Path (Log P S) (append P Q S a (append Q R S b c)) (append P R S (append P Q R a b) c) :=
-  fun (P : Params) (Q : Params) (R : Params) (S : Params) (a : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => (b : Log q R) -> (c : Log R S) -> Path (Log p S) (append p q S k (append q R S b c)) (append p R S (append p q R k b) c))
-    (fun (n : Params) => fun (b : Log n R) (c : Log R S) => fun (i : I) => append n R S b c)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : (b : Log z R) -> (c : Log R S) -> Path (Log y S) (append y z S tl (append z R S b c)) (append y R S (append y z R tl b) c)) => fun (b : Log z R) (c : Log R S) => fun (i : I) => lgCons x y S hd ((ih b c) @ i)) a
--- paramsAt (G5, Q-S7-3 (a)): the Params at a log height. Height 0 is the
--- first Params, height h + 1 is the Params of the tail at h, and a height
--- after the end is the last Params. The step reads h with szIsZ and szDec
--- (one ih call for each step). The machine (CC) is the stream of the
--- Params at the heights 0, 1, 2 and so on.
-def paramsAtSize : (P : Params) -> (Q : Params) -> Log P Q -> Size -> Params :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Size -> Params)
-    (fun (n : Params) => fun (h : Size) => n)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Size -> Params) => fun (h : Size) =>
-      elim (fun (s : Sum Unit Unit) => Params) (fun (u : Unit) => ih (szDec h)) (fun (u : Unit) => x) (szIsZ h)) l
-def paramsAt : (P : Params) -> (Q : Params) -> Log P Q -> Height -> Params :=
-  fun (P : Params) (Q : Params) (l : Log P Q) (h : Height) => paramsAtSize P Q l (htOf h)
-def Machine : Type 0 := Stream Params
-def machineOf : (P : Params) -> (Q : Params) -> Log P Q -> Machine :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => sCorec Params Size (paramsAtSize P Q l) (fun (h : Size) => szS h) sz0
--- replay (Q-S7-4 (a)): the verdict of each entry from left to right. The
--- slashed handles go along the log: a valid slash entry adds its handle,
--- and admit reads the handles of the earlier entries (OI-29). An amend
--- entry is valid, because its proof field eaOk holds.
-family Verdicts := vdNil | vdCons (vdHead : Verdict) (vdTail : Verdicts)
-def entryVerdict : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Verdict :=
-  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Verdict)
-    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => valid)
-    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => slash r h c e1 d f1)
-    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => admit p sl r b h cs) e
-def entrySlashed : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Handles :=
-  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Handles)
-    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => sl)
-    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => elim (fun (v : Verdict) => Handles) (hlCons h sl) (fun (w : Reason) => sl) (slash r h c e1 d f1))
-    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => sl) e
-def replayFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Verdicts :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Verdicts)
-    (fun (n : Params) => fun (sl : Handles) => vdNil)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Verdicts) => fun (sl : Handles) => vdCons (entryVerdict x y hd sl) (ih (entrySlashed x y hd sl))) l
-def replay : (P : Params) -> (Q : Params) -> Log P Q -> Verdicts :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => replayFrom P Q l hlNil
-def slashedFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Handles :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Handles)
-    (fun (n : Params) => fun (sl : Handles) => sl)
-    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Handles) => fun (sl : Handles) => ih (entrySlashed x y hd sl)) l
-def slashedOf : (P : Params) -> (Q : Params) -> Log P Q -> Handles :=
-  fun (P : Params) (Q : Params) (l : Log P Q) => slashedFrom P Q l hlNil
--- P3 on the log (Q-S7-4 (a)): a slash entry with two equal commitments is
--- never valid.
-def p3Replay : (P : Params) -> (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdicts (replay P P (lgCons P P P (enSlash P r h c e c f) (lgNil P))) (vdCons (invalid notAccepted) vdNil) :=
-  fun (P : Params) (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
-    cong (fun (v : Verdict) => vdCons v vdNil) (p3Slash r h c e f)
 -- S8: the field (USER rulings Q-S8-1 (a) and Q-S8-4 (a)). An Fe is a 256-bit
 -- value in 8 Words, least significant first. The field ops keep a value in
 -- Montgomery form (x R mod m, R = 2^256). Each operand and each result is
@@ -893,8 +648,10 @@ def feMul : FeMod -> Fe -> Fe -> Fe :=
     feCondSub (modM md)
       (feRound md a (fe7 b) (feRound md a (fe6 b) (feRound md a (fe5 b) (feRound md a (fe4 b) (feRound md a (fe3 b) (feRound md a (fe2 b) (feRound md a (fe1 b) (feRound md a (fe0 b) feZero))))))))
 -- feToMont md a is a R mod m. feFromMont md a is a R^-1 mod m.
-def feToMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMul md a (modR2 md)
-def feFromMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMul md a feOne
+-- feMulC md a b is a C builtin with the value of feMul (S8a). The oracle rows
+-- check it against feMul, and the Wasm target runs feMul in its place.
+def feToMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMulC md a (modR2 md)
+def feFromMont : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => feMulC md a feOne
 -- The bits of r - 2 and of p - 2, the top bit first (feInv). Each def holds
 -- 32 bits and ends in the next def. The last part comes first (rule R3).
 def frE7 : FeBits :=
@@ -938,8 +695,8 @@ def fpMod : FeMod := feMod (fe 0xd87cfd47w 0x3c208c16w 0x6871ca8dw 0x97816a91w 0
 def fePowFrom : FeMod -> Fe -> FeBits -> Fe -> Fe :=
   fun (md : FeMod) (a : Fe) (e : FeBits) => elim (fun (k : FeBits) => Fe -> Fe)
     (fun (x : Fe) => x)
-    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMul md x x))
-    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMul md (feMul md x x) a)) e
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMulC md x x))
+    (fun (t : FeBits) (ih : Fe -> Fe) => fun (x : Fe) => ih (feMulC md (feMulC md x x) a)) e
 -- fePow md a e is a^e. The start value is R mod m (1 in Montgomery form).
 def fePow : FeMod -> Fe -> FeBits -> Fe :=
   fun (md : FeMod) (a : Fe) (e : FeBits) => fePowFrom md a e (modR1 md)
@@ -950,3 +707,649 @@ def feInv : FeMod -> Fe -> Fe := fun (md : FeMod) (a : Fe) => fePow md a (modE m
 -- fpMod). A value is an Fe in Montgomery form.
 def Fr : Type 0 := Fe
 def Fp : Type 0 := Fe
+-- The BN254 G1 curve y^2 = x^3 + 3 over Fp (S8a, Q-S8-4 (a)). A Pt1 is an
+-- affine point (x, y), and (0, 0) is the point at infinity (quorum-lang
+-- src/crypto/bn254.h). At the boundary the coordinates are canonical. Inside
+-- a point op they are in Montgomery form.
+family Pt1 := pt1 (p1X : Fe) (p1Y : Fe)
+-- A Jac is a point (X, Y, Z) in Jacobian form: the affine point
+-- (X / Z^2, Y / Z^3), in Montgomery form. Z = 0 is the point at infinity.
+family Jac := jac (jcX : Fe) (jcY : Fe) (jcZ : Fe)
+def jacZero : Jac := jac feZero feZero feZero
+-- p1Eq p q is inr unit when the coordinates of p and q are equal. For
+-- canonical points, this is the point equality.
+def p1Eq : Pt1 -> Pt1 -> Sum Unit Unit :=
+  fun (p : Pt1) (q : Pt1) => sAnd (feEq (p1X p) (p1X q)) (feEq (p1Y p) (p1Y q))
+-- p1IsInf p is inr unit when p is (0, 0).
+def p1IsInf : Pt1 -> Sum Unit Unit := fun (p : Pt1) => sAnd (feIsZero (p1X p)) (feIsZero (p1Y p))
+-- The Montgomery form of a point, and back. Each point op takes the modulus
+-- as a binder: then the check does not unroll it (S8).
+def ptToMont : FeMod -> Pt1 -> Pt1 := fun (md : FeMod) (p : Pt1) => pt1 (feToMont md (p1X p)) (feToMont md (p1Y p))
+def ptFromMont : FeMod -> Pt1 -> Pt1 := fun (md : FeMod) (p : Pt1) => pt1 (feFromMont md (p1X p)) (feFromMont md (p1Y p))
+def jacToMont : FeMod -> Jac -> Jac := fun (md : FeMod) (a : Jac) => jac (feToMont md (jcX a)) (feToMont md (jcY a)) (feToMont md (jcZ a))
+-- ptLet x k is k x. It binds one value of a point op.
+def ptLet : Fe -> (Fe -> Jac) -> Jac := fun (x : Fe) (k : Fe -> Jac) => k x
+-- ptDblRaw md a is 2 a when Z and Y are not 0 (src/crypto/bn254.c
+-- ec0_jac_double, 7 feMul): S = 4 X Y^2, M = 3 X^2, X3 = M^2 - 2 S,
+-- Y3 = M (S - X3) - 8 Y^4, Z3 = 2 Y Z.
+def ptDblRaw : FeMod -> Jac -> Jac :=
+  fun (md : FeMod) (a : Jac) =>
+    ptLet (feMulC md (jcY a) (jcY a)) (fun (yy : Fe) =>
+    ptLet (feMulC md (jcX a) yy) (fun (s1 : Fe) =>
+    ptLet (feAdd md s1 s1) (fun (s2 : Fe) =>
+    ptLet (feAdd md s2 s2) (fun (s : Fe) =>
+    ptLet (feMulC md (jcX a) (jcX a)) (fun (xx : Fe) =>
+    ptLet (feAdd md (feAdd md xx xx) xx) (fun (m : Fe) =>
+    ptLet (feSub md (feSub md (feMulC md m m) s) s) (fun (x3 : Fe) =>
+    ptLet (feMulC md yy yy) (fun (y4 : Fe) =>
+    ptLet (feAdd md y4 y4) (fun (y42 : Fe) =>
+    ptLet (feAdd md y42 y42) (fun (y44 : Fe) =>
+    ptLet (feAdd md y44 y44) (fun (y48 : Fe) =>
+    ptLet (feMulC md (jcY a) (jcZ a)) (fun (yz : Fe) =>
+    jac x3 (feSub md (feMulC md m (feSub md s x3)) y48) (feAdd md yz yz)))))))))))))
+-- ptDbl md a is 2 a. Z = 0 or Y = 0 gives the point at infinity.
+def ptDbl : FeMod -> Jac -> Jac :=
+  fun (md : FeMod) (a : Jac) =>
+    either (fun (u : Unit) => ptDblRaw md a) (fun (u : Unit) => jacZero) (sOr (feIsZero (jcZ a)) (feIsZero (jcY a)))
+-- ptMaddH md a h r is the end of ptMadd when H is not 0 (src/crypto/bn254.c
+-- ec0_jac_add_affine): X3 = R^2 - H^3 - 2 X H^2, Y3 = R (X H^2 - X3) - Y H^3,
+-- Z3 = Z H.
+def ptMaddH : FeMod -> Jac -> Fe -> Fe -> Jac :=
+  fun (md : FeMod) (a : Jac) (h : Fe) (r : Fe) =>
+    ptLet (feMulC md h h) (fun (hh : Fe) =>
+    ptLet (feMulC md h hh) (fun (hhh : Fe) =>
+    ptLet (feMulC md (jcX a) hh) (fun (v : Fe) =>
+    ptLet (feSub md (feSub md (feSub md (feMulC md r r) hhh) v) v) (fun (x3 : Fe) =>
+    jac x3 (feSub md (feMulC md r (feSub md v x3)) (feMulC md (jcY a) hhh)) (feMulC md (jcZ a) h)))))
+-- ptMaddRaw md a b is a + b when a and b are not at infinity: U = b.x Z^2,
+-- S = b.y Z^3, H = U - X, R = S - Y (11 feMul with ptMaddH). H = 0 gives 2 a
+-- when R = 0, else the point at infinity.
+def ptMaddRaw : FeMod -> Jac -> Pt1 -> Jac :=
+  fun (md : FeMod) (a : Jac) (b : Pt1) =>
+    ptLet (feMulC md (jcZ a) (jcZ a)) (fun (zz : Fe) =>
+    ptLet (feSub md (feMulC md (p1X b) zz) (jcX a)) (fun (h : Fe) =>
+    ptLet (feSub md (feMulC md (feMulC md (p1Y b) zz) (jcZ a)) (jcY a)) (fun (r : Fe) =>
+    either (fun (u : Unit) => ptMaddH md a h r)
+      (fun (u : Unit) => either (fun (v : Unit) => jacZero) (fun (v : Unit) => ptDbl md a) (feIsZero r))
+      (feIsZero h))))
+-- ptMadd md a b is a + b for a Jacobian a and an affine b. b at infinity
+-- gives a. a at infinity gives (b.x, b.y, 1).
+def ptMadd : FeMod -> Jac -> Pt1 -> Jac :=
+  fun (md : FeMod) (a : Jac) (b : Pt1) =>
+    either (fun (u : Unit) =>
+      either (fun (v : Unit) => ptMaddRaw md a b) (fun (v : Unit) => jac (p1X b) (p1Y b) (modR1 md)) (feIsZero (jcZ a)))
+      (fun (u : Unit) => a) (p1IsInf b)
+-- ptToAffine md a is (X / Z^2, Y / Z^3): one feInv and 4 feMul. Z = 0 gives
+-- (0, 0).
+def ptToAffine : FeMod -> Jac -> Pt1 :=
+  fun (md : FeMod) (a : Jac) =>
+    either (fun (u : Unit) =>
+      (fun (zi : Fe) => (fun (zi2 : Fe) => pt1 (feMulC md (jcX a) zi2) (feMulC md (jcY a) (feMulC md zi2 zi))) (feMulC md zi zi)) (feInv md (jcZ a)))
+      (fun (u : Unit) => pt1 feZero feZero) (feIsZero (jcZ a))
+-- ptBit w k rest is fbOne rest when bit k of w is 1, else fbZero rest.
+def ptBit : Word -> Word -> FeBits -> FeBits :=
+  fun (w : Word) (k : Word) (rest : FeBits) =>
+    either (fun (u : Unit) => fbZero rest) (fun (u : Unit) => fbOne rest) (wEq (wAnd (wShr w k) 1w) 1w)
+-- ptWordBits w rest is the 32 bits of w, the top bit first, and then rest.
+def ptWordBits : Word -> FeBits -> FeBits :=
+  fun (w : Word) (rest : FeBits) =>
+    ptBit w 31w (ptBit w 30w (ptBit w 29w (ptBit w 28w (ptBit w 27w (ptBit w 26w (ptBit w 25w (ptBit w 24w (ptBit w 23w (ptBit w 22w (ptBit w 21w (ptBit w 20w (ptBit w 19w (ptBit w 18w (ptBit w 17w (ptBit w 16w (ptBit w 15w (ptBit w 14w (ptBit w 13w (ptBit w 12w (ptBit w 11w (ptBit w 10w (ptBit w 9w (ptBit w 8w (ptBit w 7w (ptBit w 6w (ptBit w 5w (ptBit w 4w (ptBit w 3w (ptBit w 2w (ptBit w 1w (ptBit w 0w rest)))))))))))))))))))))))))))))))
+-- ptScalarBits k is the 256 bits of the integer k, the top bit first. A
+-- scalar is 8 Words, least significant first, not in Montgomery form.
+def ptScalarBits : Fe -> FeBits :=
+  fun (k : Fe) => ptWordBits (fe7 k) (ptWordBits (fe6 k) (ptWordBits (fe5 k) (ptWordBits (fe4 k) (ptWordBits (fe3 k) (ptWordBits (fe2 k) (ptWordBits (fe1 k) (ptWordBits (fe0 k) fbEnd)))))))
+-- ptMulFrom md p e a is the double-and-add over the bits of e (the top bit
+-- first) from a: each bit doubles a, and a 1 bit then adds p.
+def ptMulFrom : FeMod -> Pt1 -> FeBits -> Jac -> Jac :=
+  fun (md : FeMod) (p : Pt1) (e : FeBits) => elim (fun (k : FeBits) => Jac -> Jac)
+    (fun (a : Jac) => a)
+    (fun (t : FeBits) (ih : Jac -> Jac) => fun (a : Jac) => ih (ptDbl md a))
+    (fun (t : FeBits) (ih : Jac -> Jac) => fun (a : Jac) => ih (ptMadd md (ptDbl md a) p)) e
+-- ptMul md k p is k p over all 256 bits of k from the point at infinity
+-- (src/crypto/bn254.c ec0_mul), for a point p in Montgomery form. A k of r
+-- or more is not reduced.
+def ptMul : FeMod -> Fe -> Pt1 -> Pt1 :=
+  fun (md : FeMod) (k : Fe) (p : Pt1) => ptToAffine md (ptMulFrom md p (ptScalarBits k) jacZero)
+-- ptMulC md k p is a C builtin with the value of ptMul (S8a, Q-S8a-7 (a)). It
+-- does the same steps with the same field ops. The oracle rows (curveMulC)
+-- compare the two.
+-- Keccak-256 (S8a, Q-S8-6). The Schnorr challenge is e = keccak256(R.x, R.y,
+-- P.x, P.y, m) mod r: 5 values of 32 bytes each, big-endian, 160 bytes in
+-- all. The pad is 0x01 (Keccak, as in src/crypto/keccak.c), not the SHA3 pad
+-- 0x06. A lane is 64 bits as two Words, the low Word first: the 8 bytes of a
+-- lane are little-endian.
+family Lane := lane (lnLo : Word) (lnHi : Word)
+def lnZero : Lane := lane 0w 0w
+def lnXor : Lane -> Lane -> Lane := fun (a : Lane) (b : Lane) => lane (wXor (lnLo a) (lnLo b)) (wXor (lnHi a) (lnHi b))
+-- lnChi a b c is a xor ((not b) and c), the chi step on one lane.
+def lnChi : Lane -> Lane -> Lane -> Lane := fun (a : Lane) (b : Lane) (c : Lane) => lane (wXor (lnLo a) (wAnd (wNot (lnLo b)) (lnLo c))) (wXor (lnHi a) (wAnd (wNot (lnHi b)) (lnHi c)))
+-- lnRot a n (32 - n) turns the lane a left by n bits, 0 < n < 32. lnSwap a
+-- turns it by 32 bits. A turn by n > 32 is lnRot (lnSwap a) (n - 32) (64 - n).
+def lnRot : Lane -> Word -> Word -> Lane := fun (a : Lane) (n : Word) (k : Word) => lane (wOr (wShl (lnLo a) n) (wShr (lnHi a) k)) (wOr (wShl (lnHi a) n) (wShr (lnLo a) k))
+def lnSwap : Lane -> Lane := fun (a : Lane) => lane (lnHi a) (lnLo a)
+-- The state is 25 lanes. The lane at column x and row y is kq(x + 5 y).
+family KState := kst (kq0 : Lane) (kq1 : Lane) (kq2 : Lane) (kq3 : Lane) (kq4 : Lane) (kq5 : Lane) (kq6 : Lane) (kq7 : Lane) (kq8 : Lane) (kq9 : Lane) (kq10 : Lane) (kq11 : Lane) (kq12 : Lane) (kq13 : Lane) (kq14 : Lane) (kq15 : Lane) (kq16 : Lane) (kq17 : Lane) (kq18 : Lane) (kq19 : Lane) (kq20 : Lane) (kq21 : Lane) (kq22 : Lane) (kq23 : Lane) (kq24 : Lane)
+def kLet : Lane -> (Lane -> KState) -> KState := fun (x : Lane) (k : Lane -> KState) => k x
+-- The theta step: c(x) is the xor of column x, d(x) = c(x - 1) xor c(x + 1)
+-- turned by 1 bit, and each lane of column x gets the xor with d(x).
+def kTheta : KState -> KState :=
+  fun (s : KState) =>
+    kLet (lnXor (lnXor (lnXor (lnXor (kq0 s) (kq5 s)) (kq10 s)) (kq15 s)) (kq20 s)) (fun (c0 : Lane) =>
+    kLet (lnXor (lnXor (lnXor (lnXor (kq1 s) (kq6 s)) (kq11 s)) (kq16 s)) (kq21 s)) (fun (c1 : Lane) =>
+    kLet (lnXor (lnXor (lnXor (lnXor (kq2 s) (kq7 s)) (kq12 s)) (kq17 s)) (kq22 s)) (fun (c2 : Lane) =>
+    kLet (lnXor (lnXor (lnXor (lnXor (kq3 s) (kq8 s)) (kq13 s)) (kq18 s)) (kq23 s)) (fun (c3 : Lane) =>
+    kLet (lnXor (lnXor (lnXor (lnXor (kq4 s) (kq9 s)) (kq14 s)) (kq19 s)) (kq24 s)) (fun (c4 : Lane) =>
+    kLet (lnXor c4 (lnRot c1 1w 31w)) (fun (d0 : Lane) =>
+    kLet (lnXor c0 (lnRot c2 1w 31w)) (fun (d1 : Lane) =>
+    kLet (lnXor c1 (lnRot c3 1w 31w)) (fun (d2 : Lane) =>
+    kLet (lnXor c2 (lnRot c4 1w 31w)) (fun (d3 : Lane) =>
+    kLet (lnXor c3 (lnRot c0 1w 31w)) (fun (d4 : Lane) =>
+    kst (lnXor (kq0 s) d0) (lnXor (kq1 s) d1) (lnXor (kq2 s) d2) (lnXor (kq3 s) d3) (lnXor (kq4 s) d4) (lnXor (kq5 s) d0) (lnXor (kq6 s) d1) (lnXor (kq7 s) d2) (lnXor (kq8 s) d3) (lnXor (kq9 s) d4) (lnXor (kq10 s) d0) (lnXor (kq11 s) d1) (lnXor (kq12 s) d2) (lnXor (kq13 s) d3) (lnXor (kq14 s) d4) (lnXor (kq15 s) d0) (lnXor (kq16 s) d1) (lnXor (kq17 s) d2) (lnXor (kq18 s) d3) (lnXor (kq19 s) d4) (lnXor (kq20 s) d0) (lnXor (kq21 s) d1) (lnXor (kq22 s) d2) (lnXor (kq23 s) d3) (lnXor (kq24 s) d4)))))))))))
+-- The rho and pi steps (b(y + 5 (2 x + 3 y mod 5)) is lane x + 5 y turned by
+-- its rho offset), then the chi step on each row, then the iota step (the
+-- round constant rc goes into lane 0).
+def kRpci : Lane -> KState -> KState :=
+  fun (rc : Lane) (s : KState) =>
+    kLet (kq0 s) (fun (b0 : Lane) =>
+    kLet (lnRot (lnSwap (kq6 s)) 12w 20w) (fun (b1 : Lane) =>
+    kLet (lnRot (lnSwap (kq12 s)) 11w 21w) (fun (b2 : Lane) =>
+    kLet (lnRot (kq18 s) 21w 11w) (fun (b3 : Lane) =>
+    kLet (lnRot (kq24 s) 14w 18w) (fun (b4 : Lane) =>
+    kLet (lnRot (kq3 s) 28w 4w) (fun (b5 : Lane) =>
+    kLet (lnRot (kq9 s) 20w 12w) (fun (b6 : Lane) =>
+    kLet (lnRot (kq10 s) 3w 29w) (fun (b7 : Lane) =>
+    kLet (lnRot (lnSwap (kq16 s)) 13w 19w) (fun (b8 : Lane) =>
+    kLet (lnRot (lnSwap (kq22 s)) 29w 3w) (fun (b9 : Lane) =>
+    kLet (lnRot (kq1 s) 1w 31w) (fun (b10 : Lane) =>
+    kLet (lnRot (kq7 s) 6w 26w) (fun (b11 : Lane) =>
+    kLet (lnRot (kq13 s) 25w 7w) (fun (b12 : Lane) =>
+    kLet (lnRot (kq19 s) 8w 24w) (fun (b13 : Lane) =>
+    kLet (lnRot (kq20 s) 18w 14w) (fun (b14 : Lane) =>
+    kLet (lnRot (kq4 s) 27w 5w) (fun (b15 : Lane) =>
+    kLet (lnRot (lnSwap (kq5 s)) 4w 28w) (fun (b16 : Lane) =>
+    kLet (lnRot (kq11 s) 10w 22w) (fun (b17 : Lane) =>
+    kLet (lnRot (kq17 s) 15w 17w) (fun (b18 : Lane) =>
+    kLet (lnRot (lnSwap (kq23 s)) 24w 8w) (fun (b19 : Lane) =>
+    kLet (lnRot (lnSwap (kq2 s)) 30w 2w) (fun (b20 : Lane) =>
+    kLet (lnRot (lnSwap (kq8 s)) 23w 9w) (fun (b21 : Lane) =>
+    kLet (lnRot (lnSwap (kq14 s)) 7w 25w) (fun (b22 : Lane) =>
+    kLet (lnRot (lnSwap (kq15 s)) 9w 23w) (fun (b23 : Lane) =>
+    kLet (lnRot (kq21 s) 2w 30w) (fun (b24 : Lane) =>
+    kst (lnXor (lnChi b0 b1 b2) rc) (lnChi b1 b2 b3) (lnChi b2 b3 b4) (lnChi b3 b4 b0) (lnChi b4 b0 b1) (lnChi b5 b6 b7) (lnChi b6 b7 b8) (lnChi b7 b8 b9) (lnChi b8 b9 b5) (lnChi b9 b5 b6) (lnChi b10 b11 b12) (lnChi b11 b12 b13) (lnChi b12 b13 b14) (lnChi b13 b14 b10) (lnChi b14 b10 b11) (lnChi b15 b16 b17) (lnChi b16 b17 b18) (lnChi b17 b18 b19) (lnChi b18 b19 b15) (lnChi b19 b15 b16) (lnChi b20 b21 b22) (lnChi b21 b22 b23) (lnChi b22 b23 b24) (lnChi b23 b24 b20) (lnChi b24 b20 b21))))))))))))))))))))))))))
+def kRound : Lane -> KState -> KState := fun (rc : Lane) (s : KState) => kRpci rc (kTheta s)
+-- keccakF rcs s applies one round for each round constant of rcs, the first
+-- constant first. With kcRcs it is Keccak-f[1600] (24 rounds). The constants
+-- are a binder of keccakF, thus the check does not unroll the rounds.
+family KRcs := kcEnd | kcNext (kcRc : Lane) (kcRest : KRcs)
+def keccakF : KRcs -> KState -> KState :=
+  fun (rcs : KRcs) => elim (fun (k : KRcs) => KState -> KState)
+    (fun (s : KState) => s)
+    (fun (h : Lane) (t : KRcs) (ih : KState -> KState) => fun (s : KState) => ih (kRound h s)) rcs
+def kcRcs : KRcs :=
+  (kcNext (lane 0x00000001w 0x00000000w) (kcNext (lane 0x00008082w 0x00000000w) (kcNext (lane 0x0000808aw 0x80000000w) (kcNext (lane 0x80008000w 0x80000000w) (kcNext (lane 0x0000808bw 0x00000000w) (kcNext (lane 0x80000001w 0x00000000w) (kcNext (lane 0x80008081w 0x80000000w) (kcNext (lane 0x00008009w 0x80000000w) (kcNext (lane 0x0000008aw 0x00000000w) (kcNext (lane 0x00000088w 0x00000000w) (kcNext (lane 0x80008009w 0x00000000w) (kcNext (lane 0x8000000aw 0x00000000w) (kcNext (lane 0x8000808bw 0x00000000w) (kcNext (lane 0x0000008bw 0x80000000w) (kcNext (lane 0x00008089w 0x80000000w) (kcNext (lane 0x00008003w 0x80000000w) (kcNext (lane 0x00008002w 0x80000000w) (kcNext (lane 0x00000080w 0x80000000w) (kcNext (lane 0x0000800aw 0x00000000w) (kcNext (lane 0x8000000aw 0x80000000w) (kcNext (lane 0x80008081w 0x80000000w) (kcNext (lane 0x00008080w 0x80000000w) (kcNext (lane 0x80000001w 0x00000000w) (kcNext (lane 0x80008008w 0x80000000w) kcEnd))))))))))))))))))))))))
+-- kcBswap x is x with its 4 bytes in the opposite order.
+def kcBswap : Word -> Word := fun (x : Word) => wOr (wAnd (wRotr x 8w) 0xff00ff00w) (wAnd (wRotl x 8w) 0x00ff00ffw)
+-- kcLane a b is the lane of 8 big-endian bytes: the Word a, then the Word b.
+def kcLane : Word -> Word -> Lane := fun (a : Word) (b : Word) => lane (kcBswap a) (kcBswap b)
+-- The digest is lanes 0 to 3, read as one big-endian value of 256 bits.
+def kcDigest : KState -> Fe :=
+  fun (s : KState) => fe (kcBswap (lnHi (kq3 s))) (kcBswap (lnLo (kq3 s))) (kcBswap (lnHi (kq2 s))) (kcBswap (lnLo (kq2 s))) (kcBswap (lnHi (kq1 s))) (kcBswap (lnLo (kq1 s))) (kcBswap (lnHi (kq0 s))) (kcBswap (lnLo (kq0 s)))
+-- Block 1 of the 160 bytes: the 4 lanes of each of R.x, R.y, P.x and P.y, and
+-- the first lane of m.
+def kcAbsorb1 : Fe -> Fe -> Fe -> Fe -> Fe -> KState :=
+  fun (a : Fe) (b : Fe) (c : Fe) (d : Fe) (m : Fe) => kst (kcLane (fe7 a) (fe6 a)) (kcLane (fe5 a) (fe4 a)) (kcLane (fe3 a) (fe2 a)) (kcLane (fe1 a) (fe0 a)) (kcLane (fe7 b) (fe6 b)) (kcLane (fe5 b) (fe4 b)) (kcLane (fe3 b) (fe2 b)) (kcLane (fe1 b) (fe0 b)) (kcLane (fe7 c) (fe6 c)) (kcLane (fe5 c) (fe4 c)) (kcLane (fe3 c) (fe2 c)) (kcLane (fe1 c) (fe0 c)) (kcLane (fe7 d) (fe6 d)) (kcLane (fe5 d) (fe4 d)) (kcLane (fe3 d) (fe2 d)) (kcLane (fe1 d) (fe0 d)) (kcLane (fe7 m) (fe6 m)) lnZero lnZero lnZero lnZero lnZero lnZero lnZero lnZero
+-- Block 2: the last 3 lanes of m, the pad byte 0x01 at byte 24 (lane 3) and
+-- the byte 0x80 at byte 135 (lane 16).
+def kcAbsorb2 : KState -> Fe -> KState :=
+  fun (s : KState) (m : Fe) => kst (lnXor (kq0 s) (kcLane (fe5 m) (fe4 m))) (lnXor (kq1 s) (kcLane (fe3 m) (fe2 m))) (lnXor (kq2 s) (kcLane (fe1 m) (fe0 m))) (lnXor (kq3 s) (lane 0x00000001w 0x00000000w)) (kq4 s) (kq5 s) (kq6 s) (kq7 s) (kq8 s) (kq9 s) (kq10 s) (kq11 s) (kq12 s) (kq13 s) (kq14 s) (kq15 s) (lnXor (kq16 s) (lane 0x00000000w 0x80000000w)) (kq17 s) (kq18 s) (kq19 s) (kq20 s) (kq21 s) (kq22 s) (kq23 s) (kq24 s)
+def kcHash160 : KRcs -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (rcs : KRcs) (a : Fe) (b : Fe) (c : Fe) (d : Fe) (m : Fe) => kcDigest (keccakF rcs (kcAbsorb2 (keccakF rcs (kcAbsorb1 a b c d m)) m))
+-- kcReduce m x subtracts m from x at most 5 times, while x >= m. It gives
+-- x mod m for each x < 6 m (2^256 < 6 r for the scalar field r).
+def kcReduce : Fe -> Fe -> Fe := fun (m : Fe) (x : Fe) => feCondSub m (feCondSub m (feCondSub m (feCondSub m (feCondSub m x))))
+-- kcChallenge rcs R.x R.y P.x P.y m is e = keccak256(R.x, R.y, P.x, P.y, m)
+-- mod r. Each value is canonical (not in Montgomery form).
+def kcChallenge : KRcs -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (rcs : KRcs) (a : Fe) (b : Fe) (c : Fe) (d : Fe) (m : Fe) => kcReduce (modM frMod) (kcHash160 rcs a b c d m)
+-- Poseidon (S8a, Q-S8a-2 (a)) on the scalar field r (src/crypto/poseidon.c):
+-- width 3, the S-box x^5, 4 full rounds, 57 partial rounds, then 4 full
+-- rounds. Each round adds the round constants, applies the S-box (to the 3
+-- elements in a full round, to element 0 in a partial round), and multiplies
+-- by the MDS matrix. Each value is in Montgomery form.
+family PsState := pst (ps0 : Fe) (ps1 : Fe) (ps2 : Fe)
+-- The MDS matrix, row by row.
+family PsMds := psMds (psM00 : Fe) (psM01 : Fe) (psM02 : Fe) (psM10 : Fe) (psM11 : Fe) (psM12 : Fe) (psM20 : Fe) (psM21 : Fe) (psM22 : Fe)
+-- The round constants, one item for each round. psFull is a full round and
+-- psPart is a partial round. The list is a binder of poseidonPerm, thus the
+-- check does not unroll the rounds.
+family PsRcs := psEnd | psFull (psFa : Fe) (psFb : Fe) (psFc : Fe) (psFRest : PsRcs) | psPart (psPa : Fe) (psPb : Fe) (psPc : Fe) (psPRest : PsRcs)
+-- psFLet x k is k x. It binds one value.
+def psFLet : Fe -> (Fe -> Fe) -> Fe := fun (x : Fe) (k : Fe -> Fe) => k x
+-- psSbox md x is x^5 (3 feMulC).
+def psSbox : FeMod -> Fe -> Fe := fun (md : FeMod) (x : Fe) => psFLet (feMulC md x x) (fun (s : Fe) => feMulC md (feMulC md s s) x)
+-- psRow md a b c x y z is a x + b y + c z.
+def psRow : FeMod -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe -> Fe :=
+  fun (md : FeMod) (a : Fe) (b : Fe) (c : Fe) (x : Fe) (y : Fe) (z : Fe) => feAdd md (feAdd md (feMulC md a x) (feMulC md b y)) (feMulC md c z)
+-- psMix md mx x y z is the MDS matrix mx times the column (x, y, z).
+def psMix : FeMod -> PsMds -> Fe -> Fe -> Fe -> PsState :=
+  fun (md : FeMod) (mx : PsMds) (x : Fe) (y : Fe) (z : Fe) => pst (psRow md (psM00 mx) (psM01 mx) (psM02 mx) x y z) (psRow md (psM10 mx) (psM11 mx) (psM12 mx) x y z) (psRow md (psM20 mx) (psM21 mx) (psM22 mx) x y z)
+def psFullRound : FeMod -> PsMds -> Fe -> Fe -> Fe -> PsState -> PsState :=
+  fun (md : FeMod) (mx : PsMds) (a : Fe) (b : Fe) (c : Fe) (s : PsState) => psMix md mx (psSbox md (feAdd md (ps0 s) a)) (psSbox md (feAdd md (ps1 s) b)) (psSbox md (feAdd md (ps2 s) c))
+def psPartRound : FeMod -> PsMds -> Fe -> Fe -> Fe -> PsState -> PsState :=
+  fun (md : FeMod) (mx : PsMds) (a : Fe) (b : Fe) (c : Fe) (s : PsState) => psMix md mx (psSbox md (feAdd md (ps0 s) a)) (feAdd md (ps1 s) b) (feAdd md (ps2 s) c)
+-- poseidonPerm md mx rcs s applies one round for each item of rcs, the first
+-- item first.
+def poseidonPerm : FeMod -> PsMds -> PsRcs -> PsState -> PsState :=
+  fun (md : FeMod) (mx : PsMds) (rcs : PsRcs) => elim (fun (k : PsRcs) => PsState -> PsState)
+    (fun (s : PsState) => s)
+    (fun (a : Fe) (b : Fe) (c : Fe) (t : PsRcs) (ih : PsState -> PsState) => fun (s : PsState) => ih (psFullRound md mx a b c s))
+    (fun (a : Fe) (b : Fe) (c : Fe) (t : PsRcs) (ih : PsState -> PsState) => fun (s : PsState) => ih (psPartRound md mx a b c s)) rcs
+-- poseidon2 md mx rcs x y is element 0 of the permutation of (0, x, y): the
+-- Poseidon hash of 2 inputs (828 feMulC).
+def poseidon2 : FeMod -> PsMds -> PsRcs -> Fe -> Fe -> Fe :=
+  fun (md : FeMod) (mx : PsMds) (rcs : PsRcs) (x : Fe) (y : Fe) => ps0 (poseidonPerm md mx rcs (pst feZero x y))
+-- The data of `cryptotool poseidon`: the MDS matrix and the round constants
+-- of src/crypto/poseidon.c on the scalar field r, in Montgomery form.
+def psMdsFr : PsMds := psMds (fe 0x56fcf3d7w 0xf2e8909aw 0x45ed8c1dw 0x8019ce31w 0x28616418w 0xdda896a2w 0xffc885e1w 0x0e5ed723w) (fe 0xd66c0469w 0x3158f311w 0x69f040a0w 0x9511d96fw 0xb22127bfw 0xbc6996e5w 0xa7c9122aw 0x07e69e17w) (fe 0x169969b0w 0x28f45876w 0xe30a7649w 0x3d6ded69w 0x4c9b23ddw 0x79aed612w 0xffadf517w 0x03cf3048w) (fe 0x46474dd5w 0x670d8bd9w 0x0bf07baew 0x56daed80w 0xcca20e6dw 0x5c98d51ew 0xa18b0028w 0x1a3491edw) (fe 0x2ba79c47w 0xf0193e57w 0x6ee2dac5w 0x5fb2e46aw 0xb6ffb984w 0x6892f0d5w 0x49661413w 0x0df1dabdw) (fe 0xcaab272dw 0x3293bffcw 0xb11c4e1fw 0x85cbae38w 0xc8757b3cw 0x67208956w 0xb6c9d981w 0x17ca537aw) (fe 0xd2802757w 0xcc226561w 0x5bb9f4edw 0xfcfbd22fw 0xce2b8678w 0xc8ef58acw 0x1bae9c88w 0x05984bb4w) (fe 0x76bfeefdw 0x17561a51w 0x100061afw 0x1cd5d7bew 0xdce7646cw 0x714cefb2w 0xf2173fe9w 0x0043bf61w) (fe 0x1c729128w 0x4c72e3c5w 0x170d616cw 0xd35b9fd9w 0x4ab700a6w 0x4d095dc7w 0x6dc5d39bw 0x1282bdf7w)
+def psRcsFr : PsRcs :=
+  (psFull (fe 0x6534a858w 0x83bbbac3w 0x01250a07w 0x09716196w 0x0e23910cw 0x27a21905w 0xc8507442w 0x1638bf18w) (fe 0xbb25631aw 0x5e2bb0e6w 0xdef5875ew 0x56b042b8w 0xa8e9b451w 0x01bc3e10w 0x92ef1d7ew 0x17bfe160w) (fe 0x54508d89w 0xa4fef9b9w 0x4ee4c69ew 0xafeb6b7dw 0xfc301c39w 0xd8ebe8a7w 0x07ad780cw 0x1840976ew)
+  (psFull (fe 0xa04b72cbw 0x18b8e553w 0xec90df10w 0x4d654fb8w 0x9d1b9658w 0x3f8dafc3w 0x0e4e6a8aw 0x1a72c6a5w) (fe 0x12c7177aw 0x44f18fddw 0x520bd0eew 0x43d28a9bw 0x0192f008w 0x440b8313w 0x277b2fdew 0x13c53f3bw) (fe 0x9e33b756w 0xfc116b6cw 0x42eb5320w 0x933e67d0w 0xc9d9bdcfw 0xabc0d9f2w 0xabcb64b0w 0x23b0bd1fw)
+  (psFull (fe 0x535243afw 0xde8ebdf8w 0xb3d81387w 0x1e851377w 0xef127fb9w 0xdfa4b107w 0x9a042314w 0x1e12da83w) (fe 0xdd264f6bw 0xe25ff0a9w 0xd49d08b2w 0x0215e509w 0x42425093w 0xc2cf0935w 0x85cb02e0w 0x0baaf53dw) (fe 0x90cf8115w 0x6eaa462fw 0x21dd2e13w 0xaf07e5d2w 0xec88aa63w 0x9a0b65abw 0x624b262fw 0x1fcea175w)
+  (psFull (fe 0x4fe89c1ew 0x99aa70f0w 0x80826695w 0xdc11129dw 0xcc353aeew 0x1a68006fw 0xbe5d4996w 0x299ea7eaw) (fe 0xc5541138w 0x413df2c8w 0xc9de6bb3w 0xeb469618w 0xb76fe275w 0x1a668e52w 0x657d8da5w 0x0fed7116w) (fe 0x5911f6dfw 0x4c5cd408w 0x95ae98e6w 0xa69c3b9cw 0x93d19608w 0xf308d88cw 0xcffd5ad4w 0x079c79c9w)
+  (psPart (fe 0x115b6ae6w 0xdd5d50a6w 0x31994482w 0x3e2079cew 0x3142d7a6w 0x0beac0a9w 0x888323b4w 0x29838a07w) (fe 0x1bf4f9f8w 0x3031a7c2w 0x653a991aw 0xf093c1ccw 0x28aac7c2w 0x092a0cd1w 0xa7c4c266w 0x1e230e4aw) (fe 0x29407105w 0x2a72b06dw 0x48ac7771w 0x281dbf71w 0xbc22a44dw 0x175c5083w 0x7cf53b92w 0x08c91294w)
+  (psPart (fe 0x89ee3c2dw 0x7eb180a8w 0x86d44c8cw 0xd38343a9w 0x472b1d0ew 0x286bdbe0w 0x3117cc53w 0x24f6be20w) (fe 0x50b8eb66w 0xe2212295w 0xbfc796ebw 0x9ffe52faw 0xd361ed14w 0x1b9eef2ew 0xfa7034f4w 0x0c575104w) (fe 0x2a2e4643w 0xf9b28f84w 0xd2ca1317w 0x4d5c080bw 0x2c271eb9w 0xcd76ae81w 0x3b96e943w 0x0ea4878fw)
+  (psPart (fe 0xd7ee00cdw 0x1b12a0eaw 0x0d8acd32w 0x794461ecw 0xc75e20a7w 0x3abb3e24w 0x4f2c16dbw 0x27cb8585w) (fe 0x9e5c844aw 0xc34a0ce2w 0x98f23f61w 0xbae39001w 0x85e6d0c4w 0xf582e099w 0xa35cf2dew 0x055c6d26w) (fe 0x74f74c21w 0x33e1751fw 0x79f2ec1aw 0xdef83f52w 0x374490baw 0x3ce7d0bdw 0x42805119w 0x0eecc293w)
+  (psPart (fe 0x259d3e58w 0xe45772c6w 0xebeab683w 0x4c683f93w 0x07a4642ew 0xfb8c13b6w 0x3eeaed41w 0x2e3e8ef0w) (fe 0x630c5eb4w 0xd197c44cw 0x70186b79w 0x053857abw 0xbdb0d26aw 0x18ee44c7w 0x83a0557bw 0x18b94e25w) (fe 0x00acdc77w 0xd27736b0w 0x7cbcb7f5w 0x258b4b22w 0x269de616w 0x40df2e84w 0xc966b500w 0x209aa4bbw)
+  (psPart (fe 0x0720254fw 0x5aafe5dcw 0xf18d1016w 0x0e91a580w 0xf154d5b7w 0x11a00abfw 0x319b0d09w 0x28083140w) (fe 0xfd7f2bcaw 0x624ed13ew 0xf2c28b13w 0xcc9e53bcw 0xd885ccfaw 0x7ca39c04w 0x1ed0d643w 0x032c7e9cw) (fe 0x208c3258w 0xbee575acw 0x23790363w 0x8976d099w 0x9b58eaafw 0xeac3c4d3w 0xade6e3d5w 0x28585586w)
+  (psPart (fe 0x7c987248w 0x275e6492w 0x06381ce9w 0x10234533w 0xcb2159f6w 0xd90511a7w 0x59a4151bw 0x2997881aw) (fe 0x5b7ee005w 0x96ea7b64w 0x759a80d5w 0x12e49ee4w 0x0c7c209cw 0x3ff0710cw 0x5a29a973w 0x1207d4f6w) (fe 0xa943095fw 0x225570d6w 0x2d54aa69w 0xa11ab583w 0xdc72feacw 0x5ed544b9w 0x9fa0dfdew 0x16ba83b2w)
+  (psPart (fe 0x498f8347w 0xd35fe784w 0xdc5c310bw 0x448e2c74w 0x58df81d3w 0x8bc35d41w 0xb058a3b8w 0x11a01d27w) (fe 0x94af2d83w 0xcf4dac55w 0x8cc21243w 0xc6f6531bw 0x57b9548fw 0x6e65adc1w 0xf00d6dfbw 0x082a1067w) (fe 0x103a6dcfw 0x173fc30bw 0x98d301c3w 0xc91b63e4w 0x64eea1f2w 0xb8f7ea40w 0xd7df35e4w 0x06548827w)
+  (psPart (fe 0x66e91665w 0xf1dcdd18w 0x1bfcc76ew 0xaf44edb3w 0xbc5fdeb1w 0x69a2f851w 0xfd6847e5w 0x16a3add7w) (fe 0x69af0ab3w 0x277fa195w 0x21550cd3w 0x28e4a944w 0x1510def2w 0x8b1893dcw 0xf2e3b9afw 0x152b3eebw) (fe 0xde461743w 0x82a43eaaw 0x1a719bfdw 0x4bd30750w 0xf35fb5eaw 0x94e914f0w 0x7093f3ecw 0x2d45e6c0w)
+  (psPart (fe 0xcdec9d68w 0x1307c7dfw 0x9138f494w 0x569ed7dew 0x6374a0b6w 0x3345109cw 0x4b9d9fa1w 0x21b5a190w) (fe 0x09a98dc7w 0xeb775b59w 0x128a23bfw 0x54a57335w 0x88015162w 0x5b11e528w 0xd608fde8w 0x212a6cfdw) (fe 0x18d146f1w 0x4c04265fw 0xc7853d4ew 0x10d10bc4w 0xb14f2f2cw 0xa8e2a51dw 0x45106055w 0x0f5fd956w)
+  (psPart (fe 0xb51c37ddw 0x68dd43d7w 0x89e1d073w 0x1e464760w 0x8f805754w 0x58e04cf3w 0x8688b08bw 0x0b0bbf5bw) (fe 0x4122a309w 0x1b14f57cw 0x2e132548w 0xe0291357w 0x8b7c32dbw 0x8d3c1704w 0x616dbf37w 0x22434cd0w) (fe 0xa6154db8w 0xa0a5d482w 0xba422f45w 0xd1c8cb01w 0xe05a3d45w 0xb8a57919w 0x38af96cbw 0x285a24a2w)
+  (psPart (fe 0xfafbd364w 0x1aaa1405w 0x230034b7w 0xb8d8b685w 0x2fcc0854w 0x0b7aef99w 0x9f36af66w 0x28d85f4bw) (fe 0x2efde136w 0x21fc148dw 0x29eeb0a8w 0xc0a3008dw 0x6745a3c9w 0xf3914ca1w 0x36dd2341w 0x08565232w) (fe 0x12fbf9f3w 0xa14a3361w 0xa2eae970w 0xb1ff289bw 0xaf57f78dw 0x32a2feccw 0xc0267f6cw 0x003726ecw)
+  (psPart (fe 0x623a8231w 0x65e4051ew 0x48c406d3w 0x3de6d47dw 0xbdb8ead2w 0xa9bbd406w 0x9a165a0cw 0x0d600d15w) (fe 0x424d5e04w 0x50648febw 0xef267969w 0x78694de6w 0x0718f950w 0x5aa8b358w 0x05de9b70w 0x1b044d4ew) (fe 0xa8f4e119w 0x2a796e5ew 0xd739483aw 0x946bbb44w 0x2b7ff1bbw 0xe21604d2w 0x7869e663w 0x0c432702w)
+  (psPart (fe 0x15b09542w 0xe85e1176w 0x170967b3w 0x96ce582ew 0x0af36d54w 0x065b3984w 0x477f05b0w 0x11b11f0ew) (fe 0x4cb254bfw 0x0d74f099w 0xfc63bd6dw 0x4f4e4871w 0xebdad559w 0x89d7b727w 0x390eb822w 0x2cf20283w) (fe 0x23bdb058w 0xa30b5268w 0xf8eccd0dw 0x886bb7b6w 0xbc295914w 0x1f437e6dw 0xe6833325w 0x29ad2879w)
+  (psPart (fe 0x0fe43a5dw 0xec3b3941w 0xdcfa176aw 0x3fb9d90dw 0xa47556d0w 0x5fcaa229w 0x2e51b6d8w 0x07a58316w) (fe 0x0608396ew 0x5b3fe263w 0x2e954403w 0x1e449611w 0xa37c42a9w 0x855a9daaw 0xb4fa5128w 0x10f643f4w) (fe 0x04f98e35w 0x28590d00w 0xc2cc8cf6w 0xe13a159fw 0xbe68317aw 0x8d22be85w 0x8618db96w 0x085a637bw)
+  (psPart (fe 0x4188d4d5w 0x5588c695w 0x360f0373w 0x28bdcaedw 0x1974cf44w 0x67cc7a41w 0x2cc849acw 0x27ab756ew) (fe 0x088e99adw 0x32a0c18fw 0xdd9cc1f3w 0x22795c50w 0x6dc26a51w 0x39c0855cw 0x2e428a82w 0x12388febw) (fe 0x19cb859cw 0xaddbd56dw 0x9032fb62w 0x2f7ceda4w 0x874c459ew 0xebdf3719w 0xbc44149dw 0x036d7aa8w)
+  (psPart (fe 0x85b941c8w 0x2caa41d7w 0x154f2c6bw 0x971e4e4cw 0x68e0e6c8w 0x7874a8d4w 0x54f5d234w 0x07b4735dw) (fe 0xa044c8f2w 0x01f51a3aw 0xfcab2c29w 0x7a636b4bw 0xa96a00cew 0xb31eb377w 0x0bb104acw 0x0f0c53f0w) (fe 0x3e9566e7w 0xd7932800w 0x7d3074baw 0xed5f36c0w 0x0a9e4cb8w 0x8a2da6c6w 0x8f4c27c2w 0x28bd60c7w)
+  (psPart (fe 0x20631bbcw 0xfffebd87w 0x19d8aba5w 0x8efe2a42w 0x7ef1b62dw 0x6bdf4dedw 0x6d6cf68ew 0x1ff6c9e0w) (fe 0x57b8106dw 0x22a696d4w 0x5d4905f8w 0x8b98ffedw 0xbbef0232w 0x5edf9329w 0x46ea4c39w 0x1392824cw) (fe 0xf787c8a0w 0xab107cfew 0x07fb3230w 0x278e7c42w 0xe46d8256w 0x99b9ea6cw 0xfb31a00ew 0x0d682fd0w)
+  (psPart (fe 0xb11c850cw 0x4ecef90fw 0xc9eec3a9w 0x84e45781w 0xe2f1f4f8w 0x8ec25128w 0x12a70ccew 0x2a2c1a84w) (fe 0x332e2cc7w 0x8f369a4dw 0x34251590w 0xb22c5132w 0xb811231fw 0x706ac3aew 0x8ade8979w 0x19740e5ew) (fe 0x29f28b75w 0x221080f0w 0x74cb1e94w 0xa4374509w 0xc69f3da2w 0x87926f33w 0xee2ad166w 0x029cf616w)
+  (psPart (fe 0xee11e91dw 0x02442c4fw 0x7fdcbe17w 0x5dc410e0w 0xb63d9457w 0x1a867232w 0xb2782748w 0x1a1c9a07w) (fe 0xe474f114w 0x1edb82daw 0x735a0a00w 0xd3bc7df0w 0x280da899w 0x03b3817dw 0x517f4c79w 0x0701ed4fw) (fe 0x6bf08497w 0xe14d649aw 0xfba171b1w 0xa3ea3ec2w 0x65c736bdw 0x8f61083ew 0xf38c7ebbw 0x1ac1a9fdw)
+  (psPart (fe 0x74ef25d7w 0xcf491982w 0x1036644ew 0x562c05e0w 0x276e258cw 0x3f41976ew 0x194ef994w 0x1f5be530w) (fe 0x3b0c6560w 0x82c0529dw 0xcb3d788cw 0xce8537e7w 0x3bd8e8bcw 0x92494f9dw 0x3fd33e53w 0x132c81f4w) (fe 0x29cd3111w 0x3f40cc16w 0x8d257da8w 0xb9f9665bw 0xe8e16198w 0x185f61f8w 0xbd33ab21w 0x021adba7w)
+  (psPart (fe 0x3fd36130w 0x342f2a11w 0x349c530aw 0x9ceccbd5w 0x33444841w 0x617bd575w 0x33eee1d3w 0x1648cdf7w) (fe 0x827fcf73w 0x9efbd552w 0x6ab69375w 0xfaebeb1cw 0xbe8e88a8w 0x464172e7w 0x0d042c0fw 0x0847931ew) (fe 0x8a28dc6cw 0x12019364w 0xe7370526w 0x988a6302w 0x97474b0cw 0xa78edb0dw 0xa1b547faw 0x19959641w)
+  (psPart (fe 0x2427c2d2w 0x8e6dfb11w 0xe588e384w 0x20c25819w 0x30897cb6w 0x1d88377dw 0x73b9729aw 0x2a508af3w) (fe 0xddc51680w 0x1d14c873w 0x08009656w 0x0e0da869w 0x1340d6a4w 0xbf4ec9baw 0x5a0afb9cw 0x0098bdf6w) (fe 0xf3243e60w 0x50d73614w 0xe50c537ew 0x45209e69w 0xc759be13w 0xbf44d99fw 0x0724a583w 0x279f34dfw)
+  (psPart (fe 0x3c3aa682w 0x219cffe6w 0x425acf48w 0xa6dd59c7w 0xacccec8fw 0x444cb706w 0xff5b9dd4w 0x2e8c17dew) (fe 0x36bf5d0bw 0x9997c914w 0x677678bew 0x1629fb48w 0xdb9eb29aw 0x49c4d97bw 0xdaa0d61ew 0x2035dd09w) (fe 0x8e51546bw 0x10168e7cw 0x6ab22d0cw 0x507ec151w 0xa4bf09c0w 0x1a194fcaw 0x6849f4fdw 0x0c637dc8w)
+  (psPart (fe 0x1ea6f531w 0x57fe0469w 0x353d037bw 0x2190682ew 0xe904d3b9w 0x72e47ef9w 0xfb3c75edw 0x211f475dw) (fe 0x503617d0w 0x7e838b86w 0x8ae1955ew 0xe6bad194w 0xd5b30483w 0x707e58faw 0x2b764b31w 0x0a097298w) (fe 0xfc34185cw 0x03bb8a08w 0x4d810bfdw 0x7697ad2dw 0xc816f501w 0xfd12136fw 0x88279b56w 0x120d076cw)
+  (psPart (fe 0xeb22800cw 0xee24105ew 0x82283d5ew 0xb7cbe7afw 0x8cd71bb5w 0x6191e1e3w 0x91efd9a9w 0x1aeaf2e4w) (fe 0x8cc9237aw 0xa04e0701w 0x3151e0b6w 0x5361733bw 0x8ddf97c3w 0x40e61ee3w 0xf8b30fd4w 0x227af916w) (fe 0x1dbc8729w 0x3a89c212w 0xd8db1a87w 0xbc8fbdb3w 0x8d840b86w 0xe86e48afw 0x0acf31c8w 0x2ce7a4cbw)
+  (psPart (fe 0xdc3af464w 0x5034a090w 0x617008aaw 0x6ed46f82w 0xd819f7e3w 0x358e71ffw 0xe116e13bw 0x26c8080aw) (fe 0xb8b52e37w 0x788952cfw 0xe7fb7fbcw 0xefc72a5bw 0x9459447aw 0xc77bac4fw 0x8a6d261ew 0x001040afw) (fe 0xd2ff7426w 0x16e6d600w 0xacfc9401w 0xca5f5816w 0x9a0e0072w 0xe38beefew 0x1a7bc331w 0x21938b19w)
+  (psPart (fe 0xa21f9297w 0xd5b44d21w 0xaa7d0743w 0x86167973w 0x50d4e54fw 0x79bd6f45w 0xac6940caw 0x03cfdb40w) (fe 0xd69d55fcw 0x9c929ba1w 0x151271aew 0x87d64dfcw 0x9fac9536w 0x2d27e317w 0x9101e879w 0x1a90b4dfw) (fe 0xc0ebe7ecw 0x7499664fw 0x84931303w 0x09716f8ew 0x94634b45w 0x4cc0dccbw 0x8519e33cw 0x1a32f5ffw)
+  (psPart (fe 0x3b9bcaa9w 0x870877b7w 0x75379e4fw 0x1881870fw 0x51a7e672w 0x9f3f06e4w 0xb41dcb29w 0x1151fe3bw) (fe 0x1cac0430w 0x0b7cb1a8w 0x441f88f9w 0x271f481cw 0x984a6294w 0xeda16949w 0x043bb91cw 0x073cc8few) (fe 0x348cbfe4w 0x5d4c4bfew 0x476c9489w 0xcfd654c4w 0xf0b1efcdw 0xdd48f53cw 0x69621011w 0x06c975eaw)
+  (psPart (fe 0x184c9024w 0x39fb6c74w 0xa143fe21w 0x80e79b39w 0x9d48cbfcw 0xb1253d50w 0x8c52124dw 0x1a4900bew) (fe 0x4d51b5c0w 0x190a59d1w 0xd8bdb73aw 0xa444e21aw 0xfe061798w 0xb2259807w 0xbfcf2f6aw 0x271a2e9bw) (fe 0x96417133w 0xc0af13dcw 0x9c88420dw 0x1cb1c897w 0x73b9f841w 0x353f8e56w 0x18ce1183w 0x0ad28748w)
+  (psPart (fe 0xfd0f7d29w 0x5eae10d5w 0xeaa853e4w 0x7da0cc2bw 0xd2a3b6e2w 0xb844b04aw 0x40c038eew 0x0b184f0bw) (fe 0xb1d54591w 0xe5e995b4w 0xb12e5099w 0x19548f28w 0xf40f1c72w 0xe0da5976w 0x2d014456w 0x1c55359dw) (fe 0x5f6f87d8w 0x68c41146w 0xc980c957w 0xa3a18882w 0x4fabcf20w 0x5c79518cw 0x97bc5cb3w 0x26edc294w)
+  (psPart (fe 0x948b6732w 0xb50f63c3w 0x1ae1dbb4w 0x9c160bd7w 0x5abff66aw 0x24cfd938w 0xeced9ea6w 0x02063a7cw) (fe 0xd22245b0w 0xdb0cbc35w 0x55232e6dw 0xfe86319aw 0xf3add538w 0x6105fbfdw 0x38d94255w 0x2c2dc27cw) (fe 0x8a8c8995w 0xf1895d98w 0x0c1b5a82w 0xdedefbadw 0x0bd416d8w 0x5f3fb8bcw 0x21d78dc2w 0x0e2a4c7dw)
+  (psPart (fe 0xb87cd518w 0x72f59f40w 0x2d8b3ee3w 0x619b20e0w 0xf7d9329fw 0xd6ebb896w 0x6141dd3aw 0x211c1fdfw) (fe 0x4f54c992w 0xd6e372c6w 0xf785abe0w 0x99827b2bw 0x4fbeae14w 0xb67492d9w 0x915f1cb7w 0x0288174aw) (fe 0x1a4ad1c5w 0x0cee8960w 0xd570e8b4w 0x66dee7acw 0x5471fc2cw 0x237331b2w 0x068020d0w 0x0f79a3dcw)
+  (psPart (fe 0x8f31bc12w 0x898fee0bw 0x2da1961cw 0x5c8954aaw 0xc3da12afw 0x77326678w 0x7a7f389fw 0x14431321w) (fe 0xd3b4864aw 0x05f342caw 0x0656a010w 0xe2c7d39dw 0xda62a23fw 0x61b8bef5w 0x7b6696efw 0x195806adw) (fe 0x0cbdef02w 0x76c6fbf5w 0x5a6b40f4w 0xf535ea97w 0x3fe86bcew 0x0c5fe238w 0x4b8688b9w 0x117abeb3w)
+  (psPart (fe 0x32e35924w 0x722fcd91w 0x2fa40665w 0x8d991c0fw 0xa33bc385w 0xab060365w 0x5f2060aaw 0x0b61468dw) (fe 0x8f1be22aw 0xf37de77aw 0x7577781ew 0x427159a9w 0x266148d9w 0x14e99813w 0x0e5be0c4w 0x138e8d0fw) (fe 0xc9bb6fc7w 0xe1543733w 0x35e21c8cw 0xd8c97045w 0x82de438cw 0xd433edc2w 0xf81b3763w 0x11466ae0w)
+  (psPart (fe 0x39524874w 0x2cbd8cdbw 0x4afce00ew 0xf9855b64w 0xabfbd66cw 0xb290cb62w 0xb1084494w 0x25acd478w) (fe 0xb41dcee8w 0x8ebc6672w 0x849196a1w 0x606f0745w 0xbd88d82aw 0xe55ae090w 0x4167249dw 0x00947055w) (fe 0xc7a6418bw 0x062094bcw 0x8583c637w 0x2803495bw 0x7437c010w 0x53eb48b9w 0xe9138165w 0x0c7a1222w)
+  (psPart (fe 0x36018a4ew 0x27eab79cw 0xd0c4068dw 0xbd1864c1w 0x25a237e3w 0xf902113aw 0xeb1e9c1fw 0x128d87abw) (fe 0xf7652d14w 0xdb7fc417w 0xaac09e67w 0x58bd4f3aw 0x4d60e85cw 0x728f5866w 0xb96fdda0w 0x0f85a634w) (fe 0xe302eadcw 0xe32fe000w 0x3c7df083w 0x7d23c3ddw 0xb443a012w 0x5bd45107w 0x28d1a73cw 0x2acca274w)
+  (psPart (fe 0x10944264w 0xbf727dedw 0xe7df1f42w 0x4ebf249fw 0x5448317cw 0x9ae7e1eaw 0x386f06d1w 0x098478d1w) (fe 0xb62c6d90w 0x41702faew 0x5d31eda6w 0x5dea6056w 0xf362ec45w 0x99144c98w 0x48f73f04w 0x0666d886w) (fe 0x199d699cw 0x83b3ca7ew 0xc43d5f81w 0x32ebc3b0w 0x1a1d5f6bw 0x14a61eddw 0xa1103978w 0x2cb5c8few)
+  (psPart (fe 0x54a68bc4w 0x5d05e3aew 0x3460a6f2w 0x4faa9d46w 0x074f3aafw 0x7f3ed5cdw 0xdae67de3w 0x2d280f20w) (fe 0x6dada240w 0xd2efe4caw 0x91e6e450w 0x85c3424cw 0xe819912fw 0x67ded928w 0x15ad187ew 0x2a471101w) (fe 0x325914baw 0xfd689c88w 0xc4f678a8w 0x217ccba0w 0xcaac332bw 0x775c3aa0w 0xadb3dc0bw 0x0237eeffw)
+  (psPart (fe 0x0d48ab5aw 0x951cba23w 0x6f7dcd80w 0xac60fef5w 0x667a107aw 0xee0e118cw 0x12abebebw 0x286963dew) (fe 0x37545102w 0xd5bf474cw 0x24a7bbf7w 0x8df02107w 0xd06cee5cw 0x2869e00fw 0xe9679a80w 0x10a5a9a9w) (fe 0xa7c1fc31w 0xb756d548w 0xec937a72w 0x91a8ff87w 0x337e9900w 0xc052832fw 0x975226c0w 0x0529844aw)
+  (psPart (fe 0xea723ea7w 0xd6bd6219w 0x47a73dbcw 0xb15ef75aw 0xbcdba423w 0xce0d24f3w 0x0b75da95w 0x00f2c9c0w) (fe 0x3934561bw 0x8839b8e4w 0x997614afw 0xeed5c479w 0xe37ec975w 0x8e13af4cw 0x1a0da7d1w 0x1c11b138w) (fe 0x1b52a70dw 0xf3890322w 0x5616f0b4w 0x57941badw 0xc24d695aw 0x79e0e60aw 0x4dc51202w 0x28196a6ew)
+  (psPart (fe 0x3dd24eb6w 0x064ebe0cw 0xfeb04f9dw 0x3802fd84w 0x907fa843w 0x86b2d2b0w 0x86c617aaw 0x2c574ff6w) (fe 0xd26b3c37w 0x4350bfc9w 0x582555a7w 0x21c07f7cw 0x39e61d98w 0xc26f0a1aw 0x20773885w 0x23e04b5bw) (fe 0x1c4960f1w 0x9ecdf080w 0xaa5c29bdw 0x90455ea0w 0xa78bbda6w 0x7a4f7128w 0x00068a14w 0x08a72f22w)
+  (psPart (fe 0x55561239w 0x8e784230w 0xb6a9b0c3w 0xc68657f8w 0x3e9a9859w 0x3c1f3002w 0x957c386bw 0x020a5307w) (fe 0xdf413870w 0xc2b2ec89w 0x6a3cbfa5w 0x69841764w 0x08e46241w 0x85b88d31w 0xcd3c1731w 0x1153cf64w) (fe 0x1b1facfdw 0xd3c742f4w 0xce5600d8w 0x48cc11f7w 0x25ad06caw 0xd924a204w 0xb64a36f0w 0x2b92d896w)
+  (psPart (fe 0x16232e80w 0x47e3641ew 0xf4118ce6w 0xb5b83d38w 0x8e9fe957w 0x9c757d81w 0x849b01ecw 0x0f040021w) (fe 0x39709602w 0xbf3cd76ew 0xf717615fw 0xe2d93e6cw 0xaa4aa483w 0x4e5f8607w 0x64ae4e31w 0x1fcceb22w) (fe 0x437a38d9w 0xcad7b25fw 0x43bd617aw 0xf66dcd47w 0xca985f41w 0x75627910w 0x53a27827w 0x1c2d9622w)
+  (psPart (fe 0x994cce65w 0x3eca0791w 0x7e8476d9w 0x059234b1w 0x92adc262w 0x8403f0cdw 0x4c9f73b9w 0x2116c524w) (fe 0xece065e3w 0x7ebcbcd0w 0xa0139ff9w 0xc1a06905w 0xeafcce74w 0xf0e0a214w 0x4bb3f1adw 0x102221a2w) (fe 0xfd0793c6w 0xc73946d2w 0xa7714ca9w 0xd684e968w 0x56a0baddw 0x45168926w 0x69bcf7e8w 0x2bb1a1d7w)
+  (psPart (fe 0x7b52e3c9w 0x6b45148dw 0xdf8c0734w 0x030bfb6ew 0x8edd38c4w 0x78374b44w 0x46a5b689w 0x05ba2d1fw) (fe 0x2bca34d6w 0x96a85006w 0x3852014ew 0x1af76c92w 0xfda5d027w 0xad93ce5cw 0x1ab3d348w 0x1c592cafw) (fe 0xf0bb4932w 0xafbb1743w 0x0bda8c0cw 0x6a7696e1w 0x609bf58ew 0x07a07831w 0x98271115w 0x2d35e805w)
+  (psPart (fe 0xfdafcabcw 0xdc24c33fw 0x331852d4w 0xf4dd4a38w 0xc97e8d89w 0x5ed1b79aw 0xa8d2fa83w 0x07fcc7dcw) (fe 0x4d1b83f0w 0xe4104100w 0x3497d06aw 0x09933bdbw 0x0bbdd441w 0xa3a26810w 0xccf638f4w 0x2dacd4f6w) (fe 0xe281e4e9w 0x41e818ccw 0x4c9f0b3cw 0xdacb05daw 0x97123b9ew 0x9c98e807w 0x71cf9893w 0x05c27851w)
+  (psPart (fe 0x661dd3efw 0x8bb70713w 0xe1e866e4w 0xa3219b41w 0x94dbafcbw 0x4841aeaew 0x5b343c2ew 0x1f04ab07w) (fe 0xda1ed4d8w 0x09877b99w 0xbb562ab7w 0x3e1b13bew 0xbc796707w 0xfd0a453aw 0x8fe542b6w 0x1b08caf1w) (fe 0x35ed4ddbw 0x8772776cw 0x6dca8f20w 0xd1e483c4w 0xece3cb77w 0x3d6ef5b0w 0xac3cdedaw 0x04350d60w)
+  (psPart (fe 0x2dfd828dw 0xd59789d5w 0xc7c66b69w 0xd0d4f5c7w 0xb5309734w 0x4184bf91w 0x81137365w 0x0e09deddw) (fe 0x6730c5cew 0x3c46a5adw 0xda525007w 0x5c7bd37bw 0x0a707411w 0xd57d1e17w 0x21197bddw 0x13e189b5w) (fe 0xf304a26fw 0xa6343ee1w 0xd2ba7228w 0xca33c793w 0x00d4d448w 0x25dad125w 0x25852c46w 0x09cf8276w)
+  (psPart (fe 0xc63a54d9w 0x797a8602w 0x3aa0e827w 0x1ac2bc43w 0x580b7789w 0x7c3fbe7fw 0xb882d894w 0x03174635w) (fe 0x318908d8w 0x4f16dab5w 0x9bb33e9bw 0x618709aew 0x1fcccdb9w 0x79f6ce9dw 0x663e5559w 0x2a42c258w) (fe 0x8db85bedw 0x9352c66fw 0x91216ae2w 0xf76a6cfcw 0xab6ddebaw 0xecadbbeew 0x019acbefw 0x0501860dw)
+  (psPart (fe 0x9b633beaw 0x33bbf755w 0x36c8c252w 0x59bc392cw 0x80b1aebcw 0x13a0563ew 0x0663b761w 0x15fa9768w) (fe 0x7ce56662w 0xd34b76ccw 0x52f0c797w 0x46375620w 0x92d6f09ew 0x121bc992w 0x552ddc2dw 0x0a694fcew) (fe 0x8e961db5w 0x2c91b8dfw 0xf14b5eb8w 0xe0847837w 0x600b988aw 0xdfa9bfc0w 0xa2dd61ecw 0x0e88c05fw)
+  (psPart (fe 0xd1594ed2w 0x062b0126w 0x9360c8f3w 0xf6b8ef94w 0x681f9b19w 0x88685c33w 0xdc6147f2w 0x057ca2cew) (fe 0x7d1d6988w 0xbc4cb823w 0xc02628edw 0x40a88f0aw 0xd686d929w 0x38d89898w 0xb0515c31w 0x2333cd11w) (fe 0x673208b5w 0xb242031fw 0xf309ec58w 0x144ef3dfw 0xe4dc599fw 0x74d56678w 0x804984efw 0x2ca99301w)
+  (psPart (fe 0x33a4bed1w 0x5131dba2w 0xd8400bacw 0x8a8e1b36w 0x65901cd2w 0x21e59e88w 0xf3fab0a5w 0x0e5c8ec6w) (fe 0x88edc047w 0x2a4bb5fdw 0xc68d0c2aw 0x5b86f3ebw 0x5688b04fw 0x54882f2aw 0x507cbe33w 0x05a94e75w) (fe 0xf8ecdb92w 0x2b1caac2w 0xdee0c00dw 0x1fc9ccb8w 0x3676a1fcw 0x132b98f9w 0x479088d2w 0x26683390w)
+  (psPart (fe 0x6512589dw 0x35366d72w 0x9132d200w 0x1a3e6b99w 0x6782aa42w 0xde087c49w 0x4d53dd00w 0x19bd0fcbw) (fe 0xec6c0762w 0x047cb750w 0x5dabb47bw 0x24d6a46ew 0x1ba14cabw 0xc919256cw 0x8c4b62c4w 0x273396a7w) (fe 0x57687d8ew 0xf0b98c2bw 0x2063365ew 0x80147c91w 0x91ba1607w 0x59b461eaw 0x0c32ff50w 0x28c3fc15w)
+  (psPart (fe 0x3d434232w 0xf5eccf1cw 0xdd3d1536w 0x473330d9w 0xc46d86b2w 0xade583c6w 0x1ec58e70w 0x2c598c96w) (fe 0x0def6797w 0x03b80016w 0xa943177ew 0xc4cf4ab9w 0xc1588f3cw 0xcde7b62aw 0x51cf7c34w 0x06eecbd0w) (fe 0x3c6bd1fdw 0x0369b258w 0x76d43177w 0x0dbdc1a0w 0xadcedd3dw 0xcb0dd179w 0x470abd29w 0x0bbe0370w)
+  (psPart (fe 0x70a500c7w 0x7cef46f5w 0x7ae0671ew 0xd5c89d2bw 0xe25b5d5dw 0x32a472d2w 0x6430cd10w 0x1819574aw) (fe 0xf2113dc2w 0x6f7de7d7w 0xe26494ccw 0x9bad7676w 0x4f7cb546w 0x59b77b7bw 0x096c1e37w 0x2624ebddw) (fe 0xfca66b49w 0x11a5cdddw 0x4debebe3w 0x768bcc29w 0x7fbfda18w 0x852080c8w 0x19b633eew 0x1c7d91a6w)
+  (psPart (fe 0x8145efadw 0xaae5e35dw 0xe0bbe5f3w 0xce1d50caw 0xb2134e9fw 0x36970cefw 0x43c46cfew 0x1280d615w) (fe 0x6b5468c6w 0xbaaef2d3w 0x859e85a0w 0x498f7febw 0xef131eacw 0xfbbe4f4fw 0xbfd3b824w 0x0b321fd2w) (fe 0xfb1b7a9aw 0x73cf2dd7w 0xe4c46704w 0xfa91136dw 0xd0a4ef08w 0x7477293dw 0x1e0c4760w 0x1b2e2f42w)
+  (psPart (fe 0xdb788bf2w 0xb4af5805w 0x90ce9257w 0x4c066541w 0x862b0413w 0x3c0942bew 0xecb1ffdcw 0x19358aa7w) (fe 0xbe6e42d5w 0x1a5f2289w 0xc40d8a7aw 0xb8558e89w 0xd417290aw 0x6db403e0w 0x84359369w 0x0df8c12dw) (fe 0x8fa50e7bw 0x2c162337w 0x8676a013w 0x334709d3w 0xeb1a23e8w 0x424966dfw 0x4aee75c8w 0x13f728b8w)
+  (psFull (fe 0xbda25f34w 0x58cf088ew 0xc20a05fcw 0x7a5d6a37w 0x8ef2478fw 0xc3e67e0ew 0x13041154w 0x28cf15d8w) (fe 0x60e26854w 0xcd9b3716w 0xbde7c2a5w 0xa798e006w 0x8f0cde4ew 0xa589cbbfw 0xe6654fc6w 0x0cc83461w) (fe 0x1cf08b7aw 0x5aa5df88w 0x86b10afaw 0x854536b6w 0xcbaf9ae0w 0x54fbdc7aw 0x2b131883w 0x2267e579w)
+  (psFull (fe 0x73d40313w 0x6800c906w 0x065355bbw 0x370cc2bew 0x98b894c4w 0x48b361afw 0xf2d5da4dw 0x1574397ew) (fe 0x193ce68cw 0x980463e7w 0x1a4abf45w 0xae87dc9dw 0xf99cdb5ew 0x038a72f6w 0x2a8f168cw 0x169da4f5w) (fe 0x34683bb9w 0xc837d645w 0x57898b12w 0xa1c5ad47w 0xa3d9aa3fw 0xc4eb6597w 0xe930629aw 0x10551f64w)
+  (psFull (fe 0x3fa3dfdaw 0xc276f1f2w 0x0f4e390fw 0x07be179dw 0xf6a7932dw 0xef2cc368w 0x256ea6c8w 0x169888fdw) (fe 0x9fdb4920w 0x0933f9e6w 0xcb552ac2w 0x757798d2w 0xaff8a6e8w 0x44617531w 0xae439deew 0x1c88dc66w) (fe 0x219d011aw 0x84d6faa1w 0x3f57d413w 0x6c621fc7w 0xbd78cbf4w 0x06661776w 0xac57478dw 0x0d40569ew)
+  (psFull (fe 0x33746490w 0x65a764cbw 0x6d3d133bw 0xd857618bw 0xbcb82d7cw 0x597d95e1w 0x5b250c0dw 0x1999b22aw) (fe 0xed0f55ebw 0x09913f64w 0xb1d49b95w 0x71f4b894w 0x9782046bw 0xe64f2d86w 0x3b362aaaw 0x2ac51c6dw) (fe 0xf3864524w 0x4e1f1fb6w 0x2734a295w 0x183aa6e5w 0x414a772dw 0x7a585dc7w 0xb2e96900w 0x0e2e7f46w)
+  psEnd)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+-- Schnorr on G1 (S8a, as src/crypto/schnorr.c of ratify-lang): (R, s) is a
+-- valid signature on m by the key P when s G = R + e P, with
+-- e = kcChallenge R.x R.y P.x P.y m. P and R must be points of the curve
+-- y^2 = x^3 + 3 with each coordinate less than p, and s must be less than r.
+-- Each value is canonical (not in Montgomery form). g1Gen is G = (1, 2).
+def g1Gen : Pt1 := pt1 (fe 1w 0w 0w 0w 0w 0w 0w 0w) (fe 2w 0w 0w 0w 0w 0w 0w 0w)
+def scOnCurve : Pt1 -> Sum Unit Unit :=
+  fun (p : Pt1) => (fun (q : Pt1) => feEq (feMulC fpMod (p1Y q) (p1Y q)) (feAdd fpMod (feMulC fpMod (feMulC fpMod (p1X q) (p1X q)) (p1X q)) (feToMont fpMod (fe 3w 0w 0w 0w 0w 0w 0w 0w)))) (ptToMont fpMod p)
+def scValid : Pt1 -> Sum Unit Unit :=
+  fun (p : Pt1) => sAnd (feLt (p1X p) (modM fpMod)) (sAnd (feLt (p1Y p) (modM fpMod)) (scOnCurve p))
+def scPtEq : Pt1 -> Pt1 -> Sum Unit Unit := fun (a : Pt1) (b : Pt1) => sAnd (feEq (p1X a) (p1X b)) (feEq (p1Y a) (p1Y b))
+-- scEquation e P R s is s G = R + e P, with P and R in Montgomery form. The
+-- two scalar products use the C builtin ptMulC (Q-S8a-7 (a)). R goes in as
+-- the Jac (R.x, R.y, 1).
+def scEquation : Fe -> Pt1 -> Pt1 -> Fe -> Sum Unit Unit :=
+  fun (e : Fe) (pm : Pt1) (rm : Pt1) (s : Fe) => scPtEq (ptMulC fpMod s (ptToMont fpMod g1Gen)) (ptToAffine fpMod (ptMadd fpMod (jac (p1X rm) (p1Y rm) (modR1 fpMod)) (ptMulC fpMod e pm)))
+def schnorrCheck : KRcs -> Pt1 -> Pt1 -> Fe -> Fe -> Sum Unit Unit :=
+  fun (rcs : KRcs) (pk : Pt1) (r : Pt1) (s : Fe) (m : Fe) =>
+    sAnd (scValid pk) (sAnd (scValid r) (sAnd (feLt s (modM frMod)) (scEquation (kcChallenge rcs (p1X r) (p1Y r) (p1X pk) (p1Y pk) m) (ptToMont fpMod pk) (ptToMont fpMod r) s)))
+-- The message words (S8a). szToFe n is n in Fr, in Montgomery form (n
+-- additions of R mod r). hsMsg t x y is poseidon2 (t, poseidon2 (x, y)) in
+-- Fr. Each input is in Montgomery form. The result is canonical, because
+-- kcChallenge reads a canonical message.
+def szToFe : Size -> Fe :=
+  fun (n : Size) => elim (fun (a : Size) => Fe) feZero (fun (a : Size) (ih : Fe) => feAdd frMod ih (modR1 frMod)) n
+def hsMsg : Fe -> Fe -> Fe -> Fe :=
+  fun (t : Fe) (x : Fe) (y : Fe) => feFromMont frMod (poseidon2 frMod psMdsFr psRcsFr t (poseidon2 frMod psMdsFr psRcsFr x y))
+-- The test fixtures (S8a). fxKeyK is the key K G of the secret key K (1 to
+-- 5). fx<NAME>K<K>R and fx<NAME>K<K>S are the signature (R, s) of the key K
+-- on the message NAME. Hs2 and Hs3 are the tags 2 and 3. StA and StL are
+-- hsMsg (0, 1, 1) and hsMsg (0, 1, 2): the stamps of the commitment 1 at the
+-- heights 1 and 2. OpA and OpE are hsMsg (1, 1, 2) and hsMsg (1, 1, 1): the
+-- openings of the auction 1 at the heights 2 and 1. AmA is hsMsg (2, 0, 0):
+-- the amendment 0. Each value is canonical. `cryptotool fixtures`
+-- (test/cryptotool.c) prints these lines.
+def fxKey1 : Pt1 := pt1 (fe 0x00000001w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w) (fe 0x00000002w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w)
+def fxKey2 : Pt1 := pt1 (fe 0x6d87cfd3w 0xd3c208c1w 0x16871ca8w 0xd97816a9w 0x68181585w 0x9b85045bw 0x2e131a02w 0x030644e7w) (fe 0x5a18a2c4w 0xff3ebf7aw 0xe3538fc7w 0x68a6a449w 0xb2ae9c0aw 0xe7845f96w 0x0e0a7c92w 0x15ed738cw)
+def fxKey3 : Pt1 := pt1 (fe 0x1915abf0w 0xf2d35596w 0x15b8e679w 0x9315d847w 0xb1b6bd15w 0xf40232bcw 0xc56bea3fw 0x0769bf9aw) (fe 0xd9fe2261w 0xcdf1ff3dw 0x0b9c5b57w 0x319e63b4w 0x8d086475w 0x554fdb7cw 0xe0489429w 0x2ab799bew)
+def fxKey4 : Pt1 := pt1 (fe 0xe9141a76w 0x4caa6d2ew 0xee659982w 0x9b592b83w 0x1da5208cw 0xbeef455bw 0xf8f414bcw 0x06a7b64aw) (fe 0x41e72fbcw 0xce88ef5aw 0xa6e75664w 0x8a97d8f8w 0x94e45fe9w 0x104ce59bw 0x8cee31acw 0x08e74e43w)
+def fxKey5 : Pt1 := pt1 (fe 0xfa163fa9w 0xe849a8a7w 0x8953a39cw 0x62e4ded8w 0x762b7743w 0x66bc0204w 0x0efee0f7w 0x17c139dfw) (fe 0xc6d4cc7cw 0x3ffc5718w 0xe0b95927w 0x0baa9258w 0xaf8a9fe7w 0x4764a357w 0xacb16066w 0x01e0559bw)
+def fxHs2K1R : Pt1 := pt1 (fe 0xcb6945acw 0x705c4941w 0xcbc31c71w 0xef75177bw 0xb36dcfc3w 0x1a56b259w 0xe537f3d6w 0x1dd4bb0bw) (fe 0xbd7d495aw 0x04b83364w 0xa6a14b6bw 0xda19984cw 0x31623fddw 0x7588fe99w 0xceb33429w 0x03b3ace7w)
+def fxHs2K1S : Fe := fe 0x3dc7eb2bw 0x8b8860ffw 0x1ac604c7w 0x5c418306w 0x1a74e3e1w 0x9cff1e9dw 0xc41e7c1dw 0x013b111bw
+def fxHs2K2R : Pt1 := pt1 (fe 0x922e00d1w 0xc5823f77w 0x6be36b1bw 0x4e8a6f57w 0xe16d296dw 0x92b48cb8w 0xd305d38bw 0x2518ef71w) (fe 0xe101ccafw 0x2e8364b5w 0x68424f28w 0xb9376569w 0x22f91ac3w 0xebf8260ew 0x2757d5d0w 0x08252891w)
+def fxHs2K2S : Fe := fe 0x25c5f46cw 0x6ed9e63cw 0x77d0421dw 0x245e5174w 0x9f26f0e1w 0xe91e4dd6w 0xa7abda21w 0x2a2b1907w
+def fxHs2K3R : Pt1 := pt1 (fe 0xc37875e1w 0x97d03c97w 0x6430aaabw 0x24b991f6w 0x0e7075b2w 0xc82fb898w 0x56dc4058w 0x19ef3d90w) (fe 0x162f74dcw 0x5997c22bw 0xfac56c05w 0x918e43e0w 0x6b26ddcdw 0x111732ccw 0xbdca51bew 0x2eeaa88bw)
+def fxHs2K3S : Fe := fe 0x0ae64239w 0x40e1b141w 0xe7387b79w 0x950398d4w 0x13bfeacdw 0xc257dde7w 0x272624ccw 0x2f9a77c6w
+def fxHs2K4R : Pt1 := pt1 (fe 0xb558433fw 0xe9fce1e2w 0x287a6a2ew 0xe99a4260w 0x674bf151w 0x0a626dd3w 0x18363f63w 0x1667b03bw) (fe 0x586273b5w 0xd1eae5bcw 0xf1b0492ew 0xcf37d6e3w 0xb24fbf78w 0xf447c021w 0xa365c8c8w 0x2eb53c7aw)
+def fxHs2K4S : Fe := fe 0xbe07ca59w 0x4422b82cw 0x49c198dcw 0x4a872a72w 0x5cefa545w 0x0d63fd80w 0xd862b2b3w 0x01682290w
+def fxHs2K5R : Pt1 := pt1 (fe 0xaf85721fw 0xb2fb7865w 0xa2847f1aw 0xede7a96bw 0x7cba58d6w 0x6d53bf27w 0xf48231dbw 0x01032d93w) (fe 0x781df3ebw 0xfa13e918w 0x5139f8c1w 0x61839c6cw 0x4b87ca35w 0x29348f3bw 0x2cb09354w 0x2673a459w)
+def fxHs2K5S : Fe := fe 0x561b91f1w 0x0164ec73w 0x6a72b15cw 0x304e8cf1w 0xad99c92fw 0x54afd97ew 0xb1190868w 0x02fc85e7w
+def fxHs3K3R : Pt1 := pt1 (fe 0xe3181f17w 0xe7f1dfabw 0xa4713c84w 0xcc1fc444w 0xf80abe3ew 0x3d982092w 0xec60b2e2w 0x2ec55b15w) (fe 0x9324cf19w 0xbf21a0e2w 0x7ab6ea16w 0xd56a7ffaw 0xdbea9379w 0x9e5e5ac4w 0xb7545490w 0x1d9e9a89w)
+def fxHs3K3S : Fe := fe 0x8c542f98w 0x1dd5cb16w 0x27fabc82w 0xfb0c3c66w 0xd86db374w 0x66c9883bw 0x698dbfe9w 0x1573cc86w
+def fxStAK1R : Pt1 := pt1 (fe 0xe83e0a87w 0x3c4cb7cfw 0x724c7dcaw 0xa9d91a47w 0x93722708w 0x2314b6b9w 0x6962b34ew 0x1c3c9ebfw) (fe 0xd9ecc7a5w 0x5d95808ew 0xdaba06f9w 0x886f3162w 0x7abc8b8aw 0xc255cc58w 0x324fd813w 0x300a8196w)
+def fxStAK1S : Fe := fe 0xbf43d34ew 0x2e522a9aw 0x9928d302w 0xbd2c0680w 0x1d25f8b4w 0x175ff827w 0xa324cc4bw 0x226330eew
+def fxStAK2R : Pt1 := pt1 (fe 0x7dabdd9dw 0x7a9a0c41w 0x10a7356bw 0xa8a29199w 0x6d90a181w 0x019bbb38w 0x4d45ab44w 0x1cd71232w) (fe 0x79db1e0cw 0xb993d058w 0x5299f725w 0x28d554few 0xcc1cc84ew 0x601075e3w 0xdc256e45w 0x00b1ce9aw)
+def fxStAK2S : Fe := fe 0x1bb61f9fw 0x5ec90f4aw 0x03610e28w 0xfaaa0d6fw 0x3dd3359fw 0x3e6c7459w 0x269a4e19w 0x17abc743w
+def fxStAK3R : Pt1 := pt1 (fe 0x60988feaw 0x7fa9c493w 0x863fddcaw 0xc19ceaefw 0x69f6373bw 0xe4689fcfw 0x850eadc5w 0x0d741d04w) (fe 0x9afc861aw 0xdfa185e9w 0x8e898f77w 0x3d9da0b7w 0x053adc9ew 0x4eac55acw 0x9a319f4bw 0x21ab41bbw)
+def fxStAK3S : Fe := fe 0x92f2969fw 0x1cdcb232w 0xe3dc33a4w 0xbdea27b7w 0xe5454e5bw 0x277a1bb9w 0xe4a1b58ew 0x24cd9487w
+def fxStLK1R : Pt1 := pt1 (fe 0xf216bf3dw 0x2faf8ce7w 0xe4ebc7cdw 0x4e273cedw 0x9ce0c88ew 0xc583ccd6w 0x13f0b57dw 0x1f61d020w) (fe 0x44541ca0w 0x42ea9796w 0x340ceae4w 0x3da7fd47w 0xd1f9f15bw 0xe146d1caw 0x0a9e3bb2w 0x08cc8d94w)
+def fxStLK1S : Fe := fe 0x1d355749w 0xb17fdb65w 0x36749f69w 0xc7612a47w 0x41ab1fd2w 0x0ade3177w 0xb1221cb9w 0x26b814d3w
+def fxStLK2R : Pt1 := pt1 (fe 0x68a5a097w 0xb5aa5703w 0x0e0374d5w 0xc1baaeb5w 0x36bfa95cw 0xe50bce41w 0xf65249c8w 0x0239d3bdw) (fe 0x32a8a5b8w 0x7713ae7cw 0xcafea1f7w 0x57dd6174w 0x3b7db877w 0x8128c807w 0xfa5043eaw 0x2ef2a8fdw)
+def fxStLK2S : Fe := fe 0xed0bf96dw 0x34a817e5w 0x7bba74f5w 0xfd58ad7bw 0x01100114w 0xcd685c0cw 0xe77e3d97w 0x1518dd30w
+def fxStLK3R : Pt1 := pt1 (fe 0xa1b52978w 0xa1831a3ew 0x42279396w 0x71dff6b6w 0x06f3cd9bw 0x0c862599w 0x597b533fw 0x26985c72w) (fe 0xc0491156w 0xd6ca7a99w 0x54262a4ew 0x446f90b3w 0xb4a620caw 0x2693ff2ew 0x096dde6bw 0x21d7a72dw)
+def fxStLK3S : Fe := fe 0x2d38a822w 0xe9773047w 0x61d7bee4w 0x9d50b52fw 0x71d891a6w 0xb27336ecw 0x7364d6e0w 0x2a9f5c9bw
+def fxOpAK2R : Pt1 := pt1 (fe 0xe6c39ca2w 0x86eaa84bw 0x81cdd435w 0x0c84055ew 0xb81231eaw 0x49466cf4w 0xbb2a4e49w 0x0cc82ae3w) (fe 0xeaa23a91w 0x78fa280bw 0x52a8b651w 0x0db45458w 0x213c8e1fw 0xfc8135b1w 0x13b1218bw 0x26aa4e5bw)
+def fxOpAK2S : Fe := fe 0x5813319bw 0xae0fb4a3w 0xc62b7b69w 0x1043f1b8w 0xe015b9e6w 0xb8ff40b7w 0xd63ae56ew 0x1c164b9aw
+def fxOpAK3R : Pt1 := pt1 (fe 0x9be0a930w 0x5e81487bw 0x402f6b1cw 0x435d9d89w 0x250fdc76w 0x2741141dw 0x1bdb1e58w 0x04443834w) (fe 0xbeec87afw 0x17713ccdw 0xfde81df7w 0xeb9029daw 0xb4f295caw 0x4558c093w 0x7515de76w 0x0cbfbf52w)
+def fxOpAK3S : Fe := fe 0x6ad4b39fw 0x4de5bf0aw 0xe6ca31edw 0x3695781fw 0x8233cf44w 0x6e05976fw 0x4d0258a5w 0x1d5194d0w
+def fxOpAK4R : Pt1 := pt1 (fe 0x9634c1f6w 0xf939191bw 0x5026b2b3w 0x8588e3b0w 0x4be09a5dw 0xca4bd4bbw 0x86388b6dw 0x2506fa6bw) (fe 0x9886d6f8w 0x07832b9bw 0x7a35fe79w 0xa68bc93cw 0xd316e3dew 0x1f3c4756w 0xc848aea2w 0x21162478w)
+def fxOpAK4S : Fe := fe 0x76c21bcbw 0xd7628a25w 0x49812785w 0xe0ff11c1w 0x64388d36w 0xaec4a4b1w 0x9a140739w 0x131f4b3dw
+def fxOpEK2R : Pt1 := pt1 (fe 0x684e3ccdw 0x8daebf27w 0xa81cc037w 0x2bcbbb56w 0x116a49e7w 0x89a71cb0w 0xca53bb33w 0x2b38d6b6w) (fe 0x739090faw 0xa220bd5ew 0x21989308w 0x635a4aeaw 0x165636e6w 0xa13a379dw 0x4192747cw 0x0b63c55dw)
+def fxOpEK2S : Fe := fe 0xcdf5604aw 0x0a200c85w 0x1c45d6e9w 0x689613a8w 0x48aeff67w 0xf1fede60w 0x04aa0cbew 0x0fc34270w
+def fxOpEK3R : Pt1 := pt1 (fe 0x7bf92729w 0x467887aew 0x2cf8ca1cw 0x675b5a70w 0x35c71145w 0x0178cd55w 0x697a59b8w 0x16f0b40dw) (fe 0x8a120752w 0x16f785e0w 0x433ec6e0w 0x77e914aew 0x768ced83w 0xc23899f3w 0xf2671b56w 0x14f9fbe3w)
+def fxOpEK3S : Fe := fe 0x58bd4900w 0x7273bf3cw 0x00309de9w 0xc64bc763w 0x80dcf258w 0xbbf08658w 0xbbd6fa6bw 0x047e65f3w
+def fxOpEK4R : Pt1 := pt1 (fe 0xe2f5300ew 0x95d34132w 0x5290f75cw 0x4204026bw 0x1d38535cw 0x689f070cw 0x4380b4c7w 0x034c3f7bw) (fe 0x67081d4fw 0x8d2e5ea8w 0x3a6283d5w 0xe93e2c4dw 0x77965de7w 0x68c2bb4cw 0x1cbde014w 0x17c68ad8w)
+def fxOpEK4S : Fe := fe 0xd14c6855w 0x0f192822w 0x0564afacw 0x88f23b8dw 0xd8457d69w 0xf7797bf0w 0x923c2c08w 0x170ead84w
+def fxAmAK1R : Pt1 := pt1 (fe 0x482ffd7bw 0x8b30506dw 0xdfbc13e9w 0xaf82997fw 0x25d8df32w 0x5a4cddadw 0xc97b8c34w 0x27c41fe7w) (fe 0xbef937f5w 0xe62127ebw 0x56b284e2w 0x177f1a6dw 0x0d73d24bw 0x4258f119w 0x1396d466w 0x0389cac8w)
+def fxAmAK1S : Fe := fe 0x0139015dw 0xa5937d24w 0xb7823fe5w 0x59a6e4bcw 0x1d28362cw 0x3125faa4w 0x5c1d7613w 0x2bd25d06w
+def fxAmAK2R : Pt1 := pt1 (fe 0x6358504dw 0x3775cd35w 0xba0df86aw 0x5f6edfd6w 0xcc26ca0fw 0x29e27832w 0x32b94198w 0x1d480509w) (fe 0x1717a8few 0x9872950bw 0xdee0c568w 0x6f8408a8w 0x5e5b97a4w 0x5a8b6dcdw 0xc96930f3w 0x07f877c7w)
+def fxAmAK2S : Fe := fe 0xf2f0f1baw 0x2f306cb4w 0xba506352w 0xf555f372w 0x9d5f0f90w 0x49eaabdbw 0x2029072fw 0x2e2e1f16w
+def fxAmAK3R : Pt1 := pt1 (fe 0xff3c15a4w 0x544ecc03w 0x30dde3b9w 0xef7fe10dw 0xa224c58fw 0xe3122acbw 0x17e0a176w 0x148d56b9w) (fe 0x460ae0dfw 0x9635e74bw 0x86c6b309w 0x6515905bw 0x4d00497aw 0x54f8c6ecw 0xf05fdb90w 0x2771ed5aw)
+def fxAmAK3S : Fe := fe 0x083fea72w 0x8de35ecdw 0xbf46b8f4w 0xc63ae5b2w 0x349a4f3aw 0xce25294cw 0x554281d5w 0x2fc0d520w
+def fxAmAK4R : Pt1 := pt1 (fe 0xad7d112cw 0xf5b561e6w 0x96135ccfw 0xc655906fw 0x3fef9429w 0x8e776877w 0x0c79b11cw 0x1ccf3d8dw) (fe 0x57355289w 0xcf621ce4w 0xf80420d7w 0xc062447cw 0x14784dfbw 0x80def391w 0x79686cc5w 0x299420a0w)
+def fxAmAK4S : Fe := fe 0xfaa68516w 0x5becb867w 0x1ace1584w 0xbea9e6fcw 0xe553d60bw 0x5c3b381aw 0x9bfc84fdw 0x073a9bfbw
+-- The committee (S5, design section 4, USER rulings Q-S5-1 to Q-S5-11).
+-- A Hash is a value in Fr, not in Montgomery form, and hsOf n is the Hash
+-- of the Size n. A Party is a BN254 G1 key (S8a; before S8a a Size tag
+-- and a Size key, Q-S5-3 (a), Q-S5-1 (a)). Members is the list of
+-- the committee members and n is its length. t, n, f and the amend
+-- threshold ta are Size values (Q-S5-2 (a)). The compare and the test
+-- words give Sum Unit Unit as amLe: inr unit is "yes".
+family Hash := hash (hsTag : Fe)
+family Party := party (ptKey : Pt1)
+family Members := mbNil | mbCons (mbHead : Party) (mbTail : Members)
+def ptEq : Party -> Party -> Sum Unit Unit := fun (p : Party) (q : Party) => scPtEq (ptKey p) (ptKey q)
+def hsEq : Hash -> Hash -> Sum Unit Unit := fun (g : Hash) (h : Hash) => feEq (hsTag g) (hsTag h)
+def hsCanonical : Hash -> Sum Unit Unit := fun (h : Hash) => feLt (hsTag h) (modM frMod)
+def hsOf : Size -> Hash := fun (n : Size) => hash (feFromMont frMod (szToFe n))
+def mbLen : Members -> Size :=
+  fun (ms : Members) => elim (fun (k : Members) => Size) sz0 (fun (h : Party) (t : Members) (ih : Size) => szS ih) ms
+def mbHas : Party -> Members -> Sum Unit Unit :=
+  fun (p : Party) (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inl unit)
+    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sOr (ptEq p h) ih) ms
+def mbDistinct : Members -> Sum Unit Unit :=
+  fun (ms : Members) => elim (fun (k : Members) => Sum Unit Unit) (inr unit)
+    (fun (h : Party) (t : Members) (ih : Sum Unit Unit) => sAnd (sNot (mbHas h t)) ih) ms
+-- The laws G1 to G3 are proof fields (Q-S5-5 (c), Q-S5-10 (a)): each value
+-- of Committee and Params carries its proofs, so the laws hold for open
+-- inputs too. G1 (cmSafe): no party is in the members two times, and f < t.
+-- G2 (cmCensor): t + f <= n. G3 (prFork, on ta, Q-S5-6 (b)): n + f <
+-- ta + ta, that is 2ta - n > f. When the kernel cannot check a proof
+-- field, the checker gives the law code: REFUSE_SAFETY, REFUSE_CENSOR or
+-- REFUSE_FORK (Q-S5-9 (a)).
+def cmG1 : Members -> Size -> Size -> Sum Unit Unit :=
+  fun (ms : Members) (t : Size) (f : Size) => sAnd (mbDistinct ms) (szLt f t)
+def cmG2 : Members -> Size -> Size -> Sum Unit Unit :=
+  fun (ms : Members) (t : Size) (f : Size) => szLe (szAdd t f) (mbLen ms)
+family Committee := committee (cmMembers : Members) (cmT : Size) (cmF : Size) (cmSafe : Path (Sum Unit Unit) (cmG1 cmMembers cmT cmF) (inr unit)) (cmCensor : Path (Sum Unit Unit) (cmG2 cmMembers cmT cmF) (inr unit))
+def prG3 : Committee -> Size -> Sum Unit Unit :=
+  fun (c : Committee) (ta : Size) => szLt (szAdd (mbLen (cmMembers c)) (cmF c)) (szAdd ta ta)
+-- The slot and the heights (S6, Q-S6-6 (a), Q-S6-1 (b)): a deposit slot is
+-- a Size tag. There is no clock: a height is a log height, and a deadline
+-- is a height that a t-of-n certificate fixes. Params keeps the slot, the
+-- stamp end prStampEnd (the last height of a bid timestamp) and the
+-- release height prRelease. The proof field prOrder (Q-S6-9 (a)) says
+-- that the stamp end is before the release; when the kernel cannot check
+-- it, the checker gives REFUSE_DEADLINE. prOrder is after prFork, so a G3
+-- failure comes first.
+family Slot := slot (soTag : Size)
+family Height := height (htOf : Size)
+def htLe : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLe (htOf g) (htOf h)
+def htLt : Height -> Height -> Sum Unit Unit := fun (g : Height) (h : Height) => szLt (htOf g) (htOf h)
+family Params := params (prRule : Rule) (prReserve : Amount) (prCommittee : Committee) (prAmendT : Size) (prSlot : Slot) (prStampEnd : Height) (prRelease : Height) (prFork : Path (Sum Unit Unit) (prG3 prCommittee prAmendT) (inr unit)) (prOrder : Path (Sum Unit Unit) (htLt prStampEnd prRelease) (inr unit))
+-- The certificate (Q-S5-4 (a), S8a): a list of Schnorr signatures, each a
+-- signer and a signature (R, s). checkCert c h cs counts each member of c
+-- one time when cs has an entry with that signer that schnorrCheck accepts
+-- on the key of the signer and the message h, and accepts (inr unit) when
+-- the count is at least t. Two entries of one signer count one time.
+-- ctHas runs schnorrCheck only on an entry of the signer p.
+family Certificate := ctNil | ctCons (ctSigner : Party) (ctR : Pt1) (ctS : Fe) (ctRest : Certificate)
+def ctHas : Party -> Hash -> Certificate -> Sum Unit Unit :=
+  fun (p : Party) (h : Hash) (cs : Certificate) => elim (fun (k : Certificate) => Sum Unit Unit) (inl unit)
+    (fun (s : Party) (r : Pt1) (z : Fe) (t : Certificate) (ih : Sum Unit Unit) => elim (fun (b : Sum Unit Unit) => Sum Unit Unit) (fun (u : Unit) => ih) (fun (u : Unit) => sOr (schnorrCheck kcRcs (ptKey p) r z (hsTag h)) ih) (ptEq p s)) cs
+def ctCount : Members -> Hash -> Certificate -> Size :=
+  fun (ms : Members) (h : Hash) (cs : Certificate) => elim (fun (k : Members) => Size) sz0
+    (fun (q : Party) (t : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (ctHas q h cs)) ms
+def checkCert : Committee -> Hash -> Certificate -> Sum Unit Unit :=
+  fun (c : Committee) (h : Hash) (cs : Certificate) => szLe (cmT c) (ctCount (cmMembers c) h cs)
+-- The outcome of the parameters (Q-S4-4 (a)).
+def outcomeOf : Params -> Bids -> Outcome := fun (p : Params) (bs : Bids) => outcome (prRule p) (prReserve p) bs
+-- The sealed bid (S6, design section 5, USER rulings Q-S6-1 to Q-S6-9).
+-- The auction name is a Size tag (Q-S6-6 (a)). Root, Handle and
+-- Commitment wrap a Hash; a Deposit is the owner and the secret hash, with
+-- no amount. The compare words give Sum Unit Unit: inr unit is "yes".
+family AucID := aucId (auTag : Size)
+family Root := root (rtHash : Hash)
+family Handle := handle (hdHash : Hash)
+family Commitment := commitment (coHash : Hash)
+family Deposit := deposit (dpOwner : Size) (dpSecret : Hash)
+def auEq : AucID -> AucID -> Sum Unit Unit := fun (a : AucID) (b : AucID) => szEq (auTag a) (auTag b)
+def rtEq : Root -> Root -> Sum Unit Unit := fun (a : Root) (b : Root) => hsEq (rtHash a) (rtHash b)
+def hdEq : Handle -> Handle -> Sum Unit Unit := fun (a : Handle) (b : Handle) => hsEq (hdHash a) (hdHash b)
+def coEq : Commitment -> Commitment -> Sum Unit Unit := fun (a : Commitment) (b : Commitment) => hsEq (coHash a) (coHash b)
+-- The eligibility proof is an ideal record of the statement (root, handle,
+-- commitment) (Q-S6-5 (a)): elgVrf says yes when the three match. At S8b
+-- the match becomes the Noir verifier.
+family EligibilityProof := elgProof (epRoot : Root) (epHandle : Handle) (epCommit : Commitment)
+def elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Sum Unit Unit :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) =>
+    sAnd (rtEq r (epRoot e)) (sAnd (hdEq h (epHandle e)) (coEq c (epCommit e)))
+-- The sealed value (P1, Q-S6-3 (a)) is a cell monad. A guest program makes
+-- a sealed value with seal, but an elim, a fold or a projection of Sealed
+-- in a guest program def gives REFUSE_PEEK. Only the domain word release
+-- reads sealOf. The FHE ciphertext and the MPC shares are Sealed Amount in
+-- the clear denotation until S13 and S14.
+sealed family Sealed (A : Type 0) := seal (sealOf : A)
+family SealedBid := sealedBid (sbHandle : Handle) (sbCommit : Commitment) (sbProof : EligibilityProof) (sbBid : Sealed Amount)
+family SealedBids := sbNil | sbCons (sbsHead : SealedBid) (sbsTail : SealedBids)
+-- The verdicts (Q-S6-7 (a)). Handles is the set of the slashed handles; at
+-- S7 the Log gives it.
+family Reason := badCert | badProof | late | early | slashed | notAccepted | wrongHeight | malformed
+family Verdict := valid | invalid (vdWhy : Reason)
+family Handles := hlNil | hlCons (hlHead : Handle) (hlTail : Handles)
+def hlHas : Handle -> Handles -> Sum Unit Unit :=
+  fun (h : Handle) (hs : Handles) => elim (fun (k : Handles) => Sum Unit Unit) (inl unit)
+    (fun (g : Handle) (t : Handles) (ih : Sum Unit Unit) => sOr (hdEq h g) ih) hs
+-- vdCheck s w v is v when s says yes, else invalid w.
+def vdCheck : Sum Unit Unit -> Reason -> Verdict -> Verdict :=
+  fun (s : Sum Unit Unit) (w : Reason) (v : Verdict) => elim (fun (k : Sum Unit Unit) => Verdict) (fun (u : Unit) => invalid w) (fun (u : Unit) => v) s
+-- The message words (Q-S6-8 (a), S8a): hsMsg of a kind tag and two words.
+-- The kind tag is 0 for a stamp, 1 for an opening and 2 for an amendment
+-- (amendMsg), so two messages of different kinds are not equal. Each word
+-- is in Montgomery form; the Hash is canonical.
+def stampMsg : Commitment -> Height -> Hash :=
+  fun (c : Commitment) (h : Height) => hash (hsMsg (szToFe sz0) (feToMont frMod (hsTag (coHash c))) (szToFe (htOf h)))
+def openMsg : AucID -> Height -> Hash :=
+  fun (a : AucID) (h : Height) => hash (hsMsg (szToFe (szS sz0)) (szToFe (auTag a)) (szToFe (htOf h)))
+-- admit p sl r b h cs (Q-S6-7 (a)) checks the bid b with the timestamp
+-- certificate cs at the height h, in this order: invalid late when h is
+-- after the stamp end, invalid badCert when cs does not certify the stamp
+-- message of b at h or the commitment tag is not canonical Fr, invalid
+-- slashed when the handle of b is in sl,
+-- invalid badProof when the eligibility proof does not check at the root
+-- r, else valid.
+def admit : Params -> Handles -> Root -> SealedBid -> Height -> Certificate -> Verdict :=
+  fun (p : Params) (sl : Handles) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) =>
+    vdCheck (htLe h (prStampEnd p)) late
+      (vdCheck (sAnd (hsCanonical (coHash (sbCommit b))) (checkCert (prCommittee p) (stampMsg (sbCommit b) h) cs)) badCert
+        (vdCheck (sNot (hlHas (sbHandle b) sl)) slashed
+          (vdCheck (elgVrf r (sbHandle b) (sbCommit b) (sbProof b)) badProof valid)))
+-- slash r h c e d f (Q-S6-4 (a)) checks two bids of the handle h: invalid
+-- notAccepted when the commitments are equal, invalid badProof when one of
+-- the two proofs does not check at the root r, else valid (slash h). The
+-- log entry and replay are S7.
+def slash : Root -> Handle -> Commitment -> EligibilityProof -> Commitment -> EligibilityProof -> Verdict :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (d : Commitment) (f : EligibilityProof) =>
+    vdCheck (sNot (coEq c d)) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h d f)) badProof valid)
+-- P3 (Q-S6-4 (a)): slash on two equal commitments is never valid.
+def szEqRefl : (x : Size) -> Path (Sum Unit Unit) (szEq x x) (inr unit) :=
+  fun (x : Size) => elim (fun (a : Size) => Path (Sum Unit Unit) (szEq a a) (inr unit)) refl
+    (fun (a : Size) (ih : Path (Sum Unit Unit) (szEq a a) (inr unit)) => ih) x
+-- feEqRefl a: feEq a a is inr unit also for an open a. The kernel reduces
+-- wEq x y to inr unit when x and y have the same form (Q-S8a-8 (a)).
+def feEqRefl : (a : Fe) -> Path (Sum Unit Unit) (feEq a a) (inr unit) :=
+  fun (a : Fe) => refl
+def p3Slash : (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdict (slash r h c e c f) (invalid notAccepted) :=
+  fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
+    cong (fun (s : Sum Unit Unit) => vdCheck (sNot s) notAccepted (vdCheck (sAnd (elgVrf r h c e) (elgVrf r h c f)) badProof valid)) (feEqRefl (hsTag (coHash c)))
+-- The opening (P2, Q-S6-2 (a)): the proof field opOk says that t members
+-- of the committee certify the open message of the auction at the release
+-- height. When the kernel cannot check opOk, the checker gives
+-- REFUSE_PEEK. release opens the whole list in one call.
+family Opening := opening (opAuc : AucID) (opParams : Params) (opCert : Certificate) (opOk : Path (Sum Unit Unit) (checkCert (prCommittee opParams) (openMsg opAuc (prRelease opParams)) opCert) (inr unit))
+def release : Opening -> SealedBids -> Bids :=
+  fun (o : Opening) (bs : SealedBids) => elim (fun (k : SealedBids) => Bids) bdNil
+    (fun (b : SealedBid) (t : SealedBids) (ih : Bids) => bdCons (sealOf (sbBid b)) ih) bs
+-- S7: the log (design section 6, USER rulings Q-S7-1 to Q-S7-10).
+-- A ballot is the vote of a party on a topic hash; blYes inr unit is "yes".
+-- authorize p t bs counts each committee member one time when bs has a yes
+-- ballot of that member on t, and accepts (inr unit) when the count is at
+-- least the amend threshold ta (Q-S7-2 (a)). G1 makes the members distinct.
+family Ballot := ballot (blVoter : Party) (blTopic : Hash) (blYes : Sum Unit Unit)
+family Ballots := blNil | blCons (blHead : Ballot) (blTail : Ballots)
+def blHas : Party -> Hash -> Ballots -> Sum Unit Unit :=
+  fun (p : Party) (t : Hash) (bs : Ballots) => elim (fun (k : Ballots) => Sum Unit Unit) (inl unit)
+    (fun (b : Ballot) (r : Ballots) (ih : Sum Unit Unit) => sOr (sAnd (ptEq (blVoter b) p) (sAnd (hsEq (blTopic b) t) (blYes b))) ih) bs
+def blCount : Members -> Hash -> Ballots -> Size :=
+  fun (ms : Members) (t : Hash) (bs : Ballots) => elim (fun (k : Members) => Size) sz0
+    (fun (q : Party) (r : Members) (ih : Size) => elim (fun (s : Sum Unit Unit) => Size) (fun (u : Unit) => ih) (fun (u : Unit) => szS ih) (blHas q t bs)) ms
+def authorize : Params -> Hash -> Ballots -> Sum Unit Unit :=
+  fun (p : Params) (t : Hash) (bs : Ballots) => szLe (prAmendT p) (blCount (cmMembers (prCommittee p)) t bs)
+-- An amendment moves the Params to amTo; the ballots are in the
+-- amendment. amendMsg has the kind tag 2 (Q-S7-2 (a)). amendCheck p a cs gives
+-- invalid notAccepted when the ballots do not authorize a, invalid badCert
+-- when cs does not certify the amend message, else valid.
+family Amendment := amendment (amTag : Size) (amTo : Params) (amBallots : Ballots)
+def amendMsg : Amendment -> Hash := fun (a : Amendment) => hash (hsMsg (szToFe (szS (szS sz0))) (szToFe (amTag a)) feZero)
+def amendCheck : Params -> Amendment -> Certificate -> Verdict :=
+  fun (p : Params) (a : Amendment) (cs : Certificate) =>
+    vdCheck (authorize p (amendMsg a) (amBallots a)) notAccepted
+      (vdCheck (checkCert (prCommittee p) (amendMsg a) cs) badCert valid)
+-- A log entry (Q-S7-1 (a)) is an amendment from eaFrom to eaTo, a slash or
+-- a bid claim. The proof field eaOk says that the EARLIER Params accept the
+-- amendment (G5): Params cannot authorize themselves. When the kernel
+-- cannot check eaOk, the checker gives REFUSE_FIXPOINT. A slash and a
+-- claim keep the Params. A release is not a log entry (OI-35).
+family Entry : Params -> Params -> Type 0 := enAmend (eaFrom : Params) (eaTo : Params) (eaTag : Size) (eaBallots : Ballots) (eaCert : Certificate) (eaOk : Path Verdict (amendCheck eaFrom (amendment eaTag eaTo eaBallots) eaCert) valid) : Entry eaFrom eaTo
+  | enSlash (esAt : Params) (esRoot : Root) (esHandle : Handle) (esC : Commitment) (esE : EligibilityProof) (esD : Commitment) (esF : EligibilityProof) : Entry esAt esAt
+  | enAdmit (edAt : Params) (edRoot : Root) (edBid : SealedBid) (edHeight : Height) (edCert : Certificate) : Entry edAt edAt
+-- The log (CM, Q-S7-1 (a)): the free category on the entries, nil, cons
+-- and append. G4 (Q-S7-5 (a)): nil is a unit and append is associative
+-- (paths by induction). The log has no bound (OI-36).
+family Log : Params -> Params -> Type 0 := lgNil (lgNilOf : Params) : Log lgNilOf lgNilOf
+  | lgCons (lgFrom : Params) (lgMid : Params) (lgTo : Params) (lgHead : Entry lgFrom lgMid) (lgTail : Log lgMid lgTo) : Log lgFrom lgTo
+def append : (P : Params) -> (Q : Params) -> (R : Params) -> Log P Q -> Log Q R -> Log P R :=
+  fun (P : Params) (Q : Params) (R : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Log q R -> Log p R)
+    (fun (n : Params) => fun (m : Log n R) => m)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Log z R -> Log y R) => fun (m : Log z R) => lgCons x y R hd (ih m)) l
+def appendNilL : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P P Q (lgNil P) l) l :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => fun (i : I) => l
+def appendNilR : (P : Params) -> (Q : Params) -> (l : Log P Q) -> Path (Log P Q) (append P Q Q l (lgNil Q)) l :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Path (Log p q) (append p q q k (lgNil q)) k)
+    (fun (n : Params) => fun (i : I) => lgNil n)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Path (Log y z) (append y z z tl (lgNil z)) tl) => fun (i : I) => lgCons x y z hd (ih @ i)) l
+def appendAssoc : (P : Params) -> (Q : Params) -> (R : Params) -> (S : Params) -> (a : Log P Q) -> (b : Log Q R) -> (c : Log R S) -> Path (Log P S) (append P Q S a (append Q R S b c)) (append P R S (append P Q R a b) c) :=
+  fun (P : Params) (Q : Params) (R : Params) (S : Params) (a : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => (b : Log q R) -> (c : Log R S) -> Path (Log p S) (append p q S k (append q R S b c)) (append p R S (append p q R k b) c))
+    (fun (n : Params) => fun (b : Log n R) (c : Log R S) => fun (i : I) => append n R S b c)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : (b : Log z R) -> (c : Log R S) -> Path (Log y S) (append y z S tl (append z R S b c)) (append y R S (append y z R tl b) c)) => fun (b : Log z R) (c : Log R S) => fun (i : I) => lgCons x y S hd ((ih b c) @ i)) a
+-- paramsAt (G5, Q-S7-3 (a)): the Params at a log height. Height 0 is the
+-- first Params, height h + 1 is the Params of the tail at h, and a height
+-- after the end is the last Params. The step reads h with szIsZ and szDec
+-- (one ih call for each step). The machine (CC) is the stream of the
+-- Params at the heights 0, 1, 2 and so on.
+def paramsAtSize : (P : Params) -> (Q : Params) -> Log P Q -> Size -> Params :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Size -> Params)
+    (fun (n : Params) => fun (h : Size) => n)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Size -> Params) => fun (h : Size) =>
+      elim (fun (s : Sum Unit Unit) => Params) (fun (u : Unit) => ih (szDec h)) (fun (u : Unit) => x) (szIsZ h)) l
+def paramsAt : (P : Params) -> (Q : Params) -> Log P Q -> Height -> Params :=
+  fun (P : Params) (Q : Params) (l : Log P Q) (h : Height) => paramsAtSize P Q l (htOf h)
+def Machine : Type 0 := Stream Params
+def machineOf : (P : Params) -> (Q : Params) -> Log P Q -> Machine :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => sCorec Params Size (paramsAtSize P Q l) (fun (h : Size) => szS h) sz0
+-- replay (Q-S7-4 (a)): the verdict of each entry from left to right. The
+-- slashed handles go along the log: a valid slash entry adds its handle,
+-- and admit reads the handles of the earlier entries (OI-29). An amend
+-- entry is valid, because its proof field eaOk holds.
+family Verdicts := vdNil | vdCons (vdHead : Verdict) (vdTail : Verdicts)
+def entryVerdict : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Verdict :=
+  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Verdict)
+    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => valid)
+    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => slash r h c e1 d f1)
+    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => admit p sl r b h cs) e
+def entrySlashed : (a : Params) -> (b : Params) -> Entry a b -> Handles -> Handles :=
+  fun (a : Params) (b : Params) (e : Entry a b) => elim (fun (x : Params) (y : Params) (k : Entry x y) => Handles -> Handles)
+    (fun (f : Params) (t : Params) (g : Size) (bs : Ballots) (cs : Certificate) (ok : Path Verdict (amendCheck f (amendment g t bs) cs) valid) => fun (sl : Handles) => sl)
+    (fun (p : Params) (r : Root) (h : Handle) (c : Commitment) (e1 : EligibilityProof) (d : Commitment) (f1 : EligibilityProof) => fun (sl : Handles) => elim (fun (v : Verdict) => Handles) (hlCons h sl) (fun (w : Reason) => sl) (slash r h c e1 d f1))
+    (fun (p : Params) (r : Root) (b : SealedBid) (h : Height) (cs : Certificate) => fun (sl : Handles) => sl) e
+def replayFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Verdicts :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Verdicts)
+    (fun (n : Params) => fun (sl : Handles) => vdNil)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Verdicts) => fun (sl : Handles) => vdCons (entryVerdict x y hd sl) (ih (entrySlashed x y hd sl))) l
+def replay : (P : Params) -> (Q : Params) -> Log P Q -> Verdicts :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => replayFrom P Q l hlNil
+def slashedFrom : (P : Params) -> (Q : Params) -> Log P Q -> Handles -> Handles :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => elim (fun (p : Params) (q : Params) (k : Log p q) => Handles -> Handles)
+    (fun (n : Params) => fun (sl : Handles) => sl)
+    (fun (x : Params) (y : Params) (z : Params) (hd : Entry x y) (tl : Log y z) (ih : Handles -> Handles) => fun (sl : Handles) => ih (entrySlashed x y hd sl)) l
+def slashedOf : (P : Params) -> (Q : Params) -> Log P Q -> Handles :=
+  fun (P : Params) (Q : Params) (l : Log P Q) => slashedFrom P Q l hlNil
+-- P3 on the log (Q-S7-4 (a)): a slash entry with two equal commitments is
+-- never valid.
+def p3Replay : (P : Params) -> (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdicts (replay P P (lgCons P P P (enSlash P r h c e c f) (lgNil P))) (vdCons (invalid notAccepted) vdNil) :=
+  fun (P : Params) (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
+    cong (fun (v : Verdict) => vdCons v vdNil) (p3Slash r h c e f)

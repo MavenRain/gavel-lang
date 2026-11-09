@@ -14,6 +14,8 @@
 #include <string.h>
 
 #include "crypto/bn254.h"
+#include "crypto/keccak.h"
+#include "crypto/poseidon.h"
 
 /* The modulus less one and less two, the most significant digit first.
    Source: ratify-lang test/cryptotool.c ORDER_LESS_ONE and PRIME_LESS_TWO.
@@ -323,19 +325,756 @@ static void field_rows(const Field *f, const char *less_one, const char *less_tw
   }
 }
 
+/* The curve rows (S8a): ptDbl, ptMadd and ptMul of the domain file on BN254
+   G1 against src/crypto/bn254.c (ec0_jac_double, ec0_jac_add_affine,
+   ec0_mul). A row gives the inputs and then the affine value of the C
+   oracle, in canonical form, each coordinate as 8 Words, least significant
+   first. A Jacobian input is (x z^2, y z^3, z) for a point (x, y) and a z
+   from the generator. */
+
+/* A point k G for a k of 32 bytes from the generator, G = (1, 2). */
+static void point_random(G1 *out, Rng *rng) {
+  unsigned char be[32];
+  U256 k;
+  G1 g;
+  size_t i;
+  for (i = 0u; i < 32u; i++)
+    be[i] = (unsigned char)next32(rng);
+  u256_from_be(&k, be);
+  fe_from_u64(&g.x, 1u);
+  fe_from_u64(&g.y, 2u);
+  ec0_mul(out, &g, &k, &BN254_FP);
+}
+
+/* The Jacobian form (x z^2, y z^3, z) of P. */
+static void jac_of(EcJac *out, const G1 *p, const Fe *z) {
+  Fe zz;
+  fe_mul(&zz, z, z, &BN254_FP);
+  fe_mul(&out->x, &p->x, &zz, &BN254_FP);
+  fe_mul(&zz, &zz, z, &BN254_FP);
+  fe_mul(&out->y, &p->y, &zz, &BN254_FP);
+  out->z = *z;
+}
+
+static void put_jac(const EcJac *a) {
+  put_fe(&a->x);
+  put_fe(&a->y);
+  put_fe(&a->z);
+}
+
+static void put_g1(const G1 *p) {
+  put_fe(&p->x);
+  put_fe(&p->y);
+}
+
+static int same_g1(const G1 *a, const G1 *b) {
+  return same(&a->x, &b->x) && same(&a->y, &b->y);
+}
+
+/* The row of ptDbl on A. BAD counts the rows where the affine double
+   (ec0_double) gives a different point. */
+static void dbl_row(const EcJac *a, unsigned *bad) {
+  EcJac d;
+  G1 out;
+  G1 pa;
+  G1 want;
+  ec0_jac_double(&d, a, &BN254_FP);
+  ec0_jac_affine(&out, &d, &BN254_FP);
+  ec0_jac_affine(&pa, a, &BN254_FP);
+  ec0_double(&want, &pa, &BN254_FP);
+  *bad += (unsigned)!same_g1(&out, &want);
+  printf("test/crypto/crypto curveDbl");
+  put_jac(a);
+  put_g1(&out);
+  printf(" => 1\n");
+}
+
+/* The row of ptMadd on A and B. BAD counts the rows where the affine add
+   (ec0_add) gives a different point. */
+static void madd_row(const EcJac *a, const G1 *b, unsigned *bad) {
+  EcJac d;
+  G1 out;
+  G1 pa;
+  G1 want;
+  ec0_jac_add_affine(&d, a, b, &BN254_FP);
+  ec0_jac_affine(&out, &d, &BN254_FP);
+  ec0_jac_affine(&pa, a, &BN254_FP);
+  ec0_add(&want, &pa, b, &BN254_FP);
+  *bad += (unsigned)!same_g1(&out, &want);
+  printf("test/crypto/crypto curveMadd");
+  put_jac(a);
+  put_g1(b);
+  put_g1(&out);
+  printf(" => 1\n");
+}
+
+/* The row of ptMul on the scalar N and the point P. BAD counts a 0 P that
+   is not (0, 0) and a 1 P that is not P. */
+static void mul_row(const G1 *p, uint64_t n, unsigned *bad) {
+  U256 k;
+  G1 out;
+  G1 inf;
+  unsigned i;
+  memset(&inf, 0, sizeof inf);
+  u256_from_u64(&k, n);
+  ec0_mul(&out, p, &k, &BN254_FP);
+  *bad += (unsigned)(n == 0u && !same_g1(&out, &inf));
+  *bad += (unsigned)(n == 1u && !same_g1(&out, p));
+  printf("test/crypto/crypto curveMul");
+  put_word((uint32_t)n);
+  put_word((uint32_t)(n >> 32));
+  for (i = 2u; i < BN_LIMBS; i++)
+    put_word(0u);
+  put_g1(p);
+  put_g1(&out);
+  printf(" => 1\n");
+}
+
+/* 3 double rows (2 from the generator, Z = 0), 6 add rows (2 from the
+   generator, b at infinity, a at infinity, a = b, a = -b) and 4 multiply
+   rows (0, 1, a 16-bit and a 32-bit scalar). */
+static void curve_rows(Rng *rng, unsigned *bad) {
+  G1 p;
+  G1 q;
+  G1 inf;
+  G1 neg;
+  Fe z;
+  EcJac a;
+  EcJac zero;
+  int k;
+  memset(&inf, 0, sizeof inf);
+  memset(&zero, 0, sizeof zero);
+  for (k = 0; k < 2; k++) {
+    point_random(&p, rng);
+    fe_random(&z, rng, &BN254_FP);
+    jac_of(&a, &p, &z);
+    dbl_row(&a, bad);
+  }
+  dbl_row(&zero, bad);
+  for (k = 0; k < 2; k++) {
+    point_random(&p, rng);
+    point_random(&q, rng);
+    fe_random(&z, rng, &BN254_FP);
+    jac_of(&a, &p, &z);
+    madd_row(&a, &q, bad);
+  }
+  madd_row(&a, &inf, bad);
+  madd_row(&zero, &q, bad);
+  madd_row(&a, &p, bad);
+  neg.x = p.x;
+  fe_neg(&neg.y, &p.y, &BN254_FP);
+  madd_row(&a, &neg, bad);
+  point_random(&p, rng);
+  mul_row(&p, 0u, bad);
+  mul_row(&p, 1u, bad);
+  mul_row(&p, (uint64_t)((next32(rng) & 0xffffu) | 0x8000u), bad);
+  mul_row(&p, (uint64_t)(next32(rng) | 0x80000000u), bad);
+}
+
+/* The feMulC rows (S8a): the C builtin feMulC against the guest feMul on the
+   same A and B. A row gives 1 when the two products are equal, so the C
+   oracle is not used. Each limb of TOP is 0xffffffff: limb 7 of a round
+   wraps (feReduce). */
+static void mulc_row(const Field *f, const Fe *a, const Fe *b) {
+  printf("test/crypto/crypto %sMulC", f->prefix);
+  put_fe(a);
+  put_fe(b);
+  printf(" => 1\n");
+}
+
+static void mulc_rows(const Field *f, Rng *rng) {
+  Fe zero;
+  Fe one;
+  Fe m1;
+  Fe top;
+  Fe a;
+  Fe b;
+  size_t i;
+  memset(&zero, 0, sizeof zero);
+  memset(&one, 0, sizeof one);
+  memset(&top, 0, sizeof top);
+  one.w[0] = 1u;
+  for (i = 0u; i < BN_LIMBS; i++)
+    top.w[i] = 0xffffffffu;
+  fe_sub(&m1, &zero, &one, f->mod);
+  fe_random(&a, rng, f->mod);
+  fe_random(&b, rng, f->mod);
+  mulc_row(f, &a, &b);
+  fe_random(&a, rng, f->mod);
+  mulc_row(f, &a, &a);
+  mulc_row(f, &zero, &b);
+  mulc_row(f, &m1, &m1);
+  mulc_row(f, &top, &top);
+  mulc_row(f, &top, &m1);
+}
+
+/* The keccak rows (S8a). A kcOne row gives one padded block of 136 bytes as
+   34 Words (the 17 lanes, each the low Word and then the high Word, the bytes
+   little-endian) and the digest as 8 Words, least significant first (the
+   digest is a big-endian value). A kc160 row gives R.x, R.y, P.x, P.y and m
+   (8 Words each) and e = keccak256 of the 160 big-endian bytes, mod r
+   (scalar_reduce). The digests come from src/crypto/keccak.c. */
+#define KC_EMPTY "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+#define KC_ABC "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
+
+static uint32_t le_word(const unsigned char *b) {
+  return (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+}
+
+static uint32_t be_word(const unsigned char *b) {
+  return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | (uint32_t)b[3];
+}
+
+/* Print 32 big-endian bytes as 8 Words, least significant first. */
+static void put_be(const unsigned char *b) {
+  size_t i;
+  for (i = 0u; i < 8u; i++)
+    put_word(be_word(b + 28u - 4u * i));
+}
+
+static int digest_is(const unsigned char *d, const char *hex) {
+  char s[65];
+  size_t i;
+  for (i = 0u; i < 32u; i++)
+    snprintf(s + 2u * i, 3u, "%02x", (unsigned)d[i]);
+  return strcmp(s, hex) == 0;
+}
+
+/* The row of the message MSG of N bytes, N less than 136. WANT is the known
+   digest, or NULL. */
+static void kc_one_row(const unsigned char *msg, size_t n, const char *want, unsigned *bad) {
+  unsigned char blk[136];
+  unsigned char d[32];
+  size_t i;
+  memset(blk, 0, sizeof blk);
+  memcpy(blk, msg, n);
+  blk[n] = (unsigned char)(blk[n] ^ 0x01u);
+  blk[135] = (unsigned char)(blk[135] ^ 0x80u);
+  keccak256(msg, n, d);
+  if (want != NULL && !digest_is(d, want))
+    (*bad)++;
+  printf("test/crypto/crypto kcOne");
+  for (i = 0u; i < 136u; i += 4u)
+    put_word(le_word(blk + i));
+  put_be(d);
+  printf(" => 1\n");
+}
+
+static void kc160_row(const unsigned char *in) {
+  unsigned char d[32];
+  unsigned char eb[32];
+  U256 x;
+  U256 e;
+  size_t i;
+  keccak256(in, 160u, d);
+  u256_from_be(&x, d);
+  scalar_reduce(&e, &x);
+  u256_to_be(eb, &e);
+  printf("test/crypto/crypto kc160");
+  for (i = 0u; i < 5u; i++)
+    put_be(in + 32u * i);
+  put_be(eb);
+  printf(" => 1\n");
+}
+
+/* The known answers "" and "abc", 55 and 135 bytes (the pad bytes 0x01 and
+   0x80 then share byte 135), then 4 inputs of 160 bytes. */
+static void keccak_rows(Rng *rng, unsigned *bad) {
+  unsigned char msg[135];
+  unsigned char in[160];
+  size_t i;
+  for (i = 0u; i < sizeof msg; i++)
+    msg[i] = (unsigned char)(i * 7u + 1u);
+  kc_one_row(msg, 0u, KC_EMPTY, bad);
+  kc_one_row((const unsigned char *)"abc", 3u, KC_ABC, bad);
+  kc_one_row(msg, 55u, NULL, bad);
+  kc_one_row(msg, 135u, NULL, bad);
+  memset(in, 0, sizeof in);
+  kc160_row(in);
+  for (i = 0u; i < sizeof in; i++)
+    in[i] = (unsigned char)next32(rng);
+  kc160_row(in);
+  for (i = 0u; i < sizeof in; i++)
+    in[i] = (unsigned char)next32(rng);
+  kc160_row(in);
+  memset(in, 0xff, sizeof in);
+  kc160_row(in);
+}
+
+/* The Poseidon data and rows (S8a). `cryptotool poseidon` prints the 195
+   round constants ("rc I") and the 9 MDS values ("mds I J") of
+   poseidon_params on BN254_FR in Montgomery form (x R mod r, R = 2^256), each
+   as 8 Words, least significant first. The data psRcsFr and psMdsFr of
+   domain/domain.lang is this print. A psPerm row gives 3 values and the 3
+   values of poseidon_perm. A psHash row gives x, y and element 0 of the
+   permutation of (0, x, y). The values of the rows are not in Montgomery
+   form. */
+#define PS_KAT "115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a"
+
+/* OUT = A R mod r, with R mod r from 256 doublings of 1. */
+static void ps_mont(Fe *out, const Fe *a) {
+  Fe rm;
+  Fe t;
+  size_t i;
+  memset(&rm, 0, sizeof rm);
+  rm.w[0] = 1u;
+  for (i = 0u; i < 256u; i++) {
+    t = rm;
+    fe_add(&rm, &t, &t, &BN254_FR);
+  }
+  fe_mul(out, a, &rm, &BN254_FR);
+}
+
+static int poseidon_data(void) {
+  PoseidonParams p;
+  Fe m;
+  size_t i;
+  size_t j;
+  poseidon_params(&p, &BN254_FR);
+  for (i = 0u; i < POSEIDON_CONSTANTS; i++) {
+    ps_mont(&m, &p.rc[i]);
+    printf("rc %u", (unsigned)i);
+    put_fe(&m);
+    printf("\n");
+  }
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    for (j = 0u; j < POSEIDON_WIDTH; j++) {
+      ps_mont(&m, &p.mds[i][j]);
+      printf("mds %u %u", (unsigned)i, (unsigned)j);
+      put_fe(&m);
+      printf("\n");
+    }
+  return 0;
+}
+
+/* 1 when A is the big-endian hex value HEX (64 digits). */
+static int fe_is_hex(const Fe *a, const char *hex) {
+  char s[65];
+  size_t i;
+  for (i = 0u; i < BN_LIMBS; i++)
+    snprintf(s + 8u * i, 9u, "%08x", (unsigned)a->w[BN_LIMBS - 1u - i]);
+  return strcmp(s, hex) == 0;
+}
+
+static void ps_perm_row(const PoseidonParams *p, const Fe in[POSEIDON_WIDTH], Fe out[POSEIDON_WIDTH]) {
+  size_t i;
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    out[i] = in[i];
+  poseidon_perm(out, p);
+  printf("test/crypto/crypto psPerm");
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    put_fe(&in[i]);
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    put_fe(&out[i]);
+  printf(" => 1\n");
+}
+
+static void ps_hash_row(const PoseidonParams *p, const Fe *x, const Fe *y, Fe *h) {
+  Fe s[POSEIDON_WIDTH];
+  memset(&s[0], 0, sizeof s[0]);
+  s[1] = *x;
+  s[2] = *y;
+  poseidon_perm(s, p);
+  *h = s[0];
+  printf("test/crypto/crypto psHash");
+  put_fe(x);
+  put_fe(y);
+  put_fe(h);
+  printf(" => 1\n");
+}
+
+/* The known answer perm(0, 1, 2) (element 0 = circomlib poseidon(1, 2)) as a
+   psPerm and a psHash row, then psPerm on random values, on r - 1 and on 0,
+   then psHash on random values. */
+static void poseidon_rows(Rng *rng, unsigned *bad) {
+  PoseidonParams p;
+  Fe in[POSEIDON_WIDTH];
+  Fe out[POSEIDON_WIDTH];
+  Fe zero;
+  Fe one;
+  Fe h;
+  size_t i;
+  poseidon_params(&p, &BN254_FR);
+  memset(in, 0, sizeof in);
+  in[1].w[0] = 1u;
+  in[2].w[0] = 2u;
+  ps_perm_row(&p, in, out);
+  if (!fe_is_hex(&out[0], PS_KAT)) {
+    fputs("cryptotool: poseidon perm(0, 1, 2) is not the known answer\n", stderr);
+    (*bad)++;
+  }
+  ps_hash_row(&p, &in[1], &in[2], &h);
+  if (!fe_is_hex(&h, PS_KAT)) {
+    fputs("cryptotool: poseidon hash(1, 2) is not the known answer\n", stderr);
+    (*bad)++;
+  }
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    fe_random(&in[i], rng, &BN254_FR);
+  ps_perm_row(&p, in, out);
+  memset(&zero, 0, sizeof zero);
+  memset(&one, 0, sizeof one);
+  one.w[0] = 1u;
+  for (i = 0u; i < POSEIDON_WIDTH; i++)
+    fe_sub(&in[i], &zero, &one, &BN254_FR);
+  ps_perm_row(&p, in, out);
+  memset(in, 0, sizeof in);
+  ps_perm_row(&p, in, out);
+  fe_random(&in[1], rng, &BN254_FR);
+  fe_random(&in[2], rng, &BN254_FR);
+  ps_hash_row(&p, &in[1], &in[2], &h);
+}
+
+/* The Schnorr rows (S8a), as src/crypto/schnorr.c of ratify-lang: the key
+   P = x G for a secret x, the nonce k = keccak256(x || m) mod r, R = k G,
+   e = keccak256(R.x || R.y || P.x || P.y || m) mod r and s = k + e x mod r.
+   Each value is 32 bytes, big-endian. A row scCheck gives P, R, s and m (not
+   in Montgomery form), then 1 when the signature is valid, else 0. */
+static void sc_be(unsigned char *out, const Fe *a) {
+  size_t i;
+  for (i = 0u; i < BN_LIMBS; i++) {
+    uint32_t w = a->w[BN_LIMBS - 1u - i];
+    out[4u * i] = (unsigned char)(w >> 24);
+    out[4u * i + 1u] = (unsigned char)(w >> 16);
+    out[4u * i + 2u] = (unsigned char)(w >> 8);
+    out[4u * i + 3u] = (unsigned char)w;
+  }
+}
+/* The digest of the N bytes at DATA, mod r. */
+static void sc_hash(Fe *out, const unsigned char *data, size_t n) {
+  unsigned char d[32];
+  U256 u;
+  U256 v;
+  keccak256(data, n, d);
+  u256_from_be(&u, d);
+  scalar_reduce(&v, &u);
+  (void)fe_from_u256(out, &v, &BN254_FR);
+}
+static void sc_gen(G1 *g) {
+  memset(g, 0, sizeof *g);
+  g->x.w[0] = 1u;
+  g->y.w[0] = 2u;
+}
+static void sc_mul(G1 *out, const G1 *p, const Fe *k) {
+  U256 u;
+  fe_to_u256(&u, k);
+  ec0_mul(out, p, &u, &BN254_FP);
+}
+static void sc_challenge(Fe *e, const G1 *pk, const G1 *r, const Fe *m) {
+  unsigned char b[160];
+  sc_be(b, &r->x);
+  sc_be(b + 32u, &r->y);
+  sc_be(b + 64u, &pk->x);
+  sc_be(b + 96u, &pk->y);
+  sc_be(b + 128u, m);
+  sc_hash(e, b, sizeof b);
+}
+static void sc_sign(G1 *pk, G1 *r, Fe *s, uint64_t sk, const Fe *m) {
+  unsigned char b[64];
+  G1 g;
+  Fe x;
+  Fe k;
+  Fe e;
+  Fe t;
+  sc_gen(&g);
+  fe_from_u64(&x, sk);
+  sc_mul(pk, &g, &x);
+  sc_be(b, &x);
+  sc_be(b + 32u, m);
+  sc_hash(&k, b, sizeof b);
+  sc_mul(r, &g, &k);
+  sc_challenge(&e, pk, r, m);
+  fe_mul(&t, &e, &x, &BN254_FR);
+  fe_add(s, &k, &t, &BN254_FR);
+}
+/* 1 when P is a point of the curve (not the point at infinity) with each
+   coordinate less than p. */
+static int sc_valid(const G1 *p) {
+  Fe zero;
+  memset(&zero, 0, sizeof zero);
+  return below(&p->x, &BN254_FP) && below(&p->y, &BN254_FP) && !(same(&p->x, &zero) && same(&p->y, &zero)) && g1_on_curve(p);
+}
+/* 1 when (R, s) is a valid signature on M by PK: PK and R valid, s less than
+   r and s G = R + e P. */
+static int sc_verify(const G1 *pk, const G1 *r, const Fe *s, const Fe *m) {
+  G1 g;
+  G1 lhs;
+  G1 ep;
+  G1 rhs;
+  Fe e;
+  if (!sc_valid(pk) || !sc_valid(r) || !below(s, &BN254_FR))
+    return 0;
+  sc_gen(&g);
+  sc_challenge(&e, pk, r, m);
+  sc_mul(&lhs, &g, s);
+  sc_mul(&ep, pk, &e);
+  ec0_add(&rhs, r, &ep, &BN254_FP);
+  return same_g1(&lhs, &rhs);
+}
+static void sc_row(const G1 *pk, const G1 *r, const Fe *s, const Fe *m, int want, unsigned *bad) {
+  if (sc_verify(pk, r, s, m) != want) {
+    fputs("cryptotool: a schnorr row is not the C verdict\n", stderr);
+    (*bad)++;
+  }
+  printf("test/crypto/crypto scCheck");
+  put_g1(pk);
+  put_g1(r);
+  put_fe(s);
+  put_fe(m);
+  printf(" => %d\n", want);
+}
+/* 2 valid rows (sk 7 and sk 8, each on a random m), then 5 invalid rows from
+   the sk 7 row: s + 1, m + 1, the sk 8 key, s + r (not reduced) and -R. */
+static void schnorr_rows(Rng *rng, unsigned *bad) {
+  G1 pk7;
+  G1 r7;
+  G1 pk8;
+  G1 r8;
+  G1 nr;
+  Fe s7;
+  Fe s8;
+  Fe m7;
+  Fe m8;
+  Fe one;
+  Fe t;
+  uint64_t c = 0u;
+  size_t i;
+  fe_random(&m7, rng, &BN254_FR);
+  fe_random(&m8, rng, &BN254_FR);
+  sc_sign(&pk7, &r7, &s7, 7u, &m7);
+  sc_sign(&pk8, &r8, &s8, 8u, &m8);
+  sc_row(&pk7, &r7, &s7, &m7, 1, bad);
+  sc_row(&pk8, &r8, &s8, &m8, 1, bad);
+  memset(&one, 0, sizeof one);
+  one.w[0] = 1u;
+  fe_add(&t, &s7, &one, &BN254_FR);
+  sc_row(&pk7, &r7, &t, &m7, 0, bad);
+  fe_add(&t, &m7, &one, &BN254_FR);
+  sc_row(&pk7, &r7, &s7, &t, 0, bad);
+  sc_row(&pk8, &r7, &s7, &m7, 0, bad);
+  for (i = 0u; i < BN_LIMBS; i++) {
+    c += (uint64_t)s7.w[i] + (uint64_t)BN254_FR.w[i];
+    t.w[i] = (uint32_t)c;
+    c >>= 32;
+  }
+  sc_row(&pk7, &r7, &t, &m7, 0, bad);
+  nr = r7;
+  fe_neg(&nr.y, &r7.y, &BN254_FP);
+  sc_row(&pk7, &nr, &s7, &m7, 0, bad);
+}
+/* The ptMulC rows (S8a, USER ruling Q-S8a-7 (a)): the C builtin ptMulC
+   against the guest ptMul on the same K and P. A row gives 1 when the two
+   points are equal, so the C oracle is not used. The scalars are 0, 1, a
+   16-bit, a 32-bit and a 254-bit value (less than r), and 2^256 - 1 (not
+   reduced). One 32-bit row takes the point at infinity. */
+static void ptmulc_row(const Fe *k, const G1 *p) {
+  printf("test/crypto/crypto curveMulC");
+  put_fe(k);
+  put_g1(p);
+  printf(" => 1\n");
+}
+
+static void ptmulc_rows(Rng *rng) {
+  G1 p;
+  G1 inf;
+  Fe k;
+  size_t i;
+  memset(&inf, 0, sizeof inf);
+  memset(&k, 0, sizeof k);
+  point_random(&p, rng);
+  ptmulc_row(&k, &p);
+  k.w[0] = 1u;
+  ptmulc_row(&k, &p);
+  k.w[0] = (next32(rng) & 0xffffu) | 0x8000u;
+  ptmulc_row(&k, &p);
+  k.w[0] = next32(rng) | 0x80000000u;
+  ptmulc_row(&k, &p);
+  ptmulc_row(&k, &inf);
+  for (i = 0u; i < BN_LIMBS; i++)
+    k.w[i] = next32(rng);
+  k.w[BN_LIMBS - 1u] = (k.w[BN_LIMBS - 1u] & 0x0fffffffu) | 0x20000000u;
+  ptmulc_row(&k, &p);
+  for (i = 0u; i < BN_LIMBS; i++)
+    k.w[i] = 0xffffffffu;
+  ptmulc_row(&k, &p);
+}
+
+/* The test fixtures (S8a). fxKeyK is K G for the secret key K (1 to 5). A
+   message is the tag T (the guest `hsOf T`) or hsMsg (T, X, Y) = poseidon2
+   (T, poseidon2 (X, Y)) in Fr, each value not in Montgomery form. Each key in
+   KEYS (bit K - 1 for the key K) signs the message with sc_sign. `cryptotool
+   fixtures` prints the message words and the domain defs. The rows give
+   hsMsg to the guest hsMsg and each signature to the guest schnorrCheck (the
+   ck rows of test/crypto/crypto.lang). */
+#define FX_KEYS 5u
+#define FX_HS_KAT "1ab48afe922b8a4977f312071f685e3384546dd6f6ca941f62f277b4c5c9f677"
+
+typedef struct {
+  const char *name;
+  int hashed;
+  uint64_t t;
+  uint64_t x;
+  uint64_t y;
+  unsigned keys;
+} FxMsg;
+
+static const FxMsg FX_MSGS[] = {
+    {"Hs2", 0, 2u, 0u, 0u, 0x1fu},
+    {"Hs3", 0, 3u, 0u, 0u, 0x04u},
+    {"StA", 1, 0u, 1u, 1u, 0x07u},
+    {"StL", 1, 0u, 1u, 2u, 0x07u},
+    {"OpA", 1, 1u, 1u, 2u, 0x0eu},
+    {"OpE", 1, 1u, 1u, 1u, 0x0eu},
+    {"AmA", 1, 2u, 0u, 0u, 0x0fu},
+};
+#define FX_MSG_COUNT (sizeof FX_MSGS / sizeof FX_MSGS[0])
+
+/* H = element 0 of the permutation of (0, X, Y). */
+static void hs_pair(const PoseidonParams *p, Fe *h, const Fe *x, const Fe *y) {
+  Fe s[POSEIDON_WIDTH];
+  memset(s, 0, sizeof s);
+  s[1] = *x;
+  s[2] = *y;
+  poseidon_perm(s, p);
+  *h = s[0];
+}
+/* OUT = hsMsg (T, X, Y) = poseidon2 (T, poseidon2 (X, Y)), as the guest. */
+static void hs_msg(const PoseidonParams *p, Fe *out, const Fe *t, const Fe *x, const Fe *y) {
+  Fe inner;
+  hs_pair(p, &inner, x, y);
+  hs_pair(p, out, t, &inner);
+}
+static void fx_msg(const PoseidonParams *p, Fe *m, const FxMsg *g) {
+  Fe t;
+  Fe x;
+  Fe y;
+  fe_from_u64(&t, g->t);
+  fe_from_u64(&x, g->x);
+  fe_from_u64(&y, g->y);
+  *m = t;
+  if (g->hashed)
+    hs_msg(p, m, &t, &x, &y);
+}
+static void fx_point(const char *name, const G1 *p) {
+  printf("def %s : Pt1 := pt1 (fe", name);
+  put_fe(&p->x);
+  printf(") (fe");
+  put_fe(&p->y);
+  printf(")\n");
+}
+static int fixture_data(void) {
+  PoseidonParams p;
+  G1 g;
+  G1 pk;
+  G1 r;
+  Fe x;
+  Fe s;
+  Fe m;
+  char name[32];
+  size_t i;
+  unsigned k;
+  poseidon_params(&p, &BN254_FR);
+  sc_gen(&g);
+  for (i = 0u; i < FX_MSG_COUNT; i++) {
+    fx_msg(&p, &m, &FX_MSGS[i]);
+    printf("msg %s", FX_MSGS[i].name);
+    put_fe(&m);
+    printf("\n");
+  }
+  for (k = 1u; k <= FX_KEYS; k++) {
+    fe_from_u64(&x, k);
+    sc_mul(&pk, &g, &x);
+    snprintf(name, sizeof name, "fxKey%u", k);
+    fx_point(name, &pk);
+  }
+  for (i = 0u; i < FX_MSG_COUNT; i++) {
+    fx_msg(&p, &m, &FX_MSGS[i]);
+    for (k = 1u; k <= FX_KEYS; k++)
+      if (((FX_MSGS[i].keys >> (k - 1u)) & 1u) != 0u) {
+        sc_sign(&pk, &r, &s, k, &m);
+        snprintf(name, sizeof name, "fx%sK%uR", FX_MSGS[i].name, k);
+        fx_point(name, &r);
+        printf("def fx%sK%uS : Fe := fe", FX_MSGS[i].name, k);
+        put_fe(&s);
+        printf("\n");
+      }
+  }
+  return 0;
+}
+static void hs_row(const PoseidonParams *p, const Fe *t, const Fe *x, const Fe *y, Fe *h) {
+  hs_msg(p, h, t, x, y);
+  printf("test/crypto/crypto hsMsgRow");
+  put_fe(t);
+  put_fe(x);
+  put_fe(y);
+  put_fe(h);
+  printf(" => 1\n");
+}
+/* hsMsg (0, 1, 2) (the known answer of the guest) and hsMsg on random
+   values, then one row for each fixture signature, each checked first by the
+   C verifier. */
+static void fixture_rows(Rng *rng, unsigned *bad) {
+  PoseidonParams p;
+  G1 pk;
+  G1 r;
+  Fe s;
+  Fe m;
+  Fe t;
+  Fe x;
+  Fe y;
+  Fe h;
+  size_t i;
+  unsigned k;
+  poseidon_params(&p, &BN254_FR);
+  fe_from_u64(&t, 0u);
+  fe_from_u64(&x, 1u);
+  fe_from_u64(&y, 2u);
+  hs_row(&p, &t, &x, &y, &h);
+  if (!fe_is_hex(&h, FX_HS_KAT)) {
+    fputs("cryptotool: hsMsg (0, 1, 2) is not the guest value\n", stderr);
+    (*bad)++;
+  }
+  fe_random(&t, rng, &BN254_FR);
+  fe_random(&x, rng, &BN254_FR);
+  fe_random(&y, rng, &BN254_FR);
+  hs_row(&p, &t, &x, &y, &h);
+  for (i = 0u; i < FX_MSG_COUNT; i++) {
+    fx_msg(&p, &m, &FX_MSGS[i]);
+    for (k = 1u; k <= FX_KEYS; k++)
+      if (((FX_MSGS[i].keys >> (k - 1u)) & 1u) != 0u) {
+        sc_sign(&pk, &r, &s, k, &m);
+        if (!sc_verify(&pk, &r, &s, &m)) {
+          fputs("cryptotool: a fixture signature is not valid\n", stderr);
+          (*bad)++;
+        }
+        printf("test/crypto/crypto ck%sK%u => inr unit\n", FX_MSGS[i].name, k);
+      }
+  }
+}
+
 int main(int argc, char **argv) {
   Rng rng = {0x5338676176656c31ULL};
   const Field fr = {"fr", &BN254_FR};
   const Field fp = {"fp", &BN254_FP};
   unsigned bad = 0u;
-  (void)argv;
+  if (argc == 2 && strcmp(argv[1], "poseidon") == 0)
+    return poseidon_data();
+  if (argc == 2 && strcmp(argv[1], "fixtures") == 0)
+    return fixture_data();
   if (argc != 1) {
-    fputs("usage: cryptotool\n", stderr);
+    fputs("usage: cryptotool [poseidon | fixtures]\n", stderr);
     return 2;
   }
   word_rows(&rng);
   field_rows(&fr, FR_LESS_ONE, FR_LESS_TWO, &rng, &bad);
   field_rows(&fp, FP_LESS_ONE, FP_LESS_TWO, &rng, &bad);
+  curve_rows(&rng, &bad);
+  mulc_rows(&fr, &rng);
+  mulc_rows(&fp, &rng);
+  keccak_rows(&rng, &bad);
+  poseidon_rows(&rng, &bad);
+  schnorr_rows(&rng, &bad);
+  ptmulc_rows(&rng);
+  fixture_rows(&rng, &bad);
   if (bad != 0u) {
     fprintf(stderr, "cryptotool: %u rows of the C oracle are wrong\n", bad);
     return 1;

@@ -7,11 +7,11 @@ def s1 : Size := szS sz0
 def s2 : Size := szS (szS sz0)
 def s3 : Size := szS (szS (szS sz0))
 def s7 : Size := szS (szS (szS (szS (szS (szS (szS sz0))))))
-def p0 : Party := party sz0
-def p1 : Party := party s1
-def p2 : Party := party s2
-def p3 : Party := party s3
-def outsider : Party := party s7
+def p0 : Party := party fxKey1
+def p1 : Party := party fxKey2
+def p2 : Party := party fxKey3
+def p3 : Party := party fxKey4
+def outsider : Party := party fxKey5
 def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
 -- G1: the members are distinct and f = 1 < t = 3. G2: t + f = 4 <= n = 4.
 def board : Committee := committee members s3 s1 refl refl
@@ -19,17 +19,17 @@ def board : Committee := committee members s3 s1 refl refl
 def bids : Bids := bdCons (amSucc amZero) (bdCons (amSucc (amSucc amZero)) bdNil)
 -- The deadlines (S6): the stamp end 1 is before the release 2.
 def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
-def msg : Hash := hash s2
-def other : Hash := hash s3
+def msg : Hash := hsOf s2
+def other : Hash := hsOf s3
 -- Three distinct signers on msg: accept.
-def certThree : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p2 msg (ctCons p3 msg ctNil)))
+def certThree : Sum Unit Unit := checkCert board msg (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p2 fxHs2K3R fxHs2K3S (ctCons p3 fxHs2K4R fxHs2K4S ctNil)))
 -- Two signers: reject.
-def certTwo : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg ctNil))
+def certTwo : Sum Unit Unit := checkCert board msg (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p1 fxHs2K2R fxHs2K2S ctNil))
 -- Two signers, each two times: two equal entries count one time, reject.
-def certDup : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p0 msg (ctCons p1 msg (ctCons p1 msg ctNil))))
+def certDup : Sum Unit Unit := checkCert board msg (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p1 fxHs2K2R fxHs2K2S (ctCons p1 fxHs2K2R fxHs2K2S ctNil))))
 -- Three signers, but one signs other: reject.
-def certWrong : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg (ctCons p2 other ctNil)))
+def certWrong : Sum Unit Unit := checkCert board msg (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p1 fxHs2K2R fxHs2K2S (ctCons p2 fxHs3K3R fxHs3K3S ctNil)))
 -- Two members and a party outside the committee: reject.
-def certOut : Sum Unit Unit := checkCert board msg (ctCons p0 msg (ctCons p1 msg (ctCons outsider msg ctNil)))
+def certOut : Sum Unit Unit := checkCert board msg (ctCons p0 fxHs2K1R fxHs2K1S (ctCons p1 fxHs2K2R fxHs2K2S (ctCons outsider fxHs2K5R fxHs2K5S ctNil)))
 -- The second price of the bids 1, 2 with the reserve 1.
 def setupOf : Outcome := outcomeOf setup bids

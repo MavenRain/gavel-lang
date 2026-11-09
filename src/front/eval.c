@@ -32,7 +32,9 @@ static const char *const OP_NAMES[] = {
   [OP_NONZERO] = "NonZero", [OP_NONZERO_OF] = "nonZero", [OP_NONZERO_VALUE] = "nonZeroValue",
   [OP_WORD] = "Word",
   [OP_W_ADD] = "wAdd", [OP_W_SUB] = "wSub", [OP_W_MUL] = "wMul", [OP_W_MULHI] = "wMulHi", [OP_W_AND] = "wAnd", [OP_W_OR] = "wOr", [OP_W_XOR] = "wXor",
-  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq"
+  [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq",
+  [OP_FE_MUL] = "feMulC",
+  [OP_PT_MUL] = "ptMulC"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -51,6 +53,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_FM_LEN] = 2,
   [OP_WORD] = 0, [OP_W_ADD] = 2, [OP_W_SUB] = 2, [OP_W_MUL] = 2, [OP_W_MULHI] = 2, [OP_W_AND] = 2, [OP_W_OR] = 2, [OP_W_XOR] = 2,
   [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2,
+  [OP_FE_MUL] = 3, [OP_PT_MUL] = 3,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
   [OP_INTERVAL] = 0, [OP_TRANSP] = 3,
   [OP_SYSTEM] = VARIES, [OP_HCOMP] = 4, [OP_FIN] = 1, [OP_FIN_ADD] = 3,
@@ -507,13 +510,96 @@ static const Value *env_lookup(Machine *m, const Env *env, uint32_t index) {
   return env->value;
 }
 
+/* Q-S8a-9 (a): the sealed defs. Such a def unfolds only on closed
+   arguments. On an argument that holds a neutral value, the application
+   stays neutral (OP_DEF_APP), and conversion compares it by the def, then
+   by the arguments. This is sound: one def on convertible arguments gives
+   convertible values. The crypto defs on open arguments take more than
+   EVAL_FUEL_STEPS steps (S8a s12: hsMsg above 20M), thus a type that holds
+   them must not unfold them. */
+static const char *const SEALED_DEFS[] = {"hsMsg", "schnorrCheck"};
+
+#define CLOSED_NODES 65536u
+
+/* 1 when V holds no neutral value. Above the node budget the test gives 1:
+   the def then unfolds, as without the seal. */
+static int val_closed(const Value *v, uint32_t *nodes) {
+  const Env *e;
+  uint32_t i;
+  while (v != NULL) {
+    if (*nodes >= CLOSED_NODES)
+      return 1;
+    (*nodes)++;
+    switch (v->kind) {
+    case VAL_NAT:
+    case VAL_WORD:
+    case VAL_UNIV:
+      return 1;
+    case VAL_IVAL:
+      return v->conj_count == 0u || (v->conj_count == 1u && v->conj[0].count == 0u);
+    case VAL_VAR:
+    case VAL_APP:
+    case VAL_STUCK:
+    case VAL_PAPP:
+      return 0;
+    case VAL_LAM:
+    case VAL_PI:
+    case VAL_SIGMA:
+    case VAL_PLAM:
+    case VAL_PATHP:
+      for (e = v->env; e != NULL; e = e->next)
+        if (!val_closed(e->value, nodes))
+          return 0;
+      if ((v->dom != NULL && !val_closed(v->dom, nodes)) || (v->arg != NULL && !val_closed(v->arg, nodes)))
+        return 0;
+      break;
+    case VAL_OP:
+      break;
+    }
+    if (v->argc == 0u)
+      return 1;
+    for (i = 0u; i + 1u < v->argc; i++)
+      if (!val_closed(v->args[i], nodes))
+        return 0;
+    v = v->args[v->argc - 1u];
+  }
+  return 1;
+}
+
+/* Record the def INDEX when it is a sealed def: its arity is the count of
+   its outer binders, and apply_value finds its last closure by the body
+   under them. */
+static void seal_note(Machine *m, uint32_t index) {
+  const DefInfo *d = &m->defs[index];
+  const Core *body = d->body;
+  uint32_t arity = 0u;
+  size_t i;
+  int sealed = 0;
+  for (i = 0; i < sizeof SEALED_DEFS / sizeof SEALED_DEFS[0]; i++)
+    sealed = sealed || (d->name != NULL && strcmp(d->name, SEALED_DEFS[i]) == 0);
+  if (!sealed || m->seal_count >= SEAL_MAX)
+    return;
+  while (body != NULL && body->kind == CORE_LAM) {
+    body = body->b;
+    arity++;
+  }
+  if (arity == 0u)
+    return;
+  m->seal_def[m->seal_count] = index;
+  m->seal_arity[m->seal_count] = arity;
+  m->seal_body[m->seal_count] = body;
+  m->seal_count++;
+}
+
 const Value *def_value(Machine *m, uint32_t index) {
   DefInfo *d;
   if (index >= m->def_count)
     return internal(m, "an unknown definition");
   d = &m->defs[index];
-  if (d->value == NULL)
+  if (d->value == NULL) {
+    seal_note(m, index);
     d->value = eval_core(m, NULL, d->body);
+  }
   return d->value;
 }
 
@@ -616,13 +702,98 @@ static const Value *list_tail(Machine *m, const Value *tail, Op op, uint32_t ins
   return val_is(tail, OP_NIL) ? tail : internal(m, "a list that does not end in nil");
 }
 
+static int word_same(const Value *a, const Value *b, uint32_t depth, uint32_t *nodes);
+
+/* Q-S8a-10 (a): the memo of closed sealed applications. For the seal row K
+   of a memo-ok def and the closed arguments ARGS, a memo row with the same
+   arguments (word_same, no fuel) gives its value. Else FN applied to ARG
+   gives the value and the memo keeps it. A full memo keeps nothing: the
+   application then evaluates as without the memo. */
+static const Value *seal_memo(Machine *m, uint32_t k, const Value *fn, const Value *arg, const Value *const *args) {
+  const Value *v;
+  uint32_t n = m->seal_arity[k];
+  uint32_t r;
+  uint32_t i;
+  uint32_t nodes;
+  int same;
+  if (m->seal_memo[k] != 1u)
+    return closure_apply(m, fn, arg);
+  for (r = 0u; r < m->memo_count; r++) {
+    same = m->memo_row[r] == k;
+    nodes = 0u;
+    for (i = 0u; same && i < n; i++)
+      same = word_same(m->memo_args[r][i], args[i], 0u, &nodes);
+    if (same)
+      return m->memo_value[r];
+  }
+  v = closure_apply(m, fn, arg);
+  if (v != NULL && m->diag->code == NULL && m->memo_count < SEAL_MEMO_MAX) {
+    m->memo_row[m->memo_count] = k;
+    m->memo_args[m->memo_count] = args;
+    m->memo_value[m->memo_count] = v;
+    m->memo_count++;
+  }
+  return v;
+}
+
+/* The hook of the sealed defs in apply_value: FN is a closure and ARG its
+   argument. When FN is the last closure of a sealed def and an argument is
+   not closed, the application is the neutral OP_DEF_APP. */
+static const Value *seal_apply(Machine *m, const Value *fn, const Value *arg) {
+  const Value **args;
+  const Env *e = fn->env;
+  uint32_t k = 0u;
+  uint32_t i;
+  uint32_t n;
+  uint32_t nodes = 0u;
+  int closed;
+  while (k < m->seal_count && m->seal_body[k] != fn->body)
+    k++;
+  if (k == m->seal_count)
+    return closure_apply(m, fn, arg);
+  n = m->seal_arity[k];
+  args = arena_alloc(m->arena, (size_t)n * sizeof *args);
+  if (args == NULL) {
+    oom(m);
+    return NULL;
+  }
+  args[n - 1u] = arg;
+  closed = val_closed(arg, &nodes);
+  for (i = n - 1u; i > 0u; i--) {
+    if (e == NULL)
+      return internal(m, "a sealed def closure without its arguments");
+    args[i - 1u] = e->value;
+    closed = closed && val_closed(e->value, &nodes);
+    e = e->next;
+  }
+  if (closed)
+    return seal_memo(m, k, fn, arg, args);
+  return val_op(m, VAL_STUCK, OP_DEF_APP, m->seal_def[k], 0, args, n);
+}
+
+/* The sealed def INST applied to the N arguments A. With FORCE the last
+   application unfolds also on open arguments. */
+static const Value *seal_spine(Machine *m, uint32_t inst, const Value *const *a, uint32_t n, int force) {
+  const Value *f = def_value(m, inst);
+  uint32_t i;
+  for (i = 0u; f != NULL && i + 1u < n; i++)
+    f = apply_value(m, f, a[i]);
+  if (f == NULL || n == 0u)
+    return f;
+  return force && f->kind == VAL_LAM ? closure_apply(m, f, a[n - 1u]) : apply_value(m, f, a[n - 1u]);
+}
+
+const Value *seal_unfold(Machine *m, const Value *v) {
+  return seal_spine(m, v->inst, v->args, v->argc, 1);
+}
+
 const Value *apply_value(Machine *m, const Value *fn, const Value *arg) {
   Value *v;
   if (fn == NULL || arg == NULL)
     return NULL;
   switch (fn->kind) {
   case VAL_LAM:
-    return closure_apply(m, fn, arg);
+    return m->seal_count > 0u && fn->tag == CLOS_CORE ? seal_apply(m, fn, arg) : closure_apply(m, fn, arg);
   case VAL_VAR:
   case VAL_APP:
   case VAL_STUCK:
@@ -1482,15 +1653,506 @@ static const Value *word_op(Machine *m, Op op, const Value *const *a, uint32_t n
   return val_word(m, f(x, y));
 }
 
+/* Q-S8a-8 (a): 1 when A and B have the same form: the same variable or
+   literal, or the same head on arguments of the same form. A closure has
+   the same form only as itself, thus the test never joins two different
+   values. The test visits at most WORD_SAME_NODES values to a depth of
+   WORD_SAME_DEPTH, else it gives 0 and wEq stays stuck: two different open
+   hashes have a deep common form (the Poseidon2 rounds) above their
+   leaves. */
+#define WORD_SAME_DEPTH 64u
+#define WORD_SAME_NODES 4096u
+
+static int word_same(const Value *a, const Value *b, uint32_t depth, uint32_t *nodes) {
+  uint32_t i;
+  int same = 1;
+  if (a == b)
+    return a != NULL;
+  if (a == NULL || b == NULL || a->kind != b->kind || depth >= WORD_SAME_DEPTH || *nodes >= WORD_SAME_NODES)
+    return 0;
+  (*nodes)++;
+  switch (a->kind) {
+  case VAL_NAT:
+  case VAL_WORD:
+  case VAL_UNIV:
+  case VAL_VAR:
+    same = a->nat == b->nat;
+    break;
+  case VAL_IVAL:
+    same = ival_equal(a, b);
+    break;
+  case VAL_APP:
+  case VAL_PAPP:
+    same = word_same(a->dom, b->dom, depth + 1u, nodes) && word_same(a->arg, b->arg, depth + 1u, nodes);
+    break;
+  case VAL_OP:
+  case VAL_STUCK:
+    same = a->op == b->op && a->inst == b->inst && a->field == b->field && a->argc == b->argc;
+    for (i = 0u; same && i < a->argc; i++)
+      same = word_same(a->args[i], b->args[i], depth + 1u, nodes);
+    break;
+  case VAL_LAM:
+  case VAL_PI:
+  case VAL_SIGMA:
+  case VAL_PLAM:
+  case VAL_PATHP:
+    same = 0;
+    break;
+  }
+  return same;
+}
+
 /* wLt and wEq: a Sum Unit Unit, inr tt when the test holds (the domain
-   reads inr unit as yes, as szLe does). */
+   reads inr unit as yes, as szLe does). wEq of two open Words of the same
+   form is inr tt too (Q-S8a-8 (a)), so feEq a a reduces for an open a. */
 static const Value *word_test(Machine *m, Op op, const Value *const *a, uint32_t n, uint32_t (*f)(uint32_t, uint32_t)) {
   const Value *out;
   uint32_t x = 0;
   uint32_t y = 0;
+  uint32_t nodes = 0u;
+  if (op == OP_W_EQ && n == 2u && a[0] != NULL && a[1] != NULL && (a[0]->kind != VAL_WORD || a[1]->kind != VAL_WORD)
+      && word_same(a[0], a[1], 0u, &nodes))
+    return make(m, VAL_OP, OP_INR, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
   if (!word_args(m, op, a, n, &x, &y, &out))
     return out;
   return make(m, VAL_OP, f(x, y) != 0u ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
+}
+
+/* The 8 limbs of the Fe value X (an argument of the OP call A) into W.
+   0 when *OUT is the stuck operation (a neutral value or limb) or an error. */
+static int fe_limbs(Machine *m, Op op, const Value *x, const Value *const *a, uint32_t n, uint32_t *w, const Value **out) {
+  uint32_t i;
+  if (blocked(m, x, op, 0, 0, a, n, out))
+    return 0;
+  if (val_is(x, OP_HCOMP)) {
+    *out = val_op(m, VAL_STUCK, op, 0, 0, a, n);
+    return 0;
+  }
+  if (!val_is(x, OP_CTOR) || x->argc != 8u) {
+    *out = internal(m, "a feMulC or ptMulC argument that is not an Fe of 8 Words");
+    return 0;
+  }
+  for (i = 0u; i < 8u; i++) {
+    if (blocked(m, x->args[i], op, 0, 0, a, n, out))
+      return 0;
+    if (x->args[i]->kind != VAL_WORD) {
+      *out = internal(m, "a feMulC or ptMulC limb that is not a Word");
+      return 0;
+    }
+    w[i] = (uint32_t)x->args[i]->nat;
+  }
+  return 1;
+}
+
+/* modM (field 0, an Fe) and modN0 (field 1, a Word) of the FeMod value a[0]. */
+static int fe_mod(Machine *m, Op op, const Value *const *a, uint32_t n, uint32_t *mw, uint32_t *n0, const Value **out) {
+  const Value *x = a[0];
+  if (blocked(m, x, op, 0, 0, a, n, out))
+    return 0;
+  if (val_is(x, OP_HCOMP)) {
+    *out = val_op(m, VAL_STUCK, op, 0, 0, a, n);
+    return 0;
+  }
+  if (!val_is(x, OP_CTOR) || x->argc < 2u) {
+    *out = internal(m, "a feMulC or ptMulC modulus that is not a FeMod");
+    return 0;
+  }
+  if (!fe_limbs(m, op, x->args[0], a, n, mw, out) || blocked(m, x->args[1], op, 0, 0, a, n, out))
+    return 0;
+  if (x->args[1]->kind != VAL_WORD) {
+    *out = internal(m, "a feMulC or ptMulC modN0 that is not a Word");
+    return 0;
+  }
+  *n0 = (uint32_t)x->args[1]->nat;
+  return 1;
+}
+
+/* 1 when X < Y as 256-bit numbers, limb 7 first (feLt). */
+static int fe_below(const uint32_t *x, const uint32_t *y) {
+  uint32_t i = 8u;
+  while (i > 0u && x[i - 1u] == y[i - 1u])
+    i--;
+  return i > 0u && x[i - 1u] < y[i - 1u];
+}
+
+/* The CIOS Montgomery product A B R^-1 of the domain def feMul for the
+   modulus MW (n0' N0) into T. 8 rounds over the limbs of B (feRound,
+   feReduce), then one conditional subtract of MW (feCondSub). Limb 7 of a
+   round is a Word add, mod 2^32, as in feReduce. T can be A or B. */
+static void fe_mont(const uint32_t *mw, uint32_t n0, const uint32_t *aw, const uint32_t *bw, uint32_t *t) {
+  uint32_t u[8];
+  uint32_t r[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+  uint32_t hi;
+  uint32_t q;
+  uint64_t s;
+  uint32_t i;
+  uint32_t j;
+  for (i = 0u; i < 8u; i++) {
+    s = 0u;
+    for (j = 0u; j < 8u; j++) {
+      s = (uint64_t)r[j] + (uint64_t)aw[j] * bw[i] + (s >> 32);
+      u[j] = (uint32_t)s;
+    }
+    hi = (uint32_t)(s >> 32);
+    q = u[0] * n0;
+    s = 0u;
+    for (j = 0u; j < 8u; j++) {
+      s = (uint64_t)u[j] + (uint64_t)q * mw[j] + (s >> 32);
+      if (j > 0u)
+        r[j - 1u] = (uint32_t)s;
+    }
+    r[7] = hi + (uint32_t)(s >> 32);
+  }
+  if (!fe_below(r, mw)) {
+    s = 0u;
+    for (j = 0u; j < 8u; j++) {
+      s = (uint64_t)r[j] - mw[j] - (s >> 63);
+      r[j] = (uint32_t)s;
+    }
+  }
+  for (j = 0u; j < 8u; j++)
+    t[j] = r[j];
+}
+
+/* feMulC md a b (S8a, USER ruling Q-S8a-6 (a)): the Montgomery product of
+   the domain def feMul (fe_mont). One call charges 64 steps. */
+static const Value *fe_mul_c(Machine *m, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *limb[8];
+  uint32_t mw[8];
+  uint32_t aw[8];
+  uint32_t bw[8];
+  uint32_t t[8];
+  uint32_t n0 = 0u;
+  uint32_t i;
+  if (!fe_mod(m, OP_FE_MUL, a, n, mw, &n0, &out) || !fe_limbs(m, OP_FE_MUL, a[1], a, n, aw, &out) ||
+      !fe_limbs(m, OP_FE_MUL, a[2], a, n, bw, &out))
+    return out;
+  if (!spend(m, 64u))
+    return NULL;
+  fe_mont(mw, n0, aw, bw, t);
+  for (i = 0u; i < 8u; i++)
+    limb[i] = val_word(m, t[i]);
+  return val_op(m, VAL_OP, OP_CTOR, a[1]->inst, 0, limb, 8u);
+}
+
+/* The modulus of a ptMulC call: modM, modN0, modR1 and modE (fields 0, 1, 3
+   and 4 of the FeMod value). */
+typedef struct {
+  uint32_t m[8];
+  uint32_t n0;
+  uint32_t r1[8];
+  const Value *e;
+} PtMod;
+
+/* A point (X, Y, Z) of the domain family Jac, in Montgomery form. */
+typedef struct {
+  uint32_t x[8];
+  uint32_t y[8];
+  uint32_t z[8];
+} PtJac;
+
+static int fe_zero(const uint32_t *x) {
+  uint32_t i;
+  uint32_t o = 0u;
+  for (i = 0u; i < 8u; i++)
+    o |= x[i];
+  return o == 0u;
+}
+
+static void fe_copy(uint32_t *t, const uint32_t *x) {
+  uint32_t i;
+  for (i = 0u; i < 8u; i++)
+    t[i] = x[i];
+}
+
+/* feAddRaw and feSubRaw: the sum and the difference mod 2^256. T can be X
+   or Y. */
+static void fe_add_raw(const uint32_t *x, const uint32_t *y, uint32_t *t) {
+  uint64_t s = 0u;
+  uint32_t j;
+  for (j = 0u; j < 8u; j++) {
+    s = (uint64_t)x[j] + y[j] + (s >> 32);
+    t[j] = (uint32_t)s;
+  }
+}
+
+static void fe_sub_raw(const uint32_t *x, const uint32_t *y, uint32_t *t) {
+  uint64_t s = 0u;
+  uint32_t j;
+  for (j = 0u; j < 8u; j++) {
+    s = (uint64_t)x[j] - y[j] - (s >> 63);
+    t[j] = (uint32_t)s;
+  }
+}
+
+/* feMulC, feAdd and feSub of the domain for the modulus D. T can be X or Y. */
+static void pt_fm(const PtMod *d, const uint32_t *x, const uint32_t *y, uint32_t *t) {
+  fe_mont(d->m, d->n0, x, y, t);
+}
+
+/* feAdd md x y is feCondSub (modM md) (feAddRaw x y). */
+static void pt_add(const PtMod *d, const uint32_t *x, const uint32_t *y, uint32_t *t) {
+  uint32_t r[8];
+  fe_add_raw(x, y, r);
+  if (fe_below(r, d->m)) {
+    fe_copy(t, r);
+    return;
+  }
+  fe_sub_raw(r, d->m, t);
+}
+
+/* feSub md x y is feSubRaw x y, plus modM md when x < y. */
+static void pt_sub(const PtMod *d, const uint32_t *x, const uint32_t *y, uint32_t *t) {
+  int lt = fe_below(x, y);
+  fe_sub_raw(x, y, t);
+  if (lt)
+    fe_add_raw(t, d->m, t);
+}
+
+/* jacZero: (0, 0, 0). */
+static void pt_jac_zero(PtJac *o) {
+  uint32_t i;
+  for (i = 0u; i < 8u; i++) {
+    o->x[i] = 0u;
+    o->y[i] = 0u;
+    o->z[i] = 0u;
+  }
+}
+
+/* ptDbl md a (ptDblRaw when Z and Y are not 0, else jacZero), with the same
+   field ops in the same order. O can be A. */
+static void pt_dbl(const PtMod *d, const PtJac *a, PtJac *o) {
+  uint32_t yy[8];
+  uint32_t s[8];
+  uint32_t xx[8];
+  uint32_t mm[8];
+  uint32_t x3[8];
+  uint32_t y8[8];
+  uint32_t yz[8];
+  uint32_t t[8];
+  if (fe_zero(a->z) || fe_zero(a->y)) {
+    pt_jac_zero(o);
+    return;
+  }
+  pt_fm(d, a->y, a->y, yy);
+  pt_fm(d, a->x, yy, s);
+  pt_add(d, s, s, s);
+  pt_add(d, s, s, s);
+  pt_fm(d, a->x, a->x, xx);
+  pt_add(d, xx, xx, mm);
+  pt_add(d, mm, xx, mm);
+  pt_fm(d, mm, mm, t);
+  pt_sub(d, t, s, t);
+  pt_sub(d, t, s, x3);
+  pt_fm(d, yy, yy, y8);
+  pt_add(d, y8, y8, y8);
+  pt_add(d, y8, y8, y8);
+  pt_add(d, y8, y8, y8);
+  pt_fm(d, a->y, a->z, yz);
+  pt_sub(d, s, x3, t);
+  pt_fm(d, mm, t, t);
+  pt_sub(d, t, y8, o->y);
+  pt_add(d, yz, yz, o->z);
+  fe_copy(o->x, x3);
+}
+
+/* ptMaddH md a h r. O can be A. */
+static void pt_madd_h(const PtMod *d, const PtJac *a, const uint32_t *h, const uint32_t *r, PtJac *o) {
+  uint32_t hh[8];
+  uint32_t hhh[8];
+  uint32_t v[8];
+  uint32_t x3[8];
+  uint32_t t[8];
+  uint32_t u[8];
+  pt_fm(d, h, h, hh);
+  pt_fm(d, h, hh, hhh);
+  pt_fm(d, a->x, hh, v);
+  pt_fm(d, r, r, t);
+  pt_sub(d, t, hhh, t);
+  pt_sub(d, t, v, t);
+  pt_sub(d, t, v, x3);
+  pt_sub(d, v, x3, t);
+  pt_fm(d, r, t, t);
+  pt_fm(d, a->y, hhh, u);
+  pt_sub(d, t, u, o->y);
+  pt_fm(d, a->z, h, o->z);
+  fe_copy(o->x, x3);
+}
+
+/* ptMadd md a (bx, by): a when b is (0, 0), (bx, by, modR1) when Z is 0,
+   else ptMaddRaw (H = 0 gives ptDbl when R = 0, else jacZero). O can be A. */
+static void pt_madd(const PtMod *d, const PtJac *a, const uint32_t *bx, const uint32_t *by, PtJac *o) {
+  uint32_t zz[8];
+  uint32_t h[8];
+  uint32_t r[8];
+  uint32_t t[8];
+  if (fe_zero(bx) && fe_zero(by)) {
+    fe_copy(o->x, a->x);
+    fe_copy(o->y, a->y);
+    fe_copy(o->z, a->z);
+    return;
+  }
+  if (fe_zero(a->z)) {
+    fe_copy(o->x, bx);
+    fe_copy(o->y, by);
+    fe_copy(o->z, d->r1);
+    return;
+  }
+  pt_fm(d, a->z, a->z, zz);
+  pt_fm(d, bx, zz, t);
+  pt_sub(d, t, a->x, h);
+  pt_fm(d, by, zz, t);
+  pt_fm(d, t, a->z, t);
+  pt_sub(d, t, a->y, r);
+  if (!fe_zero(h)) {
+    pt_madd_h(d, a, h, r, o);
+    return;
+  }
+  if (fe_zero(r)) {
+    pt_dbl(d, a, o);
+    return;
+  }
+  pt_jac_zero(o);
+}
+
+/* The ctor of the FeBits value X: 0 fbEnd, 1 fbZero, 2 fbOne (the order of
+   the domain family), or -1 when X is not such a ctor with its field. */
+static int fe_bit_tag(const Machine *m, const Value *x) {
+  uint32_t tag;
+  if (!val_is(x, OP_CTOR) || x->inst >= m->ctor_count || m->ctors[x->inst].family >= m->family_count)
+    return -1;
+  tag = x->inst - m->families[m->ctors[x->inst].family].first_ctor;
+  return tag > 2u || (tag > 0u && x->argc < 1u) ? -1 : (int)tag;
+}
+
+/* The bit count of the FeBits value X (modE of a ptMulC modulus) into
+   *COUNT. 0 when *OUT is the stuck operation or an error. */
+static int pt_bits(Machine *m, const Value *x, const Value *const *a, uint32_t n, uint64_t *count, const Value **out) {
+  uint64_t c = 0u;
+  int tag = 1;
+  while (tag != 0) {
+    if (blocked(m, x, OP_PT_MUL, 0, 0, a, n, out))
+      return 0;
+    if (val_is(x, OP_HCOMP)) {
+      *out = val_op(m, VAL_STUCK, OP_PT_MUL, 0, 0, a, n);
+      return 0;
+    }
+    tag = fe_bit_tag(m, x);
+    if (tag < 0) {
+      *out = internal(m, "a ptMulC modE that is not a FeBits");
+      return 0;
+    }
+    c += tag != 0 ? 1u : 0u;
+    x = tag != 0 ? x->args[0] : x;
+  }
+  *count = c;
+  return 1;
+}
+
+/* feInv md x: fePow md x (modE md) from modR1 md, the top bit first. Each
+   bit squares the value, and a 1 bit then multiplies it by x. */
+static void pt_inv(const Machine *m, const PtMod *d, const uint32_t *x, uint32_t *t) {
+  uint32_t v[8];
+  const Value *e = d->e;
+  int tag = fe_bit_tag(m, e);
+  fe_copy(v, d->r1);
+  while (tag > 0) {
+    pt_fm(d, v, v, v);
+    if (tag == 2)
+      pt_fm(d, v, x, v);
+    e = e->args[0];
+    tag = fe_bit_tag(m, e);
+  }
+  fe_copy(t, v);
+}
+
+/* ptToAffine md a: (X / Z^2, Y / Z^3), and (0, 0) when Z is 0. */
+static void pt_affine(const Machine *m, const PtMod *d, const PtJac *a, uint32_t *x, uint32_t *y) {
+  uint32_t zi[8];
+  uint32_t zi2[8];
+  uint32_t t[8];
+  uint32_t i;
+  if (fe_zero(a->z)) {
+    for (i = 0u; i < 8u; i++) {
+      x[i] = 0u;
+      y[i] = 0u;
+    }
+    return;
+  }
+  pt_inv(m, d, a->z, zi);
+  pt_fm(d, zi, zi, zi2);
+  pt_fm(d, a->x, zi2, x);
+  pt_fm(d, zi2, zi, t);
+  pt_fm(d, a->y, t, y);
+}
+
+/* The modulus D of the ptMulC call A (a[0]) and the bit count of its modE. */
+static int pt_mod(Machine *m, const Value *const *a, uint32_t n, PtMod *d, uint64_t *bits, const Value **out) {
+  const Value *x = a[0];
+  if (!fe_mod(m, OP_PT_MUL, a, n, d->m, &d->n0, out))
+    return 0;
+  if (x->argc < 5u) {
+    *out = internal(m, "a ptMulC modulus that is not a FeMod");
+    return 0;
+  }
+  d->e = x->args[4];
+  return fe_limbs(m, OP_PT_MUL, x->args[3], a, n, d->r1, out) && pt_bits(m, d->e, a, n, bits, out);
+}
+
+/* The coordinates of the Pt1 value P (argument 2 of the ptMulC call A). */
+static int pt_point(Machine *m, const Value *p, const Value *const *a, uint32_t n, uint32_t *x, uint32_t *y, const Value **out) {
+  if (blocked(m, p, OP_PT_MUL, 0, 0, a, n, out))
+    return 0;
+  if (val_is(p, OP_HCOMP)) {
+    *out = val_op(m, VAL_STUCK, OP_PT_MUL, 0, 0, a, n);
+    return 0;
+  }
+  if (!val_is(p, OP_CTOR) || p->argc != 2u) {
+    *out = internal(m, "a ptMulC point that is not a Pt1");
+    return 0;
+  }
+  return fe_limbs(m, OP_PT_MUL, p->args[0], a, n, x, out) && fe_limbs(m, OP_PT_MUL, p->args[1], a, n, y, out);
+}
+
+/* ptMulC md k p (S8a, USER ruling Q-S8a-7 (a)): the scalar product of the
+   domain def ptMul, with the same steps and field ops: the double-and-add
+   over the 256 bits of k (the top bit first) from jacZero (ptMulFrom, ptDbl,
+   ptMadd), then ptToAffine (feInv over the bits of modE). One call charges
+   64 steps for each Montgomery product of the worst case: 18 for each bit of
+   k, 2 for each bit of modE, and 4. */
+static const Value *pt_mul_c(Machine *m, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *f[2];
+  const Value *limb[8];
+  PtMod d;
+  PtJac acc;
+  uint32_t kw[8];
+  uint32_t px[8];
+  uint32_t py[8];
+  uint32_t rx[8];
+  uint32_t ry[8];
+  uint64_t bits = 0u;
+  uint32_t i;
+  if (!pt_mod(m, a, n, &d, &bits, &out) || !fe_limbs(m, OP_PT_MUL, a[1], a, n, kw, &out) ||
+      !pt_point(m, a[2], a, n, px, py, &out))
+    return out;
+  if (!spend(m, 64u * (18u * 256u + 4u + 2u * bits)))
+    return NULL;
+  pt_jac_zero(&acc);
+  for (i = 256u; i > 0u; i--) {
+    pt_dbl(&d, &acc, &acc);
+    if (((kw[(i - 1u) / 32u] >> ((i - 1u) % 32u)) & 1u) != 0u)
+      pt_madd(&d, &acc, px, py, &acc);
+  }
+  pt_affine(m, &d, &acc, rx, ry);
+  for (i = 0u; i < 8u; i++)
+    limb[i] = val_word(m, rx[i]);
+  f[0] = val_op(m, VAL_OP, OP_CTOR, a[1]->inst, 0, limb, 8u);
+  for (i = 0u; i < 8u; i++)
+    limb[i] = val_word(m, ry[i]);
+  f[1] = val_op(m, VAL_OP, OP_CTOR, a[1]->inst, 0, limb, 8u);
+  return val_op(m, VAL_OP, OP_CTOR, a[2]->inst, 0, f, 2u);
 }
 
 static const Value *reduce_flag_if(Machine *m, const Value *const *a, uint32_t n) {
@@ -1602,6 +2264,8 @@ static uint32_t varied_arity(const Machine *m, Op op, uint32_t inst) {
 }
 
 static int arity_ok(const Machine *m, Op op, uint32_t inst, uint32_t n) {
+  if (op == OP_DEF_APP)
+    return inst < m->def_count && n >= 1u;
   if ((size_t)op >= sizeof OP_ARITY)
     return 0;
   if (op == OP_KMAP_OF)
@@ -2082,6 +2746,9 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_W_ROTR:
   case OP_W_LT:
   case OP_W_EQ:
+  case OP_FE_MUL:
+  case OP_PT_MUL:
+  case OP_DEF_APP:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
   case OP_NAT_LE:
@@ -3073,6 +3740,12 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return word_test(m, op, a, n, w_lt);
   case OP_W_EQ:
     return word_test(m, op, a, n, w_eq);
+  case OP_FE_MUL:
+    return fe_mul_c(m, a, n);
+  case OP_PT_MUL:
+    return pt_mul_c(m, a, n);
+  case OP_DEF_APP:
+    return seal_spine(m, inst, a, n, 0);
   case OP_NONZERO_OF:
     return nonzero_of(m, a, n);
   case OP_NONZERO_VALUE:
@@ -3506,6 +4179,8 @@ const Core *quote_value(Machine *m, uint32_t level, const Value *v) {
 }
 
 const char *op_name(const Machine *m, Op op, uint32_t inst, uint32_t field) {
+  if (op == OP_DEF_APP)
+    return inst < m->def_count && m->defs[inst].name != NULL ? m->defs[inst].name : "?";
   if (op == OP_FAMILY)
     return inst < m->family_count ? m->families[inst].name : "?";
   if (op == OP_CTOR)

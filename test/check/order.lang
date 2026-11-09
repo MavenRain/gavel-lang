@@ -2,6 +2,6 @@
 def s1 : Size := szS sz0
 def s2 : Size := szS (szS sz0)
 def s3 : Size := szS (szS (szS sz0))
-def members : Members := mbCons (party sz0) (mbCons (party s1) (mbCons (party s2) (mbCons (party s3) mbNil)))
+def members : Members := mbCons (party fxKey1) (mbCons (party fxKey2) (mbCons (party fxKey3) (mbCons (party fxKey4) mbNil)))
 def board : Committee := committee members s3 s1 refl refl
 def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s2) (height s2) refl refl

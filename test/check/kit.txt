@@ -88,3 +88,5 @@ partial-zero.lang
 time-deadline.lang
 time-expires.lang
 time-timeout.lang
+weq-open.lang
+seal-open.lang

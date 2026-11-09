@@ -18,7 +18,11 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S8 DONE (commit pending), S8a NEXT. S8 adds the machine `Word`
+Status: S8a DONE (commit pending), S8b NEXT. S8a adds keccak-256,
+Poseidon, the BN254 G1 curve, the Schnorr check, the builtins `feMulC` and
+`ptMulC`, the signed certificate and the Poseidon messages, and the
+kernel parts for them: the open `wEq` rule, the sealed defs and the memo
+(Q-S8a-1 (a) to Q-S8a-10 (a)). S8 DONE: the machine `Word`
 and its ops, the `SwapWord` rename, the BN254 field `Fr` and `Fp`, the C
 oracle, `REFUSE_WORD` and `REFUSE_APPROX` (Q-S8-1 (a) to Q-S8-9 (a)).
 S7 DONE (the log): the Cubical TT kernel of ratify-lang
@@ -37,7 +41,7 @@ deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
 `append`, `paramsAt`, `Machine`, `Verdicts`, `replay`, `slashedOf`, the
 laws G4 and G5, `REFUSE_FIXPOINT`, `REFUSE_CLOCK` and the ballot half of
 `REFUSE_BOUND` (Q-S7-1 (a) to Q-S7-10 (a)). Section 1 has the rulings.
-Next: S8a (Poseidon, keccak-256, the G1 curve and the Schnorr check).
+Next: S8b (the BN254 pairing and the Noir verifier).
 
 ## 1. Rulings
 
@@ -140,6 +144,16 @@ Next: S8a (Poseidon, keccak-256, the G1 curve and the Schnorr check).
 | 2026-11-07 | Q-S8-7 "(a) cryptotool + kit example": `src/crypto` is a byte copy of quorum-lang 8d1a113 (u256, bn254, keccak, poseidon). `test/cryptotool.c` builds `build/cryptotool`, which prints `FILE NAME ARGS => RESULT` rows from a fixed seed and known answers. `test/gate.sh` evaluates each row with `langc --kit eval` and prints `crypto oracle: N rows, M mismatches`. Q-S8-9 (a) moved the field rows to `test/crypto/crypto.lang` (outside the Wasm set); the Word rows stay in `examples/crypto.lang`. | USER, S8 |
 | 2026-11-07 | Q-S8-8 "(a) 3 rows + ratify list": section 6 gets three ASSUMED rows (K1 Poseidon collision resistance, K2 keccak-256 as a random oracle for the challenge, K3 Schnorr EUF-CMA under discrete log on BN254 G1) and one EXTERNAL row (E1, the Word and field ops equal the C oracle). `REFUSE_APPROX` has the list `ckks`, `approx`, `approximate`, `float`, `double` (from ratify-lang 2aaaac6), checked right after `time_word` at the four `REFUSE_CLOCK` sites. Tests `approx-ckks` and `approx-float`. | USER, S8 |
 | 2026-11-08 | Q-S8-9 "(a) test/crypto/crypto.lang": the field oracle rows (add, sub, mul, inv on Fr and Fp) are in the new kit file `test/crypto/crypto.lang`, outside the Wasm set. The Word rows stay in `examples/crypto.lang`. Cause: the lowering refuses `frInv` with `EVAL_DEPTH` (more than 2000 levels). S8a rows use the same file. | USER, S8 |
+| 2026-11-08 | Q-S8a-1 "(a) Measure first": build the guest `Pt1`, `ptDbl`, `ptMadd` and `ptMul` first, and measure a 16-bit and a 32-bit scalar multiply under the current limits before the route is asked (Q-S8a-4). No fuel or arena change. |
+| 2026-11-08 | Q-S8a-2 "(a) Bake, Montgomery": `build/cryptotool poseidon` prints the 195 round constants and the 9 MDS values (quorum-lang 8d1a113, BN254 Fr) in Montgomery form, and `domain/domain.lang` holds them as data (`psRcsFr`, `psMdsFr`). One oracle row checks perm(0, 1, 2) against the quorum-lang known answer. |
+| 2026-11-08 | Q-S8a-3 "(a) Domain fixtures": the domain file exports fixed test keys (`fxKey1` to `fxKey5`) and signed certificate entries by name, made by `build/cryptotool fixtures` from fixed secret keys. The examples and the `test/check` files use these names, because a guest program cannot name a Word literal. |
+| 2026-11-08 | Q-S8a-4 "(a) Native field mul": a C builtin for the Fe CIOS multiply. The guest `feMul` stays the spec, and oracle rows compare the builtin with it. |
+| 2026-11-08 | Q-S8a-5 "(a) Raise cap to 64": `ENTRY_PARAMS_MAX` is 64 (`src/front/check.h`), so the curve rows stay full-equality rows. No fuel or arena change. |
+| 2026-11-08 | Q-S8a-6 "(a) Builtin feMulC, lower as guest feMul, fixed 64": `feMulC md a b` (`OP_FE_MUL`, `RULE_FE_MUL`, `VIS_WORD`: a guest program gets `REFUSE_WORD`). The C CIOS is in `src/front/eval.c`, and one call charges 64 eval steps. The lowering applies the domain def `feMul` to the arguments and lowers the result, so Wasm runs the spec (`test/ir/femul.lang` compares the two paths). |
+| 2026-11-08 | Q-S8a-7 "(a) Native scalar mul": `ptMulC md k p` (`OP_PT_MUL`, `RULE_PT_MUL`, `VIS_WORD`) is a C builtin for `ptMul`. The guest `ptMul` stays the spec, oracle rows compare the two, and Wasm runs the spec. Asked with the s7 numbers: one `schnorrCheck` cost 6352241 steps and 519 MiB, so a `checkCert` of 2 or more members did not fit one eval. |
+| 2026-11-08 | Q-S8a-8 "(a) Kernel wEq rule": `wEq x y` gives `inr unit` when x and y have the same form, also for open words (`word_same` in `src/front/eval.c`, a bounded structural test). `feEqRefl` proves `feEq a a` is `inr unit` for an open a, and `p3Slash` uses it, so P3 stays an open law on an Fe tag. The rule is in `src/front/eval.c`, not in `check.c`, because the check only builds the Core term. |
+| 2026-11-08 | Q-S8a-9 "(a) Closed-only unfolding": the sealed defs `hsMsg` and `schnorrCheck` unfold only on closed arguments. On an open argument the application stays neutral (`OP_DEF_APP`), and conversion compares it by the def and the arguments. The eval rows do not change, and the proof field `eaOk` (Q-S7-4 (a)) stays. |
+| 2026-11-09 | Q-S8a-10 "(a) Memo of closed sealed applications": the machine keeps a memo of each closed sealed application (the def and the arguments). Each distinct `hsMsg` or `schnorrCheck` value is computed one time in a langc run, and the list-bound walk and the eval rows use the memo. The memo-ok rule: a sealed def whose body reaches a `LIST_BOUNDS` family gets no memo, so a memo hit hides no list from the bound check. |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -256,7 +270,7 @@ Hash (Q-S0-8 (a)): an abstract `Hash` in the language (leaf-lang
 precedent); Poseidon at T2 and in the crypto prelude (Q-S0-13 (b)). From
 S5 (Q-S5-3 (a)): `family Hash := hash (hsTag : Size)` is the abstract
 `Hash`, the DESIGN `Message` argument reads as `Hash`, and S6 keeps it.
-`Party` is `party (ptKey : Size)`, an abstract key until S8 (Q-S5-1 (a)).
+`Party` is `party (ptKey : Pt1)`, a BN254 G1 key from S8a (Q-S5-1 (a), Q-S8-6 (a)).
 `Members` is the committee list, and a `Committee` holds the members, t
 and f.
 
@@ -332,7 +346,7 @@ discharged.
 | K1 | Poseidon is collision resistant | ASSUMED | the S8a def of Poseidon (Q-S8-5 (a), Q-S8-8 (a)) |
 | K2 | keccak-256 is a random oracle for the Schnorr challenge | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
 | K3 | Schnorr is EUF-CMA under discrete log on BN254 G1 | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
-| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 424 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
+| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 501 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
 
 Count at S1: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
 ASSUMED 9 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3), AT TARGET 2 (F1, Z4),
@@ -370,6 +384,40 @@ hint at A2.
 Port a Cubical TT kernel (Q-S0-14), then add R0 (section 2) and the
 classes check of R1 (section 3). Survey first: SAME, CHANGED,
 SOURCE-ONLY.
+
+S8a adds four kernel parts for the crypto prelude (`src/front/core.h`,
+`src/front/check.c`, `src/front/eval.c`, `src/front/lower.c`):
+
+- Two C builtins, `feMulC md a b` (Q-S8a-6 (a)) and `ptMulC md k p`
+  (Q-S8a-7 (a)). Each one is `VIS_WORD`: only `domain/domain.lang` and
+  `langc --kit` can name it. The guest defs `feMul` and `ptMul` stay the
+  spec, and oracle rows compare each builtin with its spec. The Wasm
+  lowering applies the spec def to the arguments, so Wasm runs the spec.
+- The open `wEq` rule (Q-S8a-8 (a)). `wEq x y` gives `inr unit` when x
+  and y have the same form, also when they are open. The test is bounded
+  (depth 64, 4096 nodes) and uses no fuel.
+- The sealed defs (Q-S8a-9 (a)): `hsMsg` and `schnorrCheck`. An
+  application of a sealed def to all its arguments unfolds only when each
+  argument is closed. Otherwise it stays neutral (`OP_DEF_APP`), and
+  conversion compares two such terms by the def and the arguments. Thus
+  the check does not run Poseidon or the curve on open values (the
+  `eaOk` binder in `entryVerdict`). A value with more than 65536 nodes
+  counts as closed. At most 4 defs can be sealed (`SEAL_MAX`).
+- The memo (Q-S8a-10 (a)). The machine keeps each closed sealed
+  application and its value, at most 256 rows (`SEAL_MEMO_MAX`). A second
+  application of the same def to the same argument words uses the value
+  and no fuel. The memo-ok rule: before the list-bound walk, the check
+  marks each sealed def, and a sealed def whose body reaches a
+  `LIST_BOUNDS` family gets no memo. Thus a memo hit hides no list from
+  the bound check (Q-S4-6 (a), Q-S5-7 (a), Q-S6-7 (a)).
+
+A test fails when each part is off (S8a mutants, 9 of 9 killed): the
+guest `schnorrCheck` (the 7 `scCheck` oracle rows), the C `sc_verify`
+(the `build/cryptotool` self-check), `ptMulC` (the `ck` rows of
+`test/crypto/crypto.lang`), the `wEq` rule (`test/check/weq-open.lang`
+and the domain def `feEqRefl`), the seal (`entryVerdict` in the domain
+check) and the memo (the 3 main examples in guest mode give
+`EVAL_FUEL`).
 
 ### 8.2 The five targets
 
@@ -515,8 +563,8 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S6 | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`, `elgVrf`, `admit`, `slash`, `Opening`, `release`; the deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, `prOrder`); P2, P3; `REFUSE_PEEK`, `REFUSE_DEADLINE`; the sealed and handle bounds (Q-S6-1 (b) to Q-S6-9 (a)). Gate: 36 examples, 17 parse refusals, 177 check refusals, 10 kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S5: examples 34 to 36 (`examples/sealed.lang`, `examples/sealed-bound-edge.lang`), check refusals 169 to 177 (8 rows), evals 89 to 104 (15 sealed rows), Wasm modules 37 to 39; all other counts are the same. Mutants M1 (the `REFUSE_PEEK` site), M2 (the `prOrder` code), M3 (the `opOk` code), M4 (`openMsg` at the stamp end), M5 (`slash` without the equal-commitment test), M6 (`htLe` for `htLt`), M7 (`SEALED_BID_BOUND` 1025), M8 (`HANDLE_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
 | S7 | `Ballot`, `Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log` (CM), `append`, `paramsAt`, `Machine` (CC), `Verdicts`, `replay`, `slashedOf` (Q-S7-1 (a) to Q-S7-10 (a)); G4 (`appendNilL`, `appendNilR`, `appendAssoc`), G5, P3 on the log (`p3Replay`); `REFUSE_REC` renamed `REFUSE_FIXPOINT`, `REFUSE_TIME` renamed `REFUSE_CLOCK`; the ballot half of `REFUSE_BOUND` (`BALLOT_BOUND` 1024); a linear `szLe`. The S7 word is `amendCheck`, not `amend`: the DAO prelude word `amend` (`src/front/front.c`) gave `REFUSE_NAME` (rule R4) in the regimes and oneuse examples. Gate: 37 examples, 17 parse refusals, 182 check refusals, 10 kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S6: examples 36 to 37 (`examples/log.lang`), check refusals 177 to 182 (`amend-self`, `bound-ballots`, `time-deadline`, `time-expires`, `time-timeout`), evals 104 to 115 (11 log rows), Wasm modules 39 to 40; all other counts are the same. Mutants M1 (the `REFUSE_FIXPOINT` site), M2 (the `eaOk` code), M3 (the `deadline` time word), M4 (`append`, cons case: a domain load failure), M5 (`paramsAt` at height 0), M6 (`entryVerdict` slash case), M7 (`entrySlashed`), M8 (`BALLOT_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
 | S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` 20M and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
-| S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). | NEXT |
-| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | |
+| S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). Built (Q-S8a-1 (a) to Q-S8a-10 (a)): the builtins `feMulC` and `ptMulC`; keccak-256 (`keccakF`, `kcChallenge`); Poseidon (`poseidon2`, the constants as data); `Pt1` and `ptMul`; `schnorrCheck` (the C check `sc_verify` is in `test/cryptotool.c`; there is no `schnorr.c` copy); `szToFe`, `hsMsg`, `hsOf`; the fixtures; the switch of `Hash` (Fe tag), `Party` (Pt1 key) and `Certificate` (signed entries); `szPair` and `szTri` out; the open `wEq` rule, the sealed defs and the memo. Gate: 501 oracle rows with 0 mismatches, 190 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 400 to 650 s. Mutants: 9 of 9 KILLED. | DONE |
+| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | NEXT |
 | S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
 | S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
 | S10 | T1 part 2: `gaveld`, the Wasm engine (Q-S0-15), the demo D1 to D8. | |
@@ -629,11 +677,10 @@ Design notes from S7:
   of liveness, not of safety. There is no law and no refusal. The row
   `setupOI` in `examples/log.lang` shows it: `authorize` on all n - f
   honest yes ballots gives `inl unit`.
-- OI-25 RULED at S8 (Q-S8-6 (a)), built at S8a. The `Party` key is an
-  abstract `Size` until S8a (Q-S5-1 (a)). In
-  `checkCert`, the match of an entry on its signer and message is the
-  ideal signature check; at S8a it becomes the Schnorr check on a BN254 G1
-  key `Pt1` (Q-S5-4 (a), Q-S8-6 (a)).
+- OI-25 CLOSED at S8a (Q-S8-6 (a)). The `Party` key is a BN254 G1 point
+  `Pt1`, and each certificate entry holds a signature (`ctR`, `ctS`).
+  `ctHas` runs `schnorrCheck` on the entries of the signer (Q-S5-4 (a),
+  Q-S8-6 (a)).
 - OI-26 An open committee (an input) passes the check at any size; only a
   closed `Members` value with more than 1024 members gives `REFUSE_BOUND`
   (Q-S5-7 (a)). The T1 entry bounds the open committee (S9).
@@ -646,9 +693,9 @@ Design notes from S7:
 - OI-29 CLOSED at S7. `replay` takes `Handles`, the slashed set, from the
   Log (Q-S7-4 (a)). `admit` keeps its S6 signature, and `entryVerdict`
   calls it with the handles so far.
-- OI-30 RULED at S8 (Q-S8-5 (a)), built at S8a. The message pairing
-  `szPair` is the abstract Cantor code until S8a (Q-S6-8 (a)). At S8a each
-  message is poseidon2(tag, poseidon2(x, y)).
+- OI-30 CLOSED at S8a (Q-S8-5 (a)). Each message is `hash (hsMsg t x
+  y)`, and `hsMsg t x y` is poseidon2(t, poseidon2(x, y)) on Fr. `szPair`
+  and `szTri` are out (Q-S6-8 (a)).
 - OI-31 `Sealed` is the clear denotation of the FHE ciphertext and the MPC
   shares until S13 and S14 (Q-S6-3 (a)).
 - OI-32 The root certificate of a slot is not yet an argument of `admit`

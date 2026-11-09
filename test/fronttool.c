@@ -693,6 +693,10 @@ int main(void) {
   ok &= domain("def wordTube : PathP (fun (j : I) => Path Word "
                "(hcomp Word j (fun (i : I) => [ j -> 7w ]) 7w) 7w) refl refl := fun j => refl", NULL);
   ok &= guest("def wordLit : Unit := 31w", "REFUSE_WORD");
+  /* S8a: a guest program gets REFUSE_WORD for the builtin feMulC. */
+  ok &= guest("def mulUse : Unit := feMulC", "REFUSE_WORD");
+  /* S8a: and for the builtin ptMulC (Q-S8a-7 (a)). */
+  ok &= guest("def ptUse : Unit := ptMulC", "REFUSE_WORD");
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;
 }

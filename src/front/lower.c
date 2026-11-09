@@ -585,6 +585,31 @@ static int apply_into(Low *l, Buf *b, const Value *fn, const Operand *args, uint
   return got(l, v) && lower_into(l, b, v, res);
 }
 
+/* A C builtin of 3 arguments (S8a): feMulC md a b (USER ruling Q-S8a-6 (a))
+   or ptMulC md k p (Q-S8a-7 (a)), as OP tells. Wasm runs the guest spec: the
+   value of the domain def feMul or ptMul, applied to the three arguments, is
+   lowered in place of the C builtin (the lowering inlines each domain def). */
+static int builtin_spec(Low *l, Buf *b, const Value *v, Op op, Operand *out) {
+  const char *spec = op == OP_PT_MUL ? "ptMul" : "feMul";
+  const Value *f = NULL;
+  uint32_t i;
+  for (i = 0u; i < l->m->def_count && f == NULL; i++)
+    if (strcmp(l->m->defs[i].name, spec) == 0)
+      f = def_value(l->m, i);
+  if (f == NULL && !l->m->diag->set)
+    return refuse(l, op == OP_PT_MUL ? "ptMulC without the domain def ptMul" : "feMulC without the domain def feMul");
+  for (i = 0u; i < 3u && f != NULL; i++)
+    f = apply_value(l->m, f, v->args[i]);
+  return got(l, f) && lower(l, b, f, out);
+}
+
+/* Q-S8a-9 (a): a sealed def on open arguments. The lowering inlines each
+   domain def, thus it unfolds the def here. */
+static int sealed_spec(Low *l, Buf *b, const Value *v, Operand *out) {
+  const Value *f = seal_unfold(l->m, v);
+  return got(l, f) && lower(l, b, f, out);
+}
+
 /* A new block [TAG, the lowering of each of the N values of ARGS]. */
 static int ctor_block(Low *l, Buf *b, uint64_t tag, const Value *const *args, uint32_t n, Operand *out) {
   Operand *ops = arena_alloc(l->m->arena, ((size_t)n + 1u) * sizeof *ops);
@@ -675,6 +700,9 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_W_ROTR:
   case OP_W_LT:
   case OP_W_EQ:
+  case OP_FE_MUL:
+  case OP_PT_MUL:
+  case OP_DEF_APP:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
   case OP_NAT_LE:
@@ -1303,6 +1331,12 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return word_cmp(l, b, v, IR_OP_LT, out);
   case OP_W_EQ:
     return word_cmp(l, b, v, IR_OP_EQ, out);
+  case OP_FE_MUL:
+    return builtin_spec(l, b, v, OP_FE_MUL, out);
+  case OP_PT_MUL:
+    return builtin_spec(l, b, v, OP_PT_MUL, out);
+  case OP_DEF_APP:
+    return sealed_spec(l, b, v, out);
   case OP_NONZERO_OF:
     return nonzero_of(l, b, v, out);
   case OP_NONZERO_VALUE:

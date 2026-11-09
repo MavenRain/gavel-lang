@@ -1,0 +1,7 @@
+-- Q-S8a-9 (a): hsMsg is a sealed def. On open arguments it stays a
+-- neutral application, and conversion compares the arguments: same
+-- checks fast, and bad (a different third argument) is refused.
+def same : (a : Fe) -> (b : Fe) -> (c : Fe) -> Path Fe (hsMsg a b c) (hsMsg a b c) :=
+  fun (a : Fe) (b : Fe) (c : Fe) => refl
+def bad : (a : Fe) -> (b : Fe) -> (c : Fe) -> (d : Fe) -> Path Fe (hsMsg a b c) (hsMsg a b d) :=
+  fun (a : Fe) (b : Fe) (c : Fe) (d : Fe) => refl

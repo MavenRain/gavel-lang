@@ -3,7 +3,7 @@
 -- test/check/bound-committee.lang has 1025 members and gives
 -- REFUSE_BOUND. An open list (addMember1024 itself) passes at check
 -- time; the T1 entry bounds it (S9).
-def addMember : Members -> Members := fun (ms : Members) => mbCons (party sz0) ms
+def addMember : Members -> Members := fun (ms : Members) => mbCons (party fxKey1) ms
 def addMember4 : Members -> Members := fun (ms : Members) => addMember (addMember (addMember (addMember ms)))
 def addMember16 : Members -> Members := fun (ms : Members) => addMember4 (addMember4 (addMember4 (addMember4 ms)))
 def addMember64 : Members -> Members := fun (ms : Members) => addMember16 (addMember16 (addMember16 (addMember16 ms)))

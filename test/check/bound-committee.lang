@@ -1,5 +1,5 @@
 -- REFUSE_BOUND (S5, Q-S5-7 (a)): a closed committee with 1025 members is above the bound of 1024
-def addMember : Members -> Members := fun (ms : Members) => mbCons (party sz0) ms
+def addMember : Members -> Members := fun (ms : Members) => mbCons (party fxKey1) ms
 def addMember4 : Members -> Members := fun (ms : Members) => addMember (addMember (addMember (addMember ms)))
 def addMember16 : Members -> Members := fun (ms : Members) => addMember4 (addMember4 (addMember4 (addMember4 ms)))
 def addMember64 : Members -> Members := fun (ms : Members) => addMember16 (addMember16 (addMember16 (addMember16 ms)))

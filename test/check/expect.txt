@@ -182,5 +182,9 @@ bound-handles.lang REFUSE_BOUND
 bound-ballots.lang REFUSE_BOUND
 word-type.lang REFUSE_WORD
 word-op.lang REFUSE_WORD
+fe-mul-c.lang REFUSE_WORD
+pt-mul-c.lang REFUSE_WORD
+weq-open.lang PATH_END
+seal-open.lang PATH_END
 approx-ckks.lang REFUSE_APPROX
 approx-float.lang REFUSE_APPROX

@@ -1,5 +1,5 @@
 -- REFUSE_BOUND (S7, Q-S7-10 (a)): a closed ballot list with 1025 ballots
-def bZero : Ballot := ballot (party sz0) (hash sz0) (inr unit)
+def bZero : Ballot := ballot (party fxKey1) (hsOf sz0) (inr unit)
 def addBallot : Ballots -> Ballots := fun (bs : Ballots) => blCons bZero bs
 def addBallot4 : Ballots -> Ballots := fun (bs : Ballots) => addBallot (addBallot (addBallot (addBallot bs)))
 def addBallot16 : Ballots -> Ballots := fun (bs : Ballots) => addBallot4 (addBallot4 (addBallot4 (addBallot4 bs)))

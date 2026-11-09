@@ -1,28 +1,28 @@
 -- The sealed bid (S6, USER rulings Q-S6-1 to Q-S6-9), guest mode: a valid
 -- Params with the deadline fields (the stamp end at height 1, the release
 -- at height 2), bids made with seal, and eval rows of admit, slash,
--- elgVrf, szPair, the message words and release. A guest program makes a
+-- elgVrf, the message words and release. A guest program makes a
 -- sealed bid with seal but does not read it (REFUSE_PEEK); only release
 -- opens the bids, and only with a valid release certificate (P2). The
 -- general words are in domain/domain.lang.
 def s1 : Size := szS sz0
 def s2 : Size := szS (szS sz0)
 def s3 : Size := szS (szS (szS sz0))
-def p0 : Party := party sz0
-def p1 : Party := party s1
-def p2 : Party := party s2
-def p3 : Party := party s3
+def p0 : Party := party fxKey1
+def p1 : Party := party fxKey2
+def p2 : Party := party fxKey3
+def p3 : Party := party fxKey4
 def members : Members := mbCons p0 (mbCons p1 (mbCons p2 (mbCons p3 mbNil)))
 def board : Committee := committee members s3 s1 refl refl
 -- G3 on ta = 3, and the stamp end 1 is before the release 2.
 def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
 def auc : AucID := aucId s1
-def rootA : Root := root (hash s1)
-def rootB : Root := root (hash s2)
-def hA : Handle := handle (hash s1)
-def hB : Handle := handle (hash s2)
-def cmA : Commitment := commitment (hash s1)
-def cmB : Commitment := commitment (hash s2)
+def rootA : Root := root (hsOf s1)
+def rootB : Root := root (hsOf s2)
+def hA : Handle := handle (hsOf s1)
+def hB : Handle := handle (hsOf s2)
+def cmA : Commitment := commitment (hsOf s1)
+def cmB : Commitment := commitment (hsOf s2)
 -- The proofs name the root rootA.
 def proofA : EligibilityProof := elgProof rootA hA cmA
 def proofB : EligibilityProof := elgProof rootA hA cmB
@@ -31,12 +31,20 @@ def bidB : SealedBid := sealedBid hB cmB (elgProof rootA hB cmB) (seal Amount (a
 def stampA : Hash := stampMsg cmA (height s1)
 def stampLate : Hash := stampMsg cmA (height s2)
 -- Three members certify the stamp of cmA at height 1.
-def certA : Certificate := ctCons p0 stampA (ctCons p1 stampA (ctCons p2 stampA ctNil))
+def certA : Certificate := ctCons p0 fxStAK1R fxStAK1S (ctCons p1 fxStAK2R fxStAK2S (ctCons p2 fxStAK3R fxStAK3S ctNil))
 def admitValid : Verdict := admit setup hlNil rootA bidA (height s1) certA
+-- Adding r to a commitment tag preserves its stamp message. The tag is
+-- noncanonical, so the certificate for cmA must not admit this bid.
+def cmAlias : Commitment := commitment (hash (feAddRaw (hsTag (coHash cmA)) (modM frMod)))
+def bidAlias : SealedBid := sealedBid hA cmAlias (elgProof rootA hA cmAlias) (seal Amount (amSucc (amSucc amZero)))
+def admitAlias : Verdict := admit setup hlNil rootA bidAlias (height s1) certA
+def tagBelowR : Sum Unit Unit := hsCanonical (hash (feSubRaw (modM frMod) feOne))
+def tagAtR : Sum Unit Unit := hsCanonical (hash (modM frMod))
+def tagAboveR : Sum Unit Unit := hsCanonical (coHash cmAlias)
 -- Height 2 is after the stamp end 1.
-def admitLate : Verdict := admit setup hlNil rootA bidA (height s2) (ctCons p0 stampLate (ctCons p1 stampLate (ctCons p2 stampLate ctNil)))
+def admitLate : Verdict := admit setup hlNil rootA bidA (height s2) (ctCons p0 fxStLK1R fxStLK1S (ctCons p1 fxStLK2R fxStLK2S (ctCons p2 fxStLK3R fxStLK3S ctNil)))
 -- Two signers only.
-def admitBadCert : Verdict := admit setup hlNil rootA bidA (height s1) (ctCons p0 stampA (ctCons p1 stampA ctNil))
+def admitBadCert : Verdict := admit setup hlNil rootA bidA (height s1) (ctCons p0 fxStAK1R fxStAK1S (ctCons p1 fxStAK2R fxStAK2S ctNil))
 -- The handle hA is slashed.
 def admitSlashed : Verdict := admit setup (hlCons hB (hlCons hA hlNil)) rootA bidA (height s1) certA
 -- The proof names rootA, not rootB.
@@ -49,15 +57,12 @@ def slashSame : Verdict := slash rootA hA cmA proofA cmA proofA
 def slashBadProof : Verdict := slash rootA hA cmA proofA cmB proofA
 def vrfYes : Sum Unit Unit := elgVrf rootA hA cmA proofA
 def vrfNo : Sum Unit Unit := elgVrf rootA hB cmA proofA
--- szPair is injective: (1, 0) gives 1 and (0, 1) gives 2.
-def pairLeft : Size := szPair s1 sz0
-def pairRight : Size := szPair sz0 s1
 -- The kind tag: a stamp message and an open message with the same tag and
 -- the same height are not equal.
 def msgKinds : Sum Unit Unit := hsEq (stampMsg cmA (height s1)) (openMsg auc (height s1))
 def openMsgA : Hash := openMsg auc (height s2)
 -- Three members certify the release of auc at height 2 (P2).
-def openA : Opening := opening auc setup (ctCons p1 openMsgA (ctCons p2 openMsgA (ctCons p3 openMsgA ctNil))) refl
+def openA : Opening := opening auc setup (ctCons p1 fxOpAK2R fxOpAK2S (ctCons p2 fxOpAK3R fxOpAK3S (ctCons p3 fxOpAK4R fxOpAK4S ctNil))) refl
 def opened : Bids := release openA (sbCons bidA (sbCons bidB sbNil))
 -- The second price of the opened bids 2, 3 with the reserve 1.
 def openedOf : Outcome := outcomeOf setup (release openA (sbCons bidA (sbCons bidB sbNil)))

@@ -4,9 +4,9 @@
 -- test/check/bound-sealed.lang and test/check/bound-handles.lang have 1025
 -- entries and give REFUSE_BOUND. An open list (addBid1024 itself) passes
 -- at check time; the T1 entry bounds it (S9).
-def hZero : Handle := handle (hash sz0)
-def cmZero : Commitment := commitment (hash sz0)
-def bidZero : SealedBid := sealedBid hZero cmZero (elgProof (root (hash sz0)) hZero cmZero) (seal Amount amZero)
+def hZero : Handle := handle (hsOf sz0)
+def cmZero : Commitment := commitment (hsOf sz0)
+def bidZero : SealedBid := sealedBid hZero cmZero (elgProof (root (hsOf sz0)) hZero cmZero) (seal Amount amZero)
 def addBid : SealedBids -> SealedBids := fun (bs : SealedBids) => sbCons bidZero bs
 def addBid4 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid (addBid (addBid (addBid bs)))
 def addBid16 : SealedBids -> SealedBids := fun (bs : SealedBids) => addBid4 (addBid4 (addBid4 (addBid4 bs)))

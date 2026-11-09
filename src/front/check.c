@@ -109,6 +109,8 @@ typedef enum {
   RULE_NAT2,
   RULE_WORD2, /* S8: a Word op (Q-S8-3 (a)) */
   RULE_LEN, /* S3: len A r (survey section 7) */
+  RULE_FE_MUL, /* S8a: feMulC md a b (Q-S8a-6 (a)) */
+  RULE_PT_MUL, /* S8a: ptMulC md k p (Q-S8a-7 (a)) */
   RULE_FLAG_IF,
   RULE_NONZERO,       /* S3: NonZero Nat */
   RULE_NONZERO_OF,    /* nonZero x */
@@ -214,6 +216,8 @@ static const Builtin BUILTINS[] = {
   {"wRotr", 2, RULE_WORD2, OP_W_ROTR, OP_WORD, 0, VIS_WORD},
   {"wLt", 2, RULE_WORD2, OP_W_LT, OP_SUM, 0, VIS_WORD},
   {"wEq", 2, RULE_WORD2, OP_W_EQ, OP_SUM, 0, VIS_WORD},
+  {"feMulC", 3, RULE_FE_MUL, OP_FE_MUL, OP_FAMILY, 0, VIS_WORD},
+  {"ptMulC", 3, RULE_PT_MUL, OP_PT_MUL, OP_FAMILY, 0, VIS_WORD},
 };
 
 #define BUILTIN_COUNT ((uint32_t)(sizeof BUILTINS / sizeof BUILTINS[0]))
@@ -2234,6 +2238,47 @@ static const Core *rule_len(Call *k) {
   return args[1] == NULL ? NULL : core_op(c, OP_FM_LEN, 0, 0, args, 2);
 }
 
+/* feMulC md a b (S8a, USER ruling Q-S8a-6 (a)): the Montgomery product
+   a b R^-1 mod (modM md) of the domain def feMul, as a C builtin. md has the
+   type FeMod, a and b the type Fe. The domain file declares FeMod and Fe. */
+static const Core *rule_fe_mul(Call *k) {
+  Checker *c = k->c;
+  uint32_t mod = find_family(c->m, "FeMod");
+  uint32_t fe = find_family(c->m, "Fe");
+  const Core *args[3];
+  const Value *tm;
+  const Value *tf;
+  if (mod >= c->m->family_count || fe >= c->m->family_count)
+    return NULL;
+  tm = val_op(c->m, VAL_OP, OP_FAMILY, mod, 0, NULL, 0);
+  tf = val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0);
+  args[0] = check(c, k->args[0], tm);
+  args[1] = args[0] == NULL ? NULL : check(c, k->args[1], tf);
+  args[2] = args[1] == NULL ? NULL : check(c, k->args[2], tf);
+  k->type = tf;
+  return args[2] == NULL ? NULL : core_op(c, OP_FE_MUL, 0, 0, args, 3);
+}
+
+/* ptMulC md k p (S8a, USER ruling Q-S8a-7 (a)): the scalar product k p of
+   the domain def ptMul, as a C builtin. md has the type FeMod, k the type Fe
+   and p the type Pt1. The domain file declares FeMod, Fe and Pt1. */
+static const Core *rule_pt_mul(Call *k) {
+  Checker *c = k->c;
+  uint32_t mod = find_family(c->m, "FeMod");
+  uint32_t fe = find_family(c->m, "Fe");
+  uint32_t pt = find_family(c->m, "Pt1");
+  const Core *args[3];
+  const Value *tp;
+  if (mod >= c->m->family_count || fe >= c->m->family_count || pt >= c->m->family_count)
+    return NULL;
+  tp = val_op(c->m, VAL_OP, OP_FAMILY, pt, 0, NULL, 0);
+  args[0] = check(c, k->args[0], val_op(c->m, VAL_OP, OP_FAMILY, mod, 0, NULL, 0));
+  args[1] = args[0] == NULL ? NULL : check(c, k->args[1], val_op(c->m, VAL_OP, OP_FAMILY, fe, 0, NULL, 0));
+  args[2] = args[1] == NULL ? NULL : check(c, k->args[2], tp);
+  k->type = tp;
+  return args[2] == NULL ? NULL : core_op(c, OP_PT_MUL, 0, 0, args, 3);
+}
+
 /* Fin n: n : Nat, Fin n : Type 0. */
 static const Core *rule_fin(Call *k) {
   const Core *n = check(k->c, k->args[0], nat_type(k->c));
@@ -2435,6 +2480,10 @@ static const Core *rule(Call *k) {
     return rule_prim(k, OP_WORD);
   case RULE_LEN:
     return rule_len(k);
+  case RULE_FE_MUL:
+    return rule_fe_mul(k);
+  case RULE_PT_MUL:
+    return rule_pt_mul(k);
   case RULE_FIN_OP:
     return rule_fin_op(k);
   case RULE_FIN:
@@ -4442,6 +4491,34 @@ static int bound_def(Checker *c, const ListBound *b, const Value *tv, const Core
   return over || watch.over;
 }
 
+/* Q-S8a-10 (a): a sealed def gets the memo (memo-ok) only when its body
+   reaches no bounded list family (list_uses), so a memo hit hides no list
+   constructor from the BoundWatch observer. Each sealed def that def_value
+   noted is marked once, before the next bound walk. */
+static int seal_memo_mark(Checker *c) {
+  Machine *m = c->m;
+  unsigned char *seen;
+  uint32_t s;
+  uint32_t i;
+  int uses;
+  for (s = 0u; s < m->seal_count; s++) {
+    uses = 0;
+    for (i = 0; m->seal_memo[s] == 0u && !uses && i < (uint32_t)(sizeof LIST_BOUNDS / sizeof LIST_BOUNDS[0]); i++) {
+      ListBound b = list_bound(m, LIST_BOUNDS[i].family, LIST_BOUNDS[i].nil, LIST_BOUNDS[i].cons, LIST_BOUNDS[i].bound);
+      if (b.family != NO_FAMILY) {
+        seen = arena_alloc(m->arena, (size_t)m->def_count + 1u);
+        if (seen == NULL)
+          return FAIL(c, "OOM", "out of memory");
+        memset(seen, 0, (size_t)m->def_count + 1u);
+        uses = list_uses(m, b.family, seen, m->defs[m->seal_def[s]].body);
+      }
+    }
+    if (m->seal_memo[s] == 0u)
+      m->seal_memo[s] = uses ? 2u : 1u;
+  }
+  return 1;
+}
+
 /* Register a checked body, including the closed label cores retained by
    cocell_shape. Both callers obtain BODY from the term checker. */
 static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core *syntax_type, const Core *body) {
@@ -4484,7 +4561,7 @@ static int check_def_body(Checker *c, const Decl *d, const Value *tv, const Core
     uint32_t i;
     for (i = 0; i < (uint32_t)(sizeof LIST_BOUNDS / sizeof LIST_BOUNDS[0]); i++) {
       ListBound b = list_bound(m, LIST_BOUNDS[i].family, LIST_BOUNDS[i].nil, LIST_BOUNDS[i].cons, LIST_BOUNDS[i].bound);
-      int over = bound_def(c, &b, tv, syntax_type, body);
+      int over = seal_memo_mark(c) && bound_def(c, &b, tv, syntax_type, body);
       if (m->diag->code != NULL)
         return 0;
       if (over)

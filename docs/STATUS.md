@@ -1,14 +1,15 @@
 # gavel-lang status
 
-The build implements slice S8 of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S8a of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
 Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
 (Q-S6-1 (b) to Q-S6-9 (a)) the log (Q-S7-1 (a) to Q-S7-10 (a)) and the machine `Word`, the field and
-the C oracle (Q-S8-1 (a) to Q-S8-9 (a)). It does not complete M0. S8 is
-DONE (commit pending). The next slice is S8a: Poseidon, keccak-256, the G1
-curve and the Schnorr check.
+the C oracle (Q-S8-1 (a) to Q-S8-9 (a)) and the crypto prelude part 1:
+keccak-256, Poseidon, the G1 curve and the Schnorr check (Q-S8a-1 (a) to
+Q-S8a-10 (a)). It does not complete M0. S8a is DONE (commit pending). The
+next slice is S8b: the BN254 pairing and the Noir verifier.
 
 ## Implemented
 
@@ -71,10 +72,26 @@ curve and the Schnorr check.
   boundary), `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`,
   `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr` and `Fp`. The C oracle
   is `build/cryptotool` (`src/crypto` from quorum-lang 8d1a113). It prints
-  424 rows, and `test/gate.sh` evaluates each one (`test/crypto/crypto.lang`
-  holds the field rows, outside the Wasm set). A declaration or a name
-  `ckks`, `approx`, `approximate`, `float` or `double` gives
-  `REFUSE_APPROX`.
+  501 rows (424 at S8), and `test/gate.sh` evaluates each one
+  (`test/crypto/crypto.lang` holds the field rows and the S8a rows,
+  outside the Wasm set). A declaration or a name `ckks`, `approx`,
+  `approximate`, `float` or `double` gives `REFUSE_APPROX`.
+- The crypto prelude part 1 (S8a, Q-S8a-1 (a) to Q-S8a-10 (a)):
+  keccak-256 (`keccakF`, `kcChallenge`), Poseidon circomlib t=3 on Fr
+  (`poseidon2`; the round constants and the MDS values are data in
+  `domain/domain.lang`), the G1 curve `Pt1` (`ptMul`) and
+  `schnorrCheck`. The C builtins `feMulC` and `ptMulC` compute the field
+  multiply and the scalar multiply. The guest `feMul` and `ptMul` stay
+  the spec, and Wasm runs the spec. `hsMsg t x y` is poseidon2(t,
+  poseidon2(x, y)). `Hash` holds an Fe tag (`hsOf` makes one from a
+  `Size`), `Party` holds a `Pt1` key, and each certificate entry holds a
+  signature (`ctR`, `ctS`). `ctHas` runs `schnorrCheck` on the entries of
+  the signer. `szPair` and `szTri` are out. The fixtures (`fxKey1` to
+  `fxKey5` and the signed entries) come from `build/cryptotool fixtures`.
+  The kernel adds the open `wEq` rule, the sealed defs `hsMsg` and
+  `schnorrCheck`, and the memo of closed sealed applications
+  (`docs/PLAN.md` section 8.1). The `build/cryptotool` self-check
+  verifies the Schnorr rows with the C `sc_verify`.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -82,19 +99,19 @@ curve and the Schnorr check.
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 38 examples, 18 parse refusals, 186 check refusals, 10
-  kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0
-  mismatches, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4
-  notrap modules, 7 notrap bad rows, 10 spine evals, 41 Wasm modules
-  valid, 1846 differential cases with 0 mismatches;
+- The gate: 38 examples, 18 parse refusals, 190 check refusals, 10
+  kit-only refusals, 1 time hint, 152 evals, 501 crypto oracle rows with 0
+  mismatches, 1 build, 1 ir lowered, 5 ir refusals, 3 ir lowerings, 4
+  notrap modules, 7 notrap bad rows, 10 spine evals, 42 Wasm modules
+  valid, 1910 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S8a to S8c: the crypto layers of `docs/PLAN.md` section 12 (the crypto
-   prelude). Each slice needs the slice before it; S8a needs the S8 commit
-   first.
+1. S8b and S8c: the crypto layers of `docs/PLAN.md` section 12 (the
+   crypto prelude). Each slice needs the slice before it; S8b needs the S8
+   and S8a commits first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
@@ -110,15 +127,21 @@ curve and the Schnorr check.
 - An open bid list passes the check at any length. The T1 entry bounds it
   (OI-22).
 - The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
-- The `Party` key is an abstract `Size` until S8a, and `checkCert` matches
-  an entry on its signer and message (OI-25).
+- `hsMsg` and `schnorrCheck` are sealed: on an open argument they do not
+  unfold, so a law cannot look inside them (Q-S8a-9 (a)). The memo holds
+  at most 256 rows; above that, a closed application is computed again.
+- The Wasm path of `ptMulC` has no differential row. `test/ir/femul.lang`
+  covers `feMulC` only.
+- The gate takes about 400 to 650 s (116 s at S8). In one run of 645 s,
+  the Wasm and differential section (42 modules, 1910 cases) took 403 s,
+  and the crypto oracle (501 rows) took 150 s. The cause of the increase
+  is not known.
 - An open committee passes the check at any size. The T1 entry bounds it
   (OI-26).
 - G3 sets no upper law on ta. A ta above n - f stops the amendments by
   the honest members (OI-24).
-- `elgVrf` is an ideal check until S8b (OI-28). The message pairing is the
-  abstract Cantor code until S8a (OI-30). `Sealed` is the clear denotation
-  of the ciphertext and the shares until S13 and S14 (OI-31).
+- `elgVrf` is an ideal check until S8b (OI-28). `Sealed` is the clear
+  denotation of the ciphertext and the shares until S13 and S14 (OI-31).
 - A release is outside the Log (OI-35). The Log and `Verdicts` have no
   bound; only `Ballots` has one (OI-36).
 - In a guest program, `amSucc` applies only to a literal Amount

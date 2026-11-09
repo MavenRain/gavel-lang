@@ -5,7 +5,9 @@ under an off-chain threshold authority that amends itself. It comes from
 lang-template with the tcc-wasm host. The reference is arXiv:2606.14939
 (see `design/DIGEST-2606.14939.md`). No program can have a runtime error.
 
-Status: S8 DONE (commit pending), S8a NEXT. S8 adds the machine `Word`,
+Status: S8a DONE (commit pending), S8b NEXT. S8a adds keccak-256,
+Poseidon, the BN254 G1 curve, the Schnorr check, signed certificates and
+Poseidon messages. S8: the machine `Word`,
 the field `Fr` and `Fp`, the C oracle and `REFUSE_APPROX`. S7 (the log):
 the Cubical TT kernel of ratify-lang
 a46d5df, R0 from ratify-lang 71f2c22 (total Nat operations,
@@ -46,6 +48,6 @@ The rest of the crypto layers and the targets do not exist yet.
 - `docs/STATUS.md` and `docs/VALIDATION.md`: the status and the gate results.
 - `test/crypto/crypto.lang` and `build/cryptotool`: the C oracle for the Word
   and field ops (`src/crypto` is from quorum-lang 8d1a113). `test/gate.sh`
-  evaluates its 424 rows.
+  evaluates its 501 rows.
 - `docs/host/README.md`: how to build and test the host kit, and how to
   replace the sample domain in `domain/`.

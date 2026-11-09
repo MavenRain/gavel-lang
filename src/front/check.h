@@ -5,7 +5,8 @@
 
 #include "front/core.h"
 
-#define ENTRY_PARAMS_MAX 32u /* 16 before sealed-lang S2 (R23): slashUsr takes 19 words */
+#define ENTRY_PARAMS_MAX 64u /* 16 before sealed-lang S2 (R23): slashUsr takes 19
+                                words. 32 before S8a: curveMadd takes 56 words. */
 
 /* An entry: a program definition of type Nat, Flag, or a function of Nat and
    Flag arguments to a Nat or Flag result. */

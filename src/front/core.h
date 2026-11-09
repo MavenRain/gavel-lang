@@ -99,7 +99,17 @@ typedef enum {
   OP_W_ROTL,
   OP_W_ROTR,
   OP_W_LT,
-  OP_W_EQ
+  OP_W_EQ,
+  /* S8a (USER ruling Q-S8a-6 (a)): feMulC md a b, the Montgomery product
+     of the domain def feMul as a C builtin. */
+  OP_FE_MUL,
+  /* S8a (USER ruling Q-S8a-7 (a)): ptMulC md k p, the scalar product of
+     the domain def ptMul as a C builtin. */
+  OP_PT_MUL,
+  /* S8a (USER ruling Q-S8a-9 (a)): a sealed def (eval.c SEALED_DEFS) on
+     arguments that are not all closed. A neutral: INST is the def index and
+     the args are the arguments of the def, in order. */
+  OP_DEF_APP
 } Op;
 
 /* The instance of pure, map, bind and filter (formers F5 and F8). */
@@ -313,6 +323,12 @@ typedef struct {
   int law_only;
 } DefInfo;
 
+/* Q-S8a-9 (a): the maximum count of sealed defs (eval.c SEALED_DEFS). */
+#define SEAL_MAX 4u
+
+/* Q-S8a-10 (a): the maximum count of rows in the seal memo. */
+#define SEAL_MEMO_MAX 256u
+
 /* The checked program and the evaluation state. No global state: every
    function gets this context. */
 typedef struct {
@@ -333,6 +349,21 @@ typedef struct {
   int has_state;          /* the program declares the state (slice K3a) */
   uint32_t state_family; /* the state family, when has_state is 1 */
   uint32_t fresh; /* the count of fresh levels for the Kan head test */
+  /* Q-S8a-9 (a): the sealed defs that def_value evaluated: the def index,
+     the arity and the body under the arity binders. */
+  uint32_t seal_def[SEAL_MAX];
+  uint32_t seal_arity[SEAL_MAX];
+  const Core *seal_body[SEAL_MAX];
+  uint32_t seal_count;
+  /* Q-S8a-10 (a): per sealed def, 0 when not marked yet, 1 when the memo is
+     on (memo-ok) and 2 when it is off. The checker marks it. */
+  unsigned char seal_memo[SEAL_MAX];
+  /* Q-S8a-10 (a): the memo of closed sealed applications: the seal row, its
+     arguments (the arity of the row) and the value. */
+  uint32_t memo_row[SEAL_MEMO_MAX];
+  const Value *const *memo_args[SEAL_MEMO_MAX];
+  const Value *memo_value[SEAL_MEMO_MAX];
+  uint32_t memo_count;
   /* A temporary checker observer of constructors, including intermediate
      values that evaluation consumes before returning its result. */
   void (*observe_ctor)(void *context, const Value *value);
@@ -391,6 +422,9 @@ const Env *env_push(Machine *m, const Env *env, const Value *value);
 const Value *def_value(Machine *m, uint32_t index);
 const Value *eval_core(Machine *m, const Env *env, const Core *core);
 const Value *apply_value(Machine *m, const Value *fn, const Value *arg);
+/* Q-S8a-9 (a): the unfold of a sealed def application V (OP_DEF_APP), also
+   on open arguments. The lowering inlines each def. */
+const Value *seal_unfold(Machine *m, const Value *v);
 /* transp LINE PHI BASE, for JSON rule 1 (S3b). LINE is a path value in U. */
 const Value *val_transp(Machine *m, const Value *line, const Value *phi, const Value *base);
 /* The body of a LAM, PI, SIGMA, PLAM or PATHP value at ARG. */

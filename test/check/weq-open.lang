@@ -1,0 +1,6 @@
+-- Q-S8a-8 (a): wEq x x is inr unit for an open x (the kernel rule), but
+-- wEq x y does not reduce for two different open Words, so refl is refused.
+def same : (x : Word) -> Path (Sum Unit Unit) (wEq x x) (inr unit) :=
+  fun (x : Word) => refl
+def bad : (x : Word) -> (y : Word) -> Path (Sum Unit Unit) (wEq x y) (inr unit) :=
+  fun (x : Word) (y : Word) => refl
