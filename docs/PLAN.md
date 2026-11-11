@@ -178,6 +178,10 @@ Next: S8c (ChaCha20, the seed input and the MPC output check).
 | 2026-11-10 | Q-S8b-18 (a): there is no `amToFe` word. `outcomeVrf` reads the price by an inline elim and is the fifth `Amount` reader. |
 | 2026-11-10 | Q-S8b-19 (a): `EVAL_FUEL_STEPS` goes from 20000000 to 40000000: with the golden statements, `replayAll` in `examples/log.lang` replays an amend, a slash and an admit. |
 | 2026-11-10 | Q-S8b-20 (a): `test/gate.sh` runs `build/cryptotool noir` on the 4 golden dirs and prints `noir: 4 golden proofs passed`. |
+| 2026-11-10 | Q-S8c-2 "Words only (Recommended)": the ChaCha20 key is the seed as 8 Words, the nonce is (stream tag, 0, 0), the counter is the block index, and the output is the 16 Words of the block (`sdExpand`). There is no field sampler. |
+| 2026-11-10 | Q-S8c-3 "Domain Seed, kit rows (Recommended)": `Seed` is a domain family and the ChaCha20 rows are kit rows (`test/crypto/chacha.lang`). The checker, the lowering and the Wasm entry do not change. |
+| 2026-11-10 | Q-S8c-4 "n-of-n attestations (Recommended)": the MPC output check is `outcomeAtt`. Each member signs the hash of (tag, AucID, winner handle, price), and the check needs the signatures of all n members. design/DESIGN.md line 38 says "t attestations": for the MPC output this ruling makes it n (OI-42). |
+| 2026-11-10 | Q-S8c-5 "One commit (Recommended)": S8c is one commit. Q-S8c-1 was not asked: ChaCha20 is a guest def, and there is no C builtin for it. |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -315,6 +319,12 @@ MPC output check, the WRK rounds of one member (Q-S1-2 (b)) and ChaCha20
 (Q-S1-10 (a)). `checkCert` and `elgVrf` call the prelude. There is no
 crypto import.
 
+At S8c the MPC output check is `outcomeAtt` (Q-S8c-4): the certificate
+must have a signature of each of the n members on the outcome message of
+the auction, the winner handle and the price. The seed input is the
+family `Seed` (8 Words), and `sdExpand` gives one ChaCha20 block of 16
+Words for a stream tag and a block index (Q-S8c-2).
+
 Governance (Q-S0-6). (a) One `Params` record (the auction rule, the
 reserve, the committee, t, n, f, the deadlines). Only a t-of-n authorized
 `Amendment` changes it. The amend rule can amend itself. Amendments order
@@ -365,14 +375,14 @@ discharged.
 | Z4 | The T2 relation is the guest relation | AT TARGET (T2) | golden files |
 | M1 | MPC security and the corruption model | ASSUMED | the WRK proof (Wang, Ranellucci, Katz, CCS 2017): malicious, up to n - 1 corrupt members, abort possible (Q-S1-1 (b)) |
 | M2 | Private, authenticated channels between members | EXTERNAL | the TLS proxy of each member (Q-S1-9 (b)) |
-| M3 | The OS seed is uniform and fresh for each run | ASSUMED | getentropy (Q-S1-10 (a)) |
+| M3 | The OS seed is uniform and fresh for each run | ASSUMED | getentropy (Q-S1-10 (a)); the guest takes the seed as a `Seed` of 8 Words and expands it with `sdExpand` (Q-S8c-2); no host entry gives the seed before S14b and S14c (OI-41) |
 | Z5 | Soundness of the TFHE share proof | ASSUMED | proof system (Q-S1-8 (a)) |
 | K1 | Poseidon is collision resistant | ASSUMED | the S8a def of Poseidon (Q-S8-5 (a), Q-S8-8 (a)) |
 | K2 | keccak-256 is a random oracle for the Schnorr challenge | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
 | K3 | Schnorr is EUF-CMA under discrete log on BN254 G1 | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
 | K4 | Groth16 on BN254 is knowledge sound | ASSUMED | the S8b def of `g16Verify` (Q-S8b-2 (a)) |
 | K5 | The Groth16 setup of each circuit is honest | EXTERNAL | the setup of a deploy; the keys of `test/noir/` are for tests only (Q-S8b-10 (a), OI-39) |
-| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 537 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
+| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 581 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
 | E2 | The guest pairing spec, the guest Groth16 verifier and the C check agree on the vectors and the golden proofs | EXTERNAL | the 16 rows of `test/crypto/pair-spec.lang`, the 18 rows of `test/crypto/g16.lang`, `noir: 4 golden proofs passed`, the EIP-197 known answers in the `build/cryptotool` self-check (Q-S8b-6 (a), Q-S8b-20 (a)) |
 
 Count at S1: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
@@ -629,9 +639,9 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S7 | `Ballot`, `Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log` (CM), `append`, `paramsAt`, `Machine` (CC), `Verdicts`, `replay`, `slashedOf` (Q-S7-1 (a) to Q-S7-10 (a)); G4 (`appendNilL`, `appendNilR`, `appendAssoc`), G5, P3 on the log (`p3Replay`); `REFUSE_REC` renamed `REFUSE_FIXPOINT`, `REFUSE_TIME` renamed `REFUSE_CLOCK`; the ballot half of `REFUSE_BOUND` (`BALLOT_BOUND` 1024); a linear `szLe`. The S7 word is `amendCheck`, not `amend`: the DAO prelude word `amend` (`src/front/front.c`) gave `REFUSE_NAME` (rule R4) in the regimes and oneuse examples. Gate: 37 examples, 17 parse refusals, 182 check refusals, 10 kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S6: examples 36 to 37 (`examples/log.lang`), check refusals 177 to 182 (`amend-self`, `bound-ballots`, `time-deadline`, `time-expires`, `time-timeout`), evals 104 to 115 (11 log rows), Wasm modules 39 to 40; all other counts are the same. Mutants M1 (the `REFUSE_FIXPOINT` site), M2 (the `eaOk` code), M3 (the `deadline` time word), M4 (`append`, cons case: a domain load failure), M5 (`paramsAt` at height 0), M6 (`entryVerdict` slash case), M7 (`entrySlashed`), M8 (`BALLOT_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
 | S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` (20M at S8, 40M from S8b) and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
 | S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). Built (Q-S8a-1 (a) to Q-S8a-10 (a)): the builtins `feMulC` and `ptMulC`; keccak-256 (`keccakF`, `kcChallenge`); Poseidon (`poseidon2`, the constants as data); `Pt1` and `ptMul`; `schnorrCheck` (the C check `sc_verify` is in `test/cryptotool.c`; there is no `schnorr.c` copy); `szToFe`, `hsMsg`, `hsOf`; the fixtures; the switch of `Hash` (Fe tag), `Party` (Pt1 key) and `Certificate` (signed entries); `szPair` and `szTri` out; the open `wEq` rule, the sealed defs and the memo. Gate: 501 oracle rows with 0 mismatches, 190 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 400 to 650 s. Mutants: 9 of 9 KILLED. | DONE |
-| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). Built (Q-S8b-1 (a) to Q-S8b-20 (a)): the C builtin `pairCheckC` with the on-curve and G2 subgroup checks; the guest spec (the tower Fp2, Fp6 and Fp12, the Miller loop, the final exponentiation, `pairCheck`; `mdGate2` keeps the spec stuck at check time); `g16Verify` (sealed; the MSM with `ptMulC`, then one check of 4 pairs) with the families `G16Vk`, `G16Pubs` and `G16Ics`; the keys `eligVk`, `outcomeVk` and `shareVk` as domain data; `EligibilityProof := elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)` and `elgVrf` on Groth16 (closes OI-28); `OutcomeProof` with `outcomeVrf`, and `ShareProof` with `shareVrf`; the golden files in `test/noir/` (the Alg 2 eligibility circuit with 2 proofs, stub outcome and share circuits; the generation tools are not in the gate); `build/cryptotool noir NAME DIR` (the C Groth16 check and the key converter); the C pairing oracle with the EIP-197 known answers of revm-precompile 32.1.0; a fresh fuel for each declaration and `EVAL_FUEL_STEPS` 40M; the examples use the golden statements. There is no `amToFe` word: `outcomeVrf` is the fifth `Amount` reader. Gate: 537 oracle rows with 0 mismatches, `noir: 4 golden proofs passed`, 192 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 420 to 630 s of CPU time for one run. Mutants: 29 of 29 KILLED. New open items: OI-37, OI-38, OI-39. | DONE (commit pending) |
-| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | NEXT |
-| S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
+| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). Built (Q-S8b-1 (a) to Q-S8b-20 (a)): the C builtin `pairCheckC` with the on-curve and G2 subgroup checks; the guest spec (the tower Fp2, Fp6 and Fp12, the Miller loop, the final exponentiation, `pairCheck`; `mdGate2` keeps the spec stuck at check time); `g16Verify` (sealed; the MSM with `ptMulC`, then one check of 4 pairs) with the families `G16Vk`, `G16Pubs` and `G16Ics`; the keys `eligVk`, `outcomeVk` and `shareVk` as domain data; `EligibilityProof := elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)` and `elgVrf` on Groth16 (closes OI-28); `OutcomeProof` with `outcomeVrf`, and `ShareProof` with `shareVrf`; the golden files in `test/noir/` (the Alg 2 eligibility circuit with 2 proofs, stub outcome and share circuits; the generation tools are not in the gate); `build/cryptotool noir NAME DIR` (the C Groth16 check and the key converter); the C pairing oracle with the EIP-197 known answers of revm-precompile 32.1.0; a fresh fuel for each declaration and `EVAL_FUEL_STEPS` 40M; the examples use the golden statements. There is no `amToFe` word: `outcomeVrf` is the fifth `Amount` reader. Gate: 537 oracle rows with 0 mismatches, `noir: 4 golden proofs passed`, 192 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 420 to 630 s of CPU time for one run. Mutants: 29 of 29 KILLED. New open items: OI-37, OI-38, OI-39. | DONE |
+| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. Built (Q-S8c-2 to Q-S8c-5): ChaCha20 of RFC 8439 as guest defs over `Word` (`CcSt`, `ccQr`, `ccDbl`, `ccRounds`, `ccBlock`, `ccBlockOf`; no C builtin); the family `Seed` (`seed8`, 8 Words) and `sdExpand` (key = the seed, counter = the block index, nonce = (stream tag, 0, 0)); `ccGate` keeps a block stuck at check time while the first seed word is open; the C ChaCha20 oracle in `test/cryptotool.c` with the RFC 8439 known answers of the sections 2.1.1, 2.3.2 and 2.4.2, and 34 rows in `test/crypto/chacha.lang`; `outcomeAtt`, the n-of-n attestation check of the MPC output (each member signs the outcome message hsMsg (3, auction tag, hsMsg (4, winner handle, price)); it rejects noncanonical winner handles and is the sixth `Amount` reader); the fixture OuA and 10 rows in `test/crypto/att.lang`. The checker, the lowering and the Wasm entry do not change. Gate: 581 oracle rows with 0 mismatches; the other counts are the S8b counts. Mutants: 7 of 8 KILLED (M1 `ccRn10` with 9 steps, M2 a rotate of `ccQr`, M3 the argument order of `sdExpand`, M5 a rotate of the C oracle, A1 `mbLen` to `cmT`, A2 the price out of the message, A3 the tag 3 to 1); no gate row sees M4 (`ccGate` with `wEq w w`, OI-43). New open items: OI-40 to OI-45. | DONE (commit pending) |
+| S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | NEXT |
 | S10 | T1 part 2: `gaveld`, the Wasm engine (Q-S0-15), the demo D1 to D8. | |
 | S11 | T5: the JSON report, `docs/REPORT-JSON.md`. | |
 | S12 | T2: the ZK relation export (Q-S0-9 (a), Q-S0-10 (a)) and the TFHE share relation (Q-S1-8 (a)). | |
@@ -799,6 +809,27 @@ Design notes from S7:
   circuits are stubs (Q-S8b-7 (b)). The generation script and its tools
   are not in the repo. A deploy needs the real circuits and the keys of a
   real setup.
+- OI-40 `sdExpand` gives Words only (Q-S8c-2). There is no sampler of a
+  field element or of a bounded number from the stream. A slice that
+  needs one must add it.
+- OI-41 No host entry gives the OS seed to the guest. A `Seed` is a closed
+  test value until S14b and S14c (M3).
+- OI-42 `outcomeAtt` needs a signature of each of the n members (Q-S8c-4).
+  design/DESIGN.md line 38 says "t attestations", and that text is not
+  changed. Thus one absent member stops the attestation of an MPC
+  outcome.
+- OI-43 No gate row sees the `ccGate` guard. With `wEq w w` in the place
+  of `wEq w 0w`, each row value is the same and only the check cost
+  changes (2774 check steps against 179066 for
+  `test/crypto/chacha.lang`). The gate has no cost rule.
+- OI-44 There is no attestation message for `noSale`. `outcomeAtt` takes
+  an auction, a winner handle and a price, as `outcomeVrf` does.
+- OI-45 The check of a closed term `feToMont frMod (hsMsg ...)` calculates
+  the hash, and each row of a kit file checks the full file. The def
+  `msgOuA` added 47% to the CPU time of each row of
+  `test/crypto/crypto.lang`, so the outcome rows are in
+  `test/crypto/att.lang`. A helper def with a binder did not remove the
+  cost.
 
 ## 14. Questions for the USER (S0)
 

@@ -1,0 +1,32 @@
+-- The outcome attestation rows (S8c, USER ruling Q-S8c-4). msgOuA is the
+-- outcome message of the auction 1, the winner handle hsOf 2 and the
+-- price 2: hsMsg (3, 1, hsMsg (4, 2, 2)). Each ckOuA row checks one
+-- fixture signature on msgOuA: the guest message is the message of the C
+-- oracle (test/cryptotool.c). outcomeAtt of the domain file is the n-of-n
+-- check. attBoard has the five fixture keys and the threshold 4. attGood
+-- has the five signatures and gives inr unit. attFour has four signatures,
+-- attPrice asks for the price 3, and attTwice has the key 4 two times and
+-- no key 5: each one gives inl unit.
+-- attNonCanon reuses all five signatures with the distinct handle r + 2,
+-- where r is the Fr modulus: it gives inl unit before modular hashing
+-- can alias it to the signed handle 2. The rows have their own file because
+-- each row of a kit file checks the full file, and the check of msgOuA
+-- calculates its two hashes (feToMont on a closed hsMsg value). In
+-- test/crypto/crypto.lang, each row of that file would pay that cost.
+-- This is a kit file: test/gate.sh evaluates each row with
+-- `langc --kit eval`.
+def msgOuA : Fe := hsMsg (szToFe (szS (szS (szS sz0)))) (szToFe (szS sz0)) (feToMont frMod (hsMsg (szToFe (szS (szS (szS (szS sz0))))) (szToFe (szS (szS sz0))) (szToFe (szS (szS sz0)))))
+def ckOuAK1 : Sum Unit Unit := schnorrCheck kcRcs fxKey1 fxOuAK1R fxOuAK1S msgOuA
+def ckOuAK2 : Sum Unit Unit := schnorrCheck kcRcs fxKey2 fxOuAK2R fxOuAK2S msgOuA
+def ckOuAK3 : Sum Unit Unit := schnorrCheck kcRcs fxKey3 fxOuAK3R fxOuAK3S msgOuA
+def ckOuAK4 : Sum Unit Unit := schnorrCheck kcRcs fxKey4 fxOuAK4R fxOuAK4S msgOuA
+def ckOuAK5 : Sum Unit Unit := schnorrCheck kcRcs fxKey5 fxOuAK5R fxOuAK5S msgOuA
+def attBoard : Committee := committee (mbCons (party fxKey1) (mbCons (party fxKey2) (mbCons (party fxKey3) (mbCons (party fxKey4) (mbCons (party fxKey5) mbNil))))) (szS (szS (szS (szS sz0)))) (szS sz0) refl refl
+def attAuc : AucID := aucId (szS sz0)
+def attWin : Handle := handle (hsOf (szS (szS sz0)))
+def attSig4 : Certificate := ctCons (party fxKey1) fxOuAK1R fxOuAK1S (ctCons (party fxKey2) fxOuAK2R fxOuAK2S (ctCons (party fxKey3) fxOuAK3R fxOuAK3S (ctCons (party fxKey4) fxOuAK4R fxOuAK4S ctNil)))
+def attGood : Sum Unit Unit := outcomeAtt attBoard attAuc attWin (amSucc (amSucc amZero)) (ctCons (party fxKey5) fxOuAK5R fxOuAK5S attSig4)
+def attFour : Sum Unit Unit := outcomeAtt attBoard attAuc attWin (amSucc (amSucc amZero)) attSig4
+def attPrice : Sum Unit Unit := outcomeAtt attBoard attAuc attWin (amSucc (amSucc (amSucc amZero))) (ctCons (party fxKey5) fxOuAK5R fxOuAK5S attSig4)
+def attTwice : Sum Unit Unit := outcomeAtt attBoard attAuc attWin (amSucc (amSucc amZero)) (ctCons (party fxKey4) fxOuAK4R fxOuAK4S attSig4)
+def attNonCanon : Sum Unit Unit := outcomeAtt attBoard attAuc (handle (hash (fe 0xf0000003w 0x43e1f593w 0x79b97091w 0x2833e848w 0x8181585dw 0xb85045b6w 0xe131a029w 0x30644e72w))) (amSucc (amSucc amZero)) (ctCons (party fxKey5) fxOuAK5R fxOuAK5S attSig4)

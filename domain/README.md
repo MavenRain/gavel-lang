@@ -252,11 +252,11 @@ minus 2. The constants come from quorum-lang `bn254.h`.
 
 The C oracle is `build/cryptotool`. `src/crypto` is a byte copy of
 quorum-lang 8d1a113 (`u256`, `bn254`, `keccak`, `poseidon`). The tool
-prints 537 rows (424 at S8, 501 at S8a) `FILE NAME ARGS => RESULT` from a fixed
+prints 581 rows (424 at S8, 501 at S8a, 537 at S8b) `FILE NAME ARGS => RESULT` from a fixed
 seed and known answers. `examples/crypto.lang` has the 360 Word rows (it lowers).
 `test/crypto/crypto.lang` has the 64 field rows (add 9, sub 9, mul 8, inv
 6 for each of `Fr` and `Fp`). `test/gate.sh` evaluates each row with `langc
---kit eval` and prints `crypto oracle: 537 rows, 0 mismatches`.
+--kit eval` and prints `crypto oracle: 581 rows, 0 mismatches`.
 
 The field rows are outside the Wasm set. The lowering refuses `frInv` with
 `EVAL_DEPTH`, because it nests deeper than 2000 levels. The evaluator
@@ -421,6 +421,75 @@ each declaration (Q-S8b-15 (a), Q-S8b-19 (a)). One closed `g16Verify` row
 takes 0.2 to 0.6 s of CPU time.
 
 The oracle has 537 rows at S8b.
+
+## The crypto prelude part 3
+
+S8c adds ChaCha20, the seed input and the MPC output check (Q-S8c-2 to
+Q-S8c-5). The checker, the lowering and the Wasm entry do not change.
+
+ChaCha20 is RFC 8439 as guest defs over `Word`; there is no C builtin.
+`CcSt` is the state of 16 Words (`ccSt`, the readers `cc0` to `cc15`).
+`ccQr` is the quarter round and `ccDbl` is the double round. `ccRounds`
+runs `ccDbl` one time for each step of a `CcRn` value (`ccRn10` has 10
+steps), `ccAdd` adds two states and `ccBlock` is the block function.
+`Seed` is `seed8` of 8 Words (`sd0` to `sd7`). `ccBlockOf sd ctr n0 n1
+n2` is the block of RFC 8439 section 2.3 with the seed as the key.
+`sdExpand sd tag ix` is `ccBlockOf sd ix tag 0w 0w`: the counter is the
+block index and the nonce is (stream tag, 0, 0) (Q-S8c-2). The output is
+the 16 Words. There is no field sampler (OI-40), and no host entry gives
+the OS seed before S14b and S14c (OI-41).
+
+The gate rule. `ccGate w k` is an elim on `wEq w 0w` with the same branch
+two times, and the block is behind it with the first seed word as `w`.
+While that word is open, the block is stuck and the check of a def that
+uses it is cheap. The gate is on the first seed word only: a closed seed
+with an open counter opens the gate (about 44000 check steps). `wEq w w`
+is not a gate, because `wEq` of one open Word and the same Word gives
+`inr`.
+
+`test/crypto/chacha.lang` has the 34 ChaCha20 rows: `ccQA` to `ccQD` (the
+4 words of one quarter round), `ccB0`, `ccB15` and `ccBX` (word 0, word
+15 and the xor of the 16 words of one block) and `sdX` (the xor of the 16
+words of `sdExpand`). The C oracle in `test/cryptotool.c` is written from
+the RFC text. Its known answers are the vectors of the sections 2.1.1,
+2.3.2 and 2.4.2, and a wrong known answer stops the tool.
+
+`outcomeAtt c a h p cs` is the MPC output check (Q-S8c-4). The winner
+handle must be canonical: a handle at or above the Fr modulus is
+rejected, so modular hashing cannot alias it to a signed handle.
+The outcome message is hsMsg (3, auction tag, hsMsg (4, winner handle,
+price)); 3 and
+4 are new tags. The result is `inr unit` only when `cs` has an accepted
+signature of each member of `c` on the hash of that message: the count
+`ctCount` must reach the number of members, not the threshold `cmT`. A
+signer with two entries counts one time. `outcomeAtt` reads the `Amount`
+price by an elim and gives only a yes or no bit: it is the sixth `Amount`
+reader. The message is inline, so no word gives an `Amount` as an `Fe`.
+There is no message for `noSale` (OI-44). design/DESIGN.md says "t
+attestations"; the ruling makes it n (OI-42).
+
+The fixture OuA is the outcome message of the auction 1, the winner
+handle `hsOf 2` and the price 2, with a signature of each of the keys 1
+to 5 (`fxOuAK1R` to `fxOuAK5S`). `test/crypto/att.lang` has the 10 rows:
+`ckOuAK1` to `ckOuAK5` check each signature on the guest message
+`msgOuA`; `attGood` (5 signatures) gives `inr unit`; `attFour` (4
+signatures), `attPrice` (the price 3) and `attTwice` (the key 4 two
+times, no key 5) give `inl unit`.
+`attNonCanon` reuses the five signatures with handle r + 2 instead of
+2, where r is the Fr modulus, and gives `inl unit`. The rows have their
+own file because
+each row of a kit file checks the full file, and the check of `msgOuA`
+calculates its two hashes (OI-45).
+
+Mutants at S8c. M1 (`ccRn10` with 9 steps), M2 (the last rotate of
+`ccQr`, 7 to 8), M3 (`sdExpand` with the tag and the index in the other
+order) and M5 (the same rotate in the C oracle) are KILLED. No row sees
+M4 (`ccGate` with `wEq w w`): each value is the same and only the check
+cost changes (OI-43). A1 (`mbLen (cmMembers c)` to `cmT c`), A2 (the
+price out of the message) and A3 (the tag 3 to 1) are KILLED by
+`attFour`, `attPrice` and `attGood`.
+
+The oracle has 581 rows at S8c.
 
 ## The IR test families
 

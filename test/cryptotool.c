@@ -2028,11 +2028,15 @@ static void pairc_rows(void) {
    message is the tag T (the guest `hsOf T`) or hsMsg (T, X, Y) = poseidon2
    (T, poseidon2 (X, Y)) in Fr, each value not in Montgomery form. X is the 64 hex digits XHEX
    when XHEX is not NULL: StA and StL sign the cm FX_CM of the golden elig
-   statement (test/noir/elig), the cm of the examples (S8b). Each key in
+   statement (test/noir/elig), the cm of the examples (S8b). When HASHED is
+   2, the message is hsMsg (T, X, hsMsg (T + 1, Y, Z)): OuA is the outcome
+   message of the auction 1, the winner handle hsOf 2 and the price 2 (S8c,
+   the n-of-n check, the tags 3 and 4). Each key in
    KEYS (bit K - 1 for the key K) signs the message with sc_sign. `cryptotool
    fixtures` prints the message words and the domain defs. The rows give
    hsMsg to the guest hsMsg and each signature to the guest schnorrCheck (the
-   ck rows of test/crypto/crypto.lang). */
+   ck rows of test/crypto/crypto.lang; the ck rows of the outcome message are
+   in test/crypto/att.lang). */
 #define FX_KEYS 5u
 #define FX_HS_KAT "1ab48afe922b8a4977f312071f685e3384546dd6f6ca941f62f277b4c5c9f677"
 /* The cm of the golden elig statement (test/noir/elig/public.json). */
@@ -2046,16 +2050,18 @@ typedef struct {
   uint64_t y;
   unsigned keys;
   const char *xhex;
+  uint64_t z;
 } FxMsg;
 
 static const FxMsg FX_MSGS[] = {
-    {"Hs2", 0, 2u, 0u, 0u, 0x1fu, NULL},
-    {"Hs3", 0, 3u, 0u, 0u, 0x04u, NULL},
-    {"StA", 1, 0u, 0u, 1u, 0x07u, FX_CM},
-    {"StL", 1, 0u, 0u, 2u, 0x07u, FX_CM},
-    {"OpA", 1, 1u, 1u, 2u, 0x0eu, NULL},
-    {"OpE", 1, 1u, 1u, 1u, 0x0eu, NULL},
-    {"AmA", 1, 2u, 0u, 0u, 0x0fu, NULL},
+    {"Hs2", 0, 2u, 0u, 0u, 0x1fu, NULL, 0u},
+    {"Hs3", 0, 3u, 0u, 0u, 0x04u, NULL, 0u},
+    {"StA", 1, 0u, 0u, 1u, 0x07u, FX_CM, 0u},
+    {"StL", 1, 0u, 0u, 2u, 0x07u, FX_CM, 0u},
+    {"OpA", 1, 1u, 1u, 2u, 0x0eu, NULL, 0u},
+    {"OpE", 1, 1u, 1u, 1u, 0x0eu, NULL, 0u},
+    {"AmA", 1, 2u, 0u, 0u, 0x0fu, NULL, 0u},
+    {"OuA", 2, 3u, 1u, 2u, 0x1fu, NULL, 2u},
 };
 #define FX_MSG_COUNT (sizeof FX_MSGS / sizeof FX_MSGS[0])
 
@@ -2078,11 +2084,20 @@ static void fx_msg(const PoseidonParams *p, Fe *m, const FxMsg *g) {
   Fe t;
   Fe x;
   Fe y;
+  Fe u;
+  Fe z;
+  Fe inner;
   fe_from_u64(&t, g->t);
   fe_from_u64(&x, g->x);
   fe_from_u64(&y, g->y);
   if (g->xhex != NULL)
     fe_hex(&x, g->xhex);
+  if (g->hashed == 2) {
+    fe_from_u64(&u, g->t + 1u);
+    fe_from_u64(&z, g->z);
+    hs_msg(p, &inner, &u, &y, &z);
+    y = inner;
+  }
   *m = t;
   if (g->hashed)
     hs_msg(p, m, &t, &x, &y);
@@ -2179,9 +2194,82 @@ static void fixture_rows(Rng *rng, unsigned *bad) {
           fputs("cryptotool: a fixture signature is not valid\n", stderr);
           (*bad)++;
         }
-        printf("test/crypto/crypto ck%sK%u => inr unit\n", FX_MSGS[i].name, k);
+        printf("test/crypto/%s ck%sK%u => inr unit\n", FX_MSGS[i].hashed == 2 ? "att" : "crypto",
+               FX_MSGS[i].name, k);
       }
   }
+}
+
+/* The outcome attestation rows (S8c, USER ruling Q-S8c-4): the n-of-n check
+   `outcomeAtt`. The committee is the keys 1 to FX_KEYS. Each signer of a row
+   signs OuA, the last message of FX_MSGS. The row checks each signature on
+   the outcome message with the price of the row. A row is valid when each
+   key of the committee has a signature that sc_verify accepts: a signer two
+   times counts one time, and 0 is no signer. The rows are in
+   test/crypto/att.lang. */
+typedef struct {
+  const char *name;
+  uint64_t price;
+  unsigned signers[FX_KEYS];
+  int valid;
+} AttRow;
+
+static void att_rows(unsigned *bad) {
+  static const AttRow ROWS[] = {
+      {"attGood", 2u, {1u, 2u, 3u, 4u, 5u}, 1},
+      {"attFour", 2u, {1u, 2u, 3u, 4u, 0u}, 0},
+      {"attPrice", 3u, {1u, 2u, 3u, 4u, 5u}, 0},
+      {"attTwice", 2u, {1u, 2u, 3u, 4u, 4u}, 0},
+  };
+  PoseidonParams p;
+  FxMsg g;
+  G1 pk;
+  G1 r;
+  Fe s;
+  Fe signed_m;
+  Fe m;
+  Fe handle;
+  U256 raw_handle;
+  size_t i;
+  unsigned j;
+  unsigned k;
+  unsigned seen;
+  int valid;
+  poseidon_params(&p, &BN254_FR);
+  g = FX_MSGS[FX_MSG_COUNT - 1u];
+  if (g.hashed != 2) {
+    fputs("cryptotool: the last fixture message is not the outcome message\n", stderr);
+    (*bad)++;
+  }
+  fx_msg(&p, &signed_m, &g);
+  for (i = 0u; i < sizeof ROWS / sizeof ROWS[0]; i++) {
+    g.z = ROWS[i].price;
+    fx_msg(&p, &m, &g);
+    seen = 0u;
+    for (j = 0u; j < FX_KEYS; j++) {
+      k = ROWS[i].signers[j];
+      if (k != 0u) {
+        sc_sign(&pk, &r, &s, k, &signed_m);
+        if (sc_verify(&pk, &r, &s, &m))
+          seen |= 1u << (k - 1u);
+      }
+    }
+    valid = seen == (1u << FX_KEYS) - 1u;
+    if (valid != ROWS[i].valid) {
+      fputs("cryptotool: an outcome attestation row is not as expected\n", stderr);
+      (*bad)++;
+    }
+    printf("test/crypto/att %s => %s unit\n", ROWS[i].name, valid ? "inr" : "inl");
+  }
+  /* A handle r + 2 is distinct from 2, even though field hashing aliases
+     them. Reject the noncanonical input before checking its signatures. */
+  memcpy(handle.w, BN254_FR.w, sizeof handle.w);
+  handle.w[0] += 2u;
+  fe_to_u256(&raw_handle, &handle);
+  valid = fe_from_u256(&handle, &raw_handle, &BN254_FR);
+  if (valid)
+    (*bad)++;
+  printf("test/crypto/att attNonCanon => %s unit\n", valid ? "inr" : "inl");
 }
 
 /* The Noir golden files (S8b, USER rulings Q-S8b-6 (a) and Q-S8b-12 (a)).
@@ -2603,6 +2691,216 @@ static void g16_rows(void) {
     printf("test/crypto/g16 %s => %s unit\n", ROWS[i].name, ROWS[i].valid ? "inr" : "inl");
 }
 
+/* The ChaCha20 rows (S8c, RFC 8439). This section is written from the RFC
+   text: cc_qr is the quarter round of section 2.1, cc_block is the block
+   function of section 2.3 and cc_xor is the cipher of section 2.4. A state
+   is 16 words: the 4 constants, the 8 key words, the block counter and the
+   3 nonce words. The known answers are the test vectors of sections 2.1.1
+   and 2.3.2 and the two blocks and the cipher text of section 2.4.2. The
+   rows are in test/crypto/chacha.lang: ccQA to ccQD give the 4 words of one
+   quarter round; ccB0, ccB15 and ccBX give word 0, word 15 and the xor of
+   the 16 words of one block (the key, the counter, the nonce); sdX gives the
+   xor of the 16 words of sdExpand (the seed, the stream tag, the block
+   index: the counter is the index and the nonce is (tag, 0, 0)). */
+static const char CC_PLAIN[] =
+    "Ladies and Gentlemen of the class of '99: If I could offer you o"
+    "nly one tip for the future, sunscreen would be it.";
+static const char CC_CIPHER[] =
+    "6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b"
+    "f91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d8"
+    "07ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab7793736"
+    "5af90bbf74a35be6b40b8eedf2785e42874d";
+
+static uint32_t cc_rotl(uint32_t x, unsigned n) {
+  return (x << n) | (x >> (32u - n));
+}
+
+/* The quarter round on the words A, B, C and D of the state S. */
+static void cc_qr(uint32_t *s, size_t a, size_t b, size_t c, size_t d) {
+  s[a] += s[b];
+  s[d] = cc_rotl(s[d] ^ s[a], 16u);
+  s[c] += s[d];
+  s[b] = cc_rotl(s[b] ^ s[c], 12u);
+  s[a] += s[b];
+  s[d] = cc_rotl(s[d] ^ s[a], 8u);
+  s[c] += s[d];
+  s[b] = cc_rotl(s[b] ^ s[c], 7u);
+}
+
+/* The block of the key KEY (8 words), the counter CT and the nonce NONCE (3
+   words): 10 times the 4 column rounds and the 4 diagonal rounds, then the
+   add of the input state. */
+static void cc_block(const uint32_t *key, uint32_t ct, const uint32_t *nonce, uint32_t *out) {
+  static const uint32_t SIGMA[4] = {0x61707865u, 0x3320646eu, 0x79622d32u, 0x6b206574u};
+  uint32_t in[16];
+  size_t i;
+  memcpy(in, SIGMA, sizeof SIGMA);
+  memcpy(in + 4, key, 8u * sizeof in[0]);
+  in[12] = ct;
+  memcpy(in + 13, nonce, 3u * sizeof in[0]);
+  memcpy(out, in, sizeof in);
+  for (i = 0u; i < 10u; i++) {
+    cc_qr(out, 0u, 4u, 8u, 12u);
+    cc_qr(out, 1u, 5u, 9u, 13u);
+    cc_qr(out, 2u, 6u, 10u, 14u);
+    cc_qr(out, 3u, 7u, 11u, 15u);
+    cc_qr(out, 0u, 5u, 10u, 15u);
+    cc_qr(out, 1u, 6u, 11u, 12u);
+    cc_qr(out, 2u, 7u, 8u, 13u);
+    cc_qr(out, 3u, 4u, 9u, 14u);
+  }
+  for (i = 0u; i < 16u; i++)
+    out[i] += in[i];
+}
+
+/* The cipher of section 2.4 on the N bytes of IN: the byte I is in the block
+   of the counter CT + I / 64, and each word of a block gives 4 bytes, the
+   least significant first. */
+static void cc_xor(const uint32_t *key, uint32_t ct, const uint32_t *nonce, const unsigned char *in, size_t n,
+                   unsigned char *out) {
+  uint32_t blk[16];
+  size_t i;
+  memset(blk, 0, sizeof blk);
+  for (i = 0u; i < n; i++) {
+    if (i % 64u == 0u)
+      cc_block(key, ct + (uint32_t)(i / 64u), nonce, blk);
+    out[i] = (unsigned char)(in[i] ^ (blk[(i % 64u) / 4u] >> (8u * (i % 4u))));
+  }
+}
+
+/* The 4 rows of the quarter round of IN. WANT is the known answer, or NULL. */
+static void cc_qr_rows(const uint32_t *in, const uint32_t *want, unsigned *bad) {
+  uint32_t s[4];
+  size_t i;
+  size_t j;
+  memcpy(s, in, sizeof s);
+  cc_qr(s, 0u, 1u, 2u, 3u);
+  if (want != NULL && memcmp(s, want, sizeof s) != 0)
+    (*bad)++;
+  for (i = 0u; i < 4u; i++) {
+    printf("test/crypto/chacha ccQ%c", "ABCD"[i]);
+    for (j = 0u; j < 4u; j++)
+      put_word(in[j]);
+    printf(" =>");
+    put_word(s[i]);
+    printf("\n");
+  }
+}
+
+/* Print the row NAME: the 8 words of KEY, the N words of REST, the result R. */
+static void cc_put_row(const char *name, const uint32_t *key, const uint32_t *rest, size_t n, uint32_t r) {
+  size_t i;
+  printf("test/crypto/chacha %s", name);
+  for (i = 0u; i < 8u; i++)
+    put_word(key[i]);
+  for (i = 0u; i < n; i++)
+    put_word(rest[i]);
+  printf(" =>");
+  put_word(r);
+  printf("\n");
+}
+
+static uint32_t cc_xor_all(const uint32_t *s) {
+  uint32_t x = 0u;
+  size_t i;
+  for (i = 0u; i < 16u; i++)
+    x ^= s[i];
+  return x;
+}
+
+/* The 3 rows of one block. WANT is the known block, or NULL. */
+static void cc_blk_rows(const uint32_t *key, uint32_t ct, const uint32_t *nonce, const uint32_t *want, unsigned *bad) {
+  uint32_t rest[4];
+  uint32_t out[16];
+  rest[0] = ct;
+  memcpy(rest + 1, nonce, 3u * sizeof rest[0]);
+  cc_block(key, ct, nonce, out);
+  if (want != NULL && memcmp(out, want, sizeof out) != 0)
+    (*bad)++;
+  cc_put_row("ccB0", key, rest, 4u, out[0]);
+  cc_put_row("ccB15", key, rest, 4u, out[15]);
+  cc_put_row("ccBX", key, rest, 4u, cc_xor_all(out));
+}
+
+/* The row of sdExpand: the block IX of the stream TAG of SEED. */
+static void sd_row(const uint32_t *seed, uint32_t tag, uint32_t ix) {
+  uint32_t rest[2];
+  uint32_t nonce[3] = {0u, 0u, 0u};
+  uint32_t out[16];
+  rest[0] = tag;
+  rest[1] = ix;
+  nonce[0] = tag;
+  cc_block(seed, ix, nonce, out);
+  cc_put_row("sdX", seed, rest, 2u, cc_xor_all(out));
+}
+
+/* The known answers of the RFC, one edge row of the quarter round, then the
+   rows from the generator. The first key from the generator gets the first
+   word 0: ccGate compares the first seed word with 0. The cipher text of
+   section 2.4.2 is a check of the C code only. */
+static void chacha_rows(Rng *rng, unsigned *bad) {
+  static const uint32_t QR_IN[4] = {0x11111111u, 0x01020304u, 0x9b8d6f43u, 0x01234567u};
+  static const uint32_t QR_OUT[4] = {0xea2a92f4u, 0xcb1cf8ceu, 0x4581472eu, 0x5881c4bbu};
+  static const uint32_t ONES[4] = {0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu};
+  static const uint32_t KEY[8] = {
+      0x03020100u, 0x07060504u, 0x0b0a0908u, 0x0f0e0d0cu,
+      0x13121110u, 0x17161514u, 0x1b1a1918u, 0x1f1e1d1cu,
+  };
+  static const uint32_t NONCE_232[3] = {0x09000000u, 0x4a000000u, 0x00000000u};
+  static const uint32_t NONCE_242[3] = {0x00000000u, 0x4a000000u, 0x00000000u};
+  static const uint32_t BLOCK_232[16] = {
+      0xe4e7f110u, 0x15593bd1u, 0x1fdd0f50u, 0xc47120a3u,
+      0xc7f4d1c7u, 0x0368c033u, 0x9aaa2204u, 0x4e6cd4c3u,
+      0x466482d2u, 0x09aa9f07u, 0x05d7c214u, 0xa2028bd9u,
+      0xd19c12b5u, 0xb94e16deu, 0xe883d0cbu, 0x4e3c50a2u,
+  };
+  static const uint32_t BLOCK_242A[16] = {
+      0xf3514f22u, 0xe1d91b40u, 0x6f27de2fu, 0xed1d63b8u,
+      0x821f138cu, 0xe2062c3du, 0xecca4f7eu, 0x78cff39eu,
+      0xa30a3b8au, 0x920a6072u, 0xcd7479b5u, 0x34932bedu,
+      0x40ba4c79u, 0xcd343ec6u, 0x4c2c21eau, 0xb7417df0u,
+  };
+  static const uint32_t BLOCK_242B[16] = {
+      0x9f74a669u, 0x410f633fu, 0x28feca22u, 0x7ec44decu,
+      0x6d34d426u, 0x738cb970u, 0x3ac5e9f3u, 0x45590cc4u,
+      0xda6e8b39u, 0x892c831au, 0xcdea67c1u, 0x2b7e1d90u,
+      0x037463f3u, 0xa11a2073u, 0xe8bcfb88u, 0xedc49139u,
+  };
+  unsigned char ct[sizeof CC_PLAIN - 1u];
+  char hex[2u * sizeof ct + 1u];
+  uint32_t q[4];
+  uint32_t k[8];
+  uint32_t n[3];
+  size_t i;
+  size_t j;
+  cc_qr_rows(QR_IN, QR_OUT, bad);
+  cc_qr_rows(ONES, NULL, bad);
+  for (j = 0u; j < 2u; j++) {
+    for (i = 0u; i < 4u; i++)
+      q[i] = next32(rng);
+    cc_qr_rows(q, NULL, bad);
+  }
+  cc_blk_rows(KEY, 1u, NONCE_232, BLOCK_232, bad);
+  cc_blk_rows(KEY, 1u, NONCE_242, BLOCK_242A, bad);
+  cc_blk_rows(KEY, 2u, NONCE_242, BLOCK_242B, bad);
+  cc_xor(KEY, 1u, NONCE_242, (const unsigned char *)CC_PLAIN, sizeof ct, ct);
+  for (i = 0u; i < sizeof ct; i++)
+    snprintf(hex + 2u * i, 3u, "%02x", (unsigned)ct[i]);
+  if (strcmp(hex, CC_CIPHER) != 0)
+    (*bad)++;
+  for (j = 0u; j < 2u; j++) {
+    for (i = 0u; i < 8u; i++)
+      k[i] = next32(rng);
+    for (i = 0u; i < 3u; i++)
+      n[i] = next32(rng);
+    if (j == 0u)
+      k[0] = 0u;
+    cc_blk_rows(k, next32(rng), n, NULL, bad);
+    sd_row(k, n[0], n[1]);
+  }
+  sd_row(KEY, 7u, 3u);
+}
+
 int main(int argc, char **argv) {
   Rng rng = {0x5338676176656c31ULL};
   const Field fr = {"fr", &BN254_FR};
@@ -2631,8 +2929,10 @@ int main(int argc, char **argv) {
   pairo_rows(&bad);
   pairc_rows();
   fixture_rows(&rng, &bad);
+  att_rows(&bad);
   elig_rows(&bad);
   g16_rows();
+  chacha_rows(&rng, &bad);
   if (bad != 0u) {
     fprintf(stderr, "cryptotool: %u rows of the C oracle are wrong\n", bad);
     return 1;

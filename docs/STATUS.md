@@ -1,6 +1,6 @@
 # gavel-lang status
 
-The build implements slice S8b of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S8c of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
@@ -9,9 +9,10 @@ Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
 the C oracle (Q-S8-1 (a) to Q-S8-9 (a)) and the crypto prelude part 1:
 keccak-256, Poseidon, the G1 curve and the Schnorr check (Q-S8a-1 (a) to
 Q-S8a-10 (a)) and the crypto prelude part 2: the BN254 pairing and the
-Groth16 verifier of the Noir proofs (Q-S8b-1 (a) to Q-S8b-20 (a)). It does
-not complete M0. S8b is DONE (commit pending). The next slice is S8c:
-ChaCha20, the seed input and the MPC output check.
+Groth16 verifier of the Noir proofs (Q-S8b-1 (a) to Q-S8b-20 (a)) and the
+crypto prelude part 3: ChaCha20, the seed input and the MPC output check
+(Q-S8c-2 to Q-S8c-5). It does not complete M0. S8c is DONE (commit
+pending). The next slice is S9: the Wasm module with the prelude.
 
 ## Implemented
 
@@ -74,7 +75,7 @@ ChaCha20, the seed input and the MPC output check.
   boundary), `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`,
   `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr` and `Fp`. The C oracle
   is `build/cryptotool` (`src/crypto` from quorum-lang 8d1a113). It prints
-  537 rows (424 at S8, 501 at S8a), and `test/gate.sh` evaluates each one
+  581 rows (424 at S8, 501 at S8a, 537 at S8b), and `test/gate.sh` evaluates each one
   (`test/crypto/crypto.lang` holds the field rows and the S8a rows,
   outside the Wasm set). A declaration or a name `ckks`, `approx`,
   `approximate`, `float` or `double` gives `REFUSE_APPROX`.
@@ -118,11 +119,23 @@ ChaCha20, the seed input and the MPC output check.
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
   partial kit word gives `REFUSE_PARTIAL`.
+- The crypto prelude part 3 (S8c, Q-S8c-2 to Q-S8c-5): ChaCha20 of RFC
+  8439 as guest defs over `Word` (`ccQr`, `ccBlock`, `ccBlockOf`), the
+  family `Seed` (8 Words) and `sdExpand sd tag ix`: one block of 16 Words
+  with the seed as the key, the block index as the counter and the nonce
+  (tag, 0, 0). `ccGate` keeps a block stuck at check time while the first
+  seed word is open. `test/crypto/chacha.lang` compares the defs with the
+  C oracle (34 rows; the known answers are from RFC 8439). `outcomeAtt c a
+  h p cs` is the MPC output check: the certificate must have a signature
+  of each member of the committee on the outcome message of the auction,
+  the winner handle and the price. `test/crypto/att.lang` has its 10 rows.
+  It rejects noncanonical winner handles, so signatures cannot authorize
+  a different handle with the same modular hash.
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
 - The gate: 38 examples, 18 parse refusals, 192 check refusals, 10
-  kit-only refusals, 1 time hint, 152 evals, 537 crypto oracle rows with 0
+  kit-only refusals, 1 time hint, 152 evals, 581 crypto oracle rows with 0
   mismatches, 4 golden Noir proofs, 1 build, 1 ir lowered, 5 ir refusals, 3 ir lowerings, 4
   notrap modules, 7 notrap bad rows, 10 spine evals, 42 Wasm modules
   valid, 1910 differential cases with 0 mismatches;
@@ -131,10 +144,8 @@ ChaCha20, the seed input and the MPC output check.
 
 ## Remaining M0 work
 
-1. S8c: the last crypto layer of `docs/PLAN.md` section 12 (ChaCha20,
-   the seed input and the MPC output check). S8c needs the S8b commit
-   first.
-2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
+1. S9 to S22: the targets T1 to T5, A1 to A7 and the close. S9 needs
+   the S8c commit first.
 
 ## Known limits
 

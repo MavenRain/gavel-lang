@@ -277,7 +277,9 @@ and Echo := echoBack (backHop : Hop)
 -- program reads an Amount only through the four domain operations amLe
 -- (compare), amSelect (select), amMax (max) and amMin (the second max of
 -- two amounts), and through outcomeVrf (S8b, Q-S8b-18 (a): the price
--- public of the outcome proof; it gives only a yes or no bit): an elim, a
+-- public of the outcome proof; it gives only a yes or no bit) and
+-- outcomeAtt (S8c, Q-S8c-4: the price of the outcome message; it gives
+-- only a yes or no bit): an elim, a
 -- fold or a projection of Amount, or amSucc on a
 -- term that is not a literal, gives REFUSE_AMOUNT (Q-S0-1 (a)). The
 -- compare result is Sum Unit Unit as in consP: inr unit is "at most" and
@@ -1458,7 +1460,9 @@ def hsMsg : Fe -> Fe -> Fe -> Fe :=
 -- hsMsg (0, 1, 1) and hsMsg (0, 1, 2): the stamps of the commitment 1 at the
 -- heights 1 and 2. OpA and OpE are hsMsg (1, 1, 2) and hsMsg (1, 1, 1): the
 -- openings of the auction 1 at the heights 2 and 1. AmA is hsMsg (2, 0, 0):
--- the amendment 0. Each value is canonical. `cryptotool fixtures`
+-- the amendment 0. OuA is hsMsg (3, 1, hsMsg (4, 2, 2)): the outcome of the
+-- auction 1 with the winner handle hsOf 2 and the price 2 (S8c). Each value
+-- is canonical. `cryptotool fixtures`
 -- (test/cryptotool.c) prints these lines.
 def fxKey1 : Pt1 := pt1 (fe 0x00000001w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w) (fe 0x00000002w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w)
 def fxKey2 : Pt1 := pt1 (fe 0x6d87cfd3w 0xd3c208c1w 0x16871ca8w 0xd97816a9w 0x68181585w 0x9b85045bw 0x2e131a02w 0x030644e7w) (fe 0x5a18a2c4w 0xff3ebf7aw 0xe3538fc7w 0x68a6a449w 0xb2ae9c0aw 0xe7845f96w 0x0e0a7c92w 0x15ed738cw)
@@ -1509,6 +1513,16 @@ def fxAmAK3R : Pt1 := pt1 (fe 0xff3c15a4w 0x544ecc03w 0x30dde3b9w 0xef7fe10dw 0x
 def fxAmAK3S : Fe := fe 0x083fea72w 0x8de35ecdw 0xbf46b8f4w 0xc63ae5b2w 0x349a4f3aw 0xce25294cw 0x554281d5w 0x2fc0d520w
 def fxAmAK4R : Pt1 := pt1 (fe 0xad7d112cw 0xf5b561e6w 0x96135ccfw 0xc655906fw 0x3fef9429w 0x8e776877w 0x0c79b11cw 0x1ccf3d8dw) (fe 0x57355289w 0xcf621ce4w 0xf80420d7w 0xc062447cw 0x14784dfbw 0x80def391w 0x79686cc5w 0x299420a0w)
 def fxAmAK4S : Fe := fe 0xfaa68516w 0x5becb867w 0x1ace1584w 0xbea9e6fcw 0xe553d60bw 0x5c3b381aw 0x9bfc84fdw 0x073a9bfbw
+def fxOuAK1R : Pt1 := pt1 (fe 0x05b2c75dw 0xb654849dw 0xe09e4b18w 0x9d7ea64cw 0xbd58d1bcw 0x6b989996w 0x49ae4dfew 0x200efa65w) (fe 0x6784ee83w 0xf4ce7ba1w 0x016cc15fw 0xc9d01473w 0xf6752356w 0x67492504w 0x5eb53f55w 0x18b0139fw)
+def fxOuAK1S : Fe := fe 0x03cb6d70w 0x4323f128w 0x3f37b137w 0x433de035w 0x90248539w 0xc292ccdfw 0xb7b0a444w 0x18a653dbw
+def fxOuAK2R : Pt1 := pt1 (fe 0x6ebd4e0fw 0xbb5ffef9w 0x63c3d70dw 0x047ae94aw 0x0fa5a0afw 0x8ef8c385w 0xd95a1bc2w 0x09bd6b17w) (fe 0xdef5b833w 0xb02f0931w 0x918a781bw 0x23cce5b6w 0x25133d8cw 0x1c4e781fw 0x18bc97few 0x255dd394w)
+def fxOuAK2S : Fe := fe 0xc9f14056w 0xaa9144afw 0xa0353d30w 0x146ef367w 0x50b3134cw 0xb25df1adw 0xcf7e5d15w 0x0e886fcfw
+def fxOuAK3R : Pt1 := pt1 (fe 0x4ac7d990w 0x7104d7e3w 0x419461b9w 0x194679acw 0x181fae42w 0x28dc4603w 0xdc1fa5cbw 0x020dacafw) (fe 0xc6fd52ebw 0x923ad27dw 0x31d5fe8dw 0x3164b6daw 0xe393e2bfw 0x8362c832w 0x44260418w 0x0956a6f1w)
+def fxOuAK3S : Fe := fe 0x8781b3edw 0x08195d8dw 0x0e816aeaw 0xe1d53a81w 0x6a4311cfw 0x24439024w 0x65469247w 0x0f1499bbw
+def fxOuAK4R : Pt1 := pt1 (fe 0xf1a451cdw 0x97f2ff28w 0x6a36cd86w 0x0bf3fe81w 0xa15b9d01w 0x1f5b509bw 0x7b3a822cw 0x09d652dbw) (fe 0x5942101fw 0x8a004c07w 0xa865ef76w 0x7eceac89w 0x5e103b74w 0x7a7d9f92w 0x272e4a71w 0x2b42c6e8w)
+def fxOuAK4S : Fe := fe 0x7ddc65ebw 0x2e1d6853w 0x855935cfw 0x0e8d4d8fw 0xec523644w 0xd10dc81fw 0x9693410fw 0x07bb1647w
+def fxOuAK5R : Pt1 := pt1 (fe 0xe0cc45c6w 0x0e19970dw 0x2a836255w 0x61c4d063w 0x7251c1e9w 0xd96fb6e3w 0x9fe6f5bcw 0x17ec6deaw) (fe 0x41f0bd36w 0xeeb47a77w 0xf2585acew 0x64f850f2w 0x2ab07515w 0x68fcf177w 0xedb74e86w 0x1eece1a3w)
+def fxOuAK5S : Fe := fe 0x4f17cd19w 0x30291bb9w 0xcbeee6a0w 0xe16f731cw 0x1658aceaw 0xf3c0f345w 0x259c3921w 0x11b55a74w
 -- The golden elig proofs (S8b 4d, Q-S8b-17 (a)): the Groth16 proofs and
 -- publics of test/noir/elig and test/noir/elig2 (cryptotool noir). The
 -- publics are the statement (root_s, hu, cm): Pub0 is the root, Pub1 the
@@ -1654,6 +1668,21 @@ def stampMsg : Commitment -> Height -> Hash :=
   fun (c : Commitment) (h : Height) => hash (hsMsg (szToFe sz0) (feToMont frMod (hsTag (coHash c))) (szToFe (htOf h)))
 def openMsg : AucID -> Height -> Hash :=
   fun (a : AucID) (h : Height) => hash (hsMsg (szToFe (szS sz0)) (szToFe (auTag a)) (szToFe (htOf h)))
+-- The outcome attestation (S8c, USER ruling Q-S8c-4): the n-of-n check of
+-- the MPC output. Each member signs the outcome message: the Hash of
+-- hsMsg (3, auction tag, hsMsg (4, winner handle, price)). 3 is the kind
+-- tag of the outcome message and 4 is the tag of its inner pair.
+-- outcomeAtt c a h p cs accepts (inr unit) when h is canonical and each
+-- member of c has a signature in cs that schnorrCheck accepts on this
+-- message. ctCount is
+-- not above n, so the compare with n says that all n members signed
+-- (checkCert compares with t). The message is not a word of its own:
+-- outcomeAtt reads the price by its own elim (as outcomeVrf). It is the
+-- sixth Amount reader, and it gives only a yes or no bit. There is no
+-- outcome message for noSale.
+def outcomeAtt : Committee -> AucID -> Handle -> Amount -> Certificate -> Sum Unit Unit :=
+  fun (c : Committee) (a : AucID) (h : Handle) (p : Amount) (cs : Certificate) =>
+    sAnd (hsCanonical (hdHash h)) (szLe (mbLen (cmMembers c)) (ctCount (cmMembers c) (hash (hsMsg (szToFe (szS (szS (szS sz0)))) (szToFe (auTag a)) (feToMont frMod (hsMsg (szToFe (szS (szS (szS (szS sz0))))) (feToMont frMod (hsTag (hdHash h))) (elim (fun (q : Amount) => Fe) feZero (fun (q : Amount) (ih : Fe) => feAdd frMod ih (modR1 frMod)) p))))) cs))
 -- admit p sl r b h cs (Q-S6-7 (a)) checks the bid b with the timestamp
 -- certificate cs at the height h, in this order: invalid late when h is
 -- after the stamp end, invalid badCert when cs does not certify the stamp
@@ -1792,3 +1821,56 @@ def slashedOf : (P : Params) -> (Q : Params) -> Log P Q -> Handles :=
 def p3Replay : (P : Params) -> (r : Root) -> (h : Handle) -> (c : Commitment) -> (e : EligibilityProof) -> (f : EligibilityProof) -> Path Verdicts (replay P P (lgCons P P P (enSlash P r h c e c f) (lgNil P))) (vdCons (invalid notAccepted) vdNil) :=
   fun (P : Params) (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) (f : EligibilityProof) =>
     cong (fun (v : Verdict) => vdCons v vdNil) (p3Slash r h c e f)
+-- ChaCha20 (S8c, RFC 8439 sections 2.1 to 2.4; USER rulings Q-S1-10 (a),
+-- Q-S8c-2 and Q-S8c-3). CcSt is the state: 16 Words in the RFC order (the
+-- 4 constants, the 8 key words, the block counter, the 3 nonce words).
+-- ccQr is the quarter round. ccDbl is one column round and one diagonal
+-- round. ccRounds r s applies ccDbl one time for each step of r, and
+-- ccRn10 has 10 steps (20 rounds). ccBlock r s adds the input state s to
+-- the result of the rounds.
+family CcSt := ccSt (cc0 : Word) (cc1 : Word) (cc2 : Word) (cc3 : Word) (cc4 : Word) (cc5 : Word) (cc6 : Word) (cc7 : Word) (cc8 : Word) (cc9 : Word) (cc10 : Word) (cc11 : Word) (cc12 : Word) (cc13 : Word) (cc14 : Word) (cc15 : Word)
+def ccLet : Word -> (Word -> CcSt) -> CcSt := fun (x : Word) (k : Word -> CcSt) => k x
+def ccQr : Word -> Word -> Word -> Word -> (Word -> Word -> Word -> Word -> CcSt) -> CcSt :=
+  fun (a : Word) (b : Word) (c : Word) (d : Word) (k : Word -> Word -> Word -> Word -> CcSt) =>
+    ccLet (wAdd a b) (fun (a1 : Word) =>
+    ccLet (wRotl (wXor d a1) 16w) (fun (d1 : Word) =>
+    ccLet (wAdd c d1) (fun (c1 : Word) =>
+    ccLet (wRotl (wXor b c1) 12w) (fun (b1 : Word) =>
+    ccLet (wAdd a1 b1) (fun (a2 : Word) =>
+    ccLet (wRotl (wXor d1 a2) 8w) (fun (d2 : Word) =>
+    ccLet (wAdd c1 d2) (fun (c2 : Word) =>
+    ccLet (wRotl (wXor b1 c2) 7w) (fun (b2 : Word) =>
+    k a2 b2 c2 d2))))))))
+def ccDbl : CcSt -> CcSt :=
+  fun (s : CcSt) =>
+    ccQr (cc0 s) (cc4 s) (cc8 s) (cc12 s) (fun (q0_0 : Word) (q0_4 : Word) (q0_8 : Word) (q0_12 : Word) =>
+    ccQr (cc1 s) (cc5 s) (cc9 s) (cc13 s) (fun (q1_1 : Word) (q1_5 : Word) (q1_9 : Word) (q1_13 : Word) =>
+    ccQr (cc2 s) (cc6 s) (cc10 s) (cc14 s) (fun (q2_2 : Word) (q2_6 : Word) (q2_10 : Word) (q2_14 : Word) =>
+    ccQr (cc3 s) (cc7 s) (cc11 s) (cc15 s) (fun (q3_3 : Word) (q3_7 : Word) (q3_11 : Word) (q3_15 : Word) =>
+    ccQr q0_0 q1_5 q2_10 q3_15 (fun (q4_0 : Word) (q4_5 : Word) (q4_10 : Word) (q4_15 : Word) =>
+    ccQr q1_1 q2_6 q3_11 q0_12 (fun (q5_1 : Word) (q5_6 : Word) (q5_11 : Word) (q5_12 : Word) =>
+    ccQr q2_2 q3_7 q0_8 q1_13 (fun (q6_2 : Word) (q6_7 : Word) (q6_8 : Word) (q6_13 : Word) =>
+    ccQr q3_3 q0_4 q1_9 q2_14 (fun (q7_3 : Word) (q7_4 : Word) (q7_9 : Word) (q7_14 : Word) =>
+    ccSt q4_0 q5_1 q6_2 q7_3 q7_4 q4_5 q5_6 q6_7 q6_8 q7_9 q4_10 q5_11 q5_12 q6_13 q7_14 q4_15))))))))
+family CcRn := ccEnd | ccNext (ccRest : CcRn)
+def ccRounds : CcRn -> CcSt -> CcSt :=
+  fun (r : CcRn) => elim (fun (k : CcRn) => CcSt -> CcSt) (fun (s : CcSt) => s) (fun (t : CcRn) (ih : CcSt -> CcSt) => fun (s : CcSt) => ih (ccDbl s)) r
+def ccAdd : CcSt -> CcSt -> CcSt := fun (x : CcSt) (y : CcSt) => ccSt (wAdd (cc0 x) (cc0 y)) (wAdd (cc1 x) (cc1 y)) (wAdd (cc2 x) (cc2 y)) (wAdd (cc3 x) (cc3 y)) (wAdd (cc4 x) (cc4 y)) (wAdd (cc5 x) (cc5 y)) (wAdd (cc6 x) (cc6 y)) (wAdd (cc7 x) (cc7 y)) (wAdd (cc8 x) (cc8 y)) (wAdd (cc9 x) (cc9 y)) (wAdd (cc10 x) (cc10 y)) (wAdd (cc11 x) (cc11 y)) (wAdd (cc12 x) (cc12 y)) (wAdd (cc13 x) (cc13 y)) (wAdd (cc14 x) (cc14 y)) (wAdd (cc15 x) (cc15 y))
+def ccBlock : CcRn -> CcSt -> CcSt := fun (r : CcRn) (s : CcSt) => ccAdd (ccRounds r s) s
+def ccRn10 : CcRn := (ccNext (ccNext (ccNext (ccNext (ccNext (ccNext (ccNext (ccNext (ccNext (ccNext ccEnd))))))))))
+-- The seed (Q-S8c-3) is 8 Words: the ChaCha20 key. ccGate w k is k unit.
+-- It compares w with 0 first: on an open w the checker stops there and
+-- does not run the rounds (the rule of mdGate2). wEq w w is not a gate:
+-- wEq of one open Word and the same Word is yes. On a closed w it is
+-- one compare and one elim step. ccBlockOf sd ct n0 n1 n2 is the RFC 2.3
+-- block of the key sd, the counter ct and the nonce (n0, n1, n2); its
+-- gate is on the first seed word. sdExpand sd tg ix is the block ix of
+-- the stream tg: the counter is ix and the nonce is (tg, 0, 0)
+-- (Q-S8c-2). The output is the 16 Words of the block. There is no
+-- sampler of field elements.
+family Seed := seed8 (sd0 : Word) (sd1 : Word) (sd2 : Word) (sd3 : Word) (sd4 : Word) (sd5 : Word) (sd6 : Word) (sd7 : Word)
+def ccGate : Word -> (Unit -> CcSt) -> CcSt :=
+  fun (w : Word) (k : Unit -> CcSt) => elim (fun (b : Sum Unit Unit) => CcSt) (fun (u : Unit) => k unit) (fun (u : Unit) => k unit) (wEq w 0w)
+def ccBlockOf : Seed -> Word -> Word -> Word -> Word -> CcSt :=
+  fun (sd : Seed) (ct : Word) (n0 : Word) (n1 : Word) (n2 : Word) => ccGate (sd0 sd) (fun (gu : Unit) => ccBlock ccRn10 (ccSt 0x61707865w 0x3320646ew 0x79622d32w 0x6b206574w (sd0 sd) (sd1 sd) (sd2 sd) (sd3 sd) (sd4 sd) (sd5 sd) (sd6 sd) (sd7 sd) ct n0 n1 n2))
+def sdExpand : Seed -> Word -> Word -> CcSt := fun (sd : Seed) (tg : Word) (ix : Word) => ccBlockOf sd ix tg 0w 0w

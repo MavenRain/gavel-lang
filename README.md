@@ -50,6 +50,7 @@ The rest of the crypto layers and the targets do not exist yet.
 - `docs/STATUS.md` and `docs/VALIDATION.md`: the status and the gate results.
 - `test/crypto/crypto.lang` and `build/cryptotool`: the C oracle for the Word
   and field ops (`src/crypto` is from quorum-lang 8d1a113). `test/gate.sh`
-  evaluates its 537 rows.
+  evaluates its 581 rows. `test/crypto/chacha.lang` has the ChaCha20 rows and
+  `test/crypto/att.lang` has the outcome attestation rows.
 - `docs/host/README.md`: how to build and test the host kit, and how to
   replace the sample domain in `domain/`.

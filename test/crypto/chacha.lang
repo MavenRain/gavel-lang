@@ -1,0 +1,20 @@
+-- The ChaCha20 oracle rows (S8c, RFC 8439). Each row def gives one Word of
+-- a ChaCha20 value of the domain file, and test/gate.sh compares it with
+-- the value of the C oracle (test/cryptotool.c). The C oracle is written
+-- from the RFC text, and its known answers are the test vectors of the
+-- sections 2.1.1, 2.3.2 and 2.4.2. ccQA to ccQD give the 4 words of one
+-- quarter round (ccQr). ccB0, ccB15 and ccBX give word 0, word 15 and the
+-- xor of the 16 words of one block (ccBlockOf): the inputs are the key (8
+-- Words), the counter and the nonce (3 Words). sdX gives the xor of the 16
+-- words of sdExpand: the inputs are the seed (8 Words), the stream tag and
+-- the block index. ccXorAll is a helper of this file. This is a kit file:
+-- test/gate.sh evaluates each row with `langc --kit eval`.
+def ccQA : Word -> Word -> Word -> Word -> Word := fun (a : Word) (b : Word) (c : Word) (d : Word) => cc0 (ccQr a b c d (fun (x0 : Word) (x1 : Word) (x2 : Word) (x3 : Word) => ccSt x0 x1 x2 x3 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w))
+def ccQB : Word -> Word -> Word -> Word -> Word := fun (a : Word) (b : Word) (c : Word) (d : Word) => cc1 (ccQr a b c d (fun (x0 : Word) (x1 : Word) (x2 : Word) (x3 : Word) => ccSt x0 x1 x2 x3 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w))
+def ccQC : Word -> Word -> Word -> Word -> Word := fun (a : Word) (b : Word) (c : Word) (d : Word) => cc2 (ccQr a b c d (fun (x0 : Word) (x1 : Word) (x2 : Word) (x3 : Word) => ccSt x0 x1 x2 x3 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w))
+def ccQD : Word -> Word -> Word -> Word -> Word := fun (a : Word) (b : Word) (c : Word) (d : Word) => cc3 (ccQr a b c d (fun (x0 : Word) (x1 : Word) (x2 : Word) (x3 : Word) => ccSt x0 x1 x2 x3 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w 0w))
+def ccXorAll : CcSt -> Word := fun (s : CcSt) => (wXor (cc0 s) (wXor (cc1 s) (wXor (cc2 s) (wXor (cc3 s) (wXor (cc4 s) (wXor (cc5 s) (wXor (cc6 s) (wXor (cc7 s) (wXor (cc8 s) (wXor (cc9 s) (wXor (cc10 s) (wXor (cc11 s) (wXor (cc12 s) (wXor (cc13 s) (wXor (cc14 s) (cc15 s))))))))))))))))
+def ccB0 : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word := fun (k0 : Word) (k1 : Word) (k2 : Word) (k3 : Word) (k4 : Word) (k5 : Word) (k6 : Word) (k7 : Word) (ct : Word) (n0 : Word) (n1 : Word) (n2 : Word) => cc0 (ccBlockOf (seed8 k0 k1 k2 k3 k4 k5 k6 k7) ct n0 n1 n2)
+def ccB15 : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word := fun (k0 : Word) (k1 : Word) (k2 : Word) (k3 : Word) (k4 : Word) (k5 : Word) (k6 : Word) (k7 : Word) (ct : Word) (n0 : Word) (n1 : Word) (n2 : Word) => cc15 (ccBlockOf (seed8 k0 k1 k2 k3 k4 k5 k6 k7) ct n0 n1 n2)
+def ccBX : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word := fun (k0 : Word) (k1 : Word) (k2 : Word) (k3 : Word) (k4 : Word) (k5 : Word) (k6 : Word) (k7 : Word) (ct : Word) (n0 : Word) (n1 : Word) (n2 : Word) => ccXorAll (ccBlockOf (seed8 k0 k1 k2 k3 k4 k5 k6 k7) ct n0 n1 n2)
+def sdX : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word := fun (k0 : Word) (k1 : Word) (k2 : Word) (k3 : Word) (k4 : Word) (k5 : Word) (k6 : Word) (k7 : Word) (tg : Word) (ix : Word) => ccXorAll (sdExpand (seed8 k0 k1 k2 k3 k4 k5 k6 k7) tg ix)
