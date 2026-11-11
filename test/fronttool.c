@@ -697,6 +697,8 @@ int main(void) {
   ok &= guest("def mulUse : Unit := feMulC", "REFUSE_WORD");
   /* S8a: and for the builtin ptMulC (Q-S8a-7 (a)). */
   ok &= guest("def ptUse : Unit := ptMulC", "REFUSE_WORD");
+  /* S8b: and for the builtin pairCheckC (Q-S8b-1 (a)). */
+  ok &= guest("def pairUse : Unit := pairCheckC", "REFUSE_WORD");
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;
 }

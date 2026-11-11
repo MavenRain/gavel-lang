@@ -17,17 +17,20 @@ def board : Committee := committee members s3 s1 refl refl
 -- G3 on ta = 3, and the stamp end 1 is before the release 2.
 def setup : Params := params secondPrice (amSucc amZero) board s3 (slot sz0) (height s1) (height s2) refl refl
 def auc : AucID := aucId s1
-def rootA : Root := root (hsOf s1)
+def rootA : Root := root (hash eligPub0)
 def rootB : Root := root (hsOf s2)
-def hA : Handle := handle (hsOf s1)
+def hA : Handle := handle (hash eligPub1)
 def hB : Handle := handle (hsOf s2)
-def cmA : Commitment := commitment (hsOf s1)
-def cmB : Commitment := commitment (hsOf s2)
--- The proofs name the root rootA.
-def proofA : EligibilityProof := elgProof rootA hA cmA
-def proofB : EligibilityProof := elgProof rootA hA cmB
+def cmA : Commitment := commitment (hash eligPub2)
+def cmB : Commitment := commitment (hash elig2Pub2)
+-- rootA, hA and cmA are the statement of the golden elig proof proofA, and
+-- cmB is the cm of the golden elig2 proof proofB: the same deposit and
+-- handle with a second bid (test/noir, USER ruling Q-S8b-17 (a)).
+def proofA : EligibilityProof := elgProof eligPrfA eligPrfB eligPrfC
+def proofB : EligibilityProof := elgProof elig2PrfA elig2PrfB elig2PrfC
 def bidA : SealedBid := sealedBid hA cmA proofA (seal Amount (amSucc (amSucc amZero)))
-def bidB : SealedBid := sealedBid hB cmB (elgProof rootA hB cmB) (seal Amount (amSucc (amSucc (amSucc amZero))))
+-- No golden proof has the handle hB. release does not read the proof.
+def bidB : SealedBid := sealedBid hB cmB proofB (seal Amount (amSucc (amSucc (amSucc amZero))))
 def stampA : Hash := stampMsg cmA (height s1)
 def stampLate : Hash := stampMsg cmA (height s2)
 -- Three members certify the stamp of cmA at height 1.
@@ -36,7 +39,7 @@ def admitValid : Verdict := admit setup hlNil rootA bidA (height s1) certA
 -- Adding r to a commitment tag preserves its stamp message. The tag is
 -- noncanonical, so the certificate for cmA must not admit this bid.
 def cmAlias : Commitment := commitment (hash (feAddRaw (hsTag (coHash cmA)) (modM frMod)))
-def bidAlias : SealedBid := sealedBid hA cmAlias (elgProof rootA hA cmAlias) (seal Amount (amSucc (amSucc amZero)))
+def bidAlias : SealedBid := sealedBid hA cmAlias proofA (seal Amount (amSucc (amSucc amZero)))
 def admitAlias : Verdict := admit setup hlNil rootA bidAlias (height s1) certA
 def tagBelowR : Sum Unit Unit := hsCanonical (hash (feSubRaw (modM frMod) feOne))
 def tagAtR : Sum Unit Unit := hsCanonical (hash (modM frMod))

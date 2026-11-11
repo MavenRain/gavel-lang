@@ -1,0 +1,10 @@
+-- EVAL_FUEL (S8b, Q-S8b-15 (a)): the law field cmSafe runs out of fuel, so the check keeps EVAL_FUEL and not REFUSE_SAFETY
+def s1 : Size := szS sz0
+def s3 : Size := szS (szS (szS sz0))
+def s5 : Size := szS (szS (szS (szS (szS sz0))))
+def s25 : Size := szAdd s5 (szAdd s5 (szAdd s5 (szAdd s5 s5)))
+def members : Members := mbCons (party fxKey1) (mbCons (party fxKey2) (mbCons (party fxKey3) (mbCons (party fxKey4) mbNil)))
+def spin : Size -> Unit -> Unit :=
+  fun (x : Size) => elim (fun (a : Size) => Unit -> Unit) (fun (u : Unit) => u) (fun (a : Size) (ih : Unit -> Unit) => fun (u : Unit) => ih (ih u)) x
+def keep : Unit -> Path (Sum Unit Unit) (cmG1 members s3 s1) (inr unit) := fun (u : Unit) => refl
+def board : Committee := committee members s3 s1 (keep (spin s25 unit)) refl

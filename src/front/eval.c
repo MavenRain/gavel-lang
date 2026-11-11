@@ -34,7 +34,7 @@ static const char *const OP_NAMES[] = {
   [OP_W_ADD] = "wAdd", [OP_W_SUB] = "wSub", [OP_W_MUL] = "wMul", [OP_W_MULHI] = "wMulHi", [OP_W_AND] = "wAnd", [OP_W_OR] = "wOr", [OP_W_XOR] = "wXor",
   [OP_W_NOT] = "wNot", [OP_W_SHL] = "wShl", [OP_W_SHR] = "wShr", [OP_W_ROTL] = "wRotl", [OP_W_ROTR] = "wRotr", [OP_W_LT] = "wLt", [OP_W_EQ] = "wEq",
   [OP_FE_MUL] = "feMulC",
-  [OP_PT_MUL] = "ptMulC"
+  [OP_PT_MUL] = "ptMulC", [OP_PAIR_CHECK] = "pairCheckC"
 };
 
 /* The number of arguments of each operation. VARIES: it comes from the
@@ -53,7 +53,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_FM_LEN] = 2,
   [OP_WORD] = 0, [OP_W_ADD] = 2, [OP_W_SUB] = 2, [OP_W_MUL] = 2, [OP_W_MULHI] = 2, [OP_W_AND] = 2, [OP_W_OR] = 2, [OP_W_XOR] = 2,
   [OP_W_NOT] = 1, [OP_W_SHL] = 2, [OP_W_SHR] = 2, [OP_W_ROTL] = 2, [OP_W_ROTR] = 2, [OP_W_LT] = 2, [OP_W_EQ] = 2,
-  [OP_FE_MUL] = 3, [OP_PT_MUL] = 3,
+  [OP_FE_MUL] = 3, [OP_PT_MUL] = 3, [OP_PAIR_CHECK] = 2,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
   [OP_INTERVAL] = 0, [OP_TRANSP] = 3,
   [OP_SYSTEM] = VARIES, [OP_HCOMP] = 4, [OP_FIN] = 1, [OP_FIN_ADD] = 3,
@@ -514,10 +514,10 @@ static const Value *env_lookup(Machine *m, const Env *env, uint32_t index) {
    arguments. On an argument that holds a neutral value, the application
    stays neutral (OP_DEF_APP), and conversion compares it by the def, then
    by the arguments. This is sound: one def on convertible arguments gives
-   convertible values. The crypto defs on open arguments take more than
-   EVAL_FUEL_STEPS steps (S8a s12: hsMsg above 20M), thus a type that holds
-   them must not unfold them. */
-static const char *const SEALED_DEFS[] = {"hsMsg", "schnorrCheck"};
+   convertible values. The crypto defs on open arguments can take more
+   steps than the fuel (S8a s12: hsMsg took more than 20M steps, the fuel
+   at that time), thus a type that holds them must not unfold them. */
+static const char *const SEALED_DEFS[] = {"hsMsg", "schnorrCheck", "g16Verify"};
 
 #define CLOSED_NODES 65536u
 
@@ -2155,6 +2155,845 @@ static const Value *pt_mul_c(Machine *m, const Value *const *a, uint32_t n) {
   return val_op(m, VAL_OP, OP_CTOR, a[2]->inst, 0, f, 2u);
 }
 
+/* The BN254 constants of pairCheckC (S8b s4 generation tool). The values are
+   in Montgomery form, except the RAW values. */
+static const uint32_t BN_P[8] = {0xd87cfd47u, 0x3c208c16u, 0x6871ca8du, 0x97816a91u, 0x8181585du, 0xb85045b6u,
+    0xe131a029u, 0x30644e72u};
+static const uint32_t BN_N0 = 0xe4866389u;
+static const uint32_t BN_ONE[8] = {0xc58f0d9du, 0xd35d438du, 0xf5c70b3du, 0x0a78eb28u, 0x7879462cu, 0x666ea36fu,
+    0x9a07df2fu, 0x0e0a77c1u};
+static const uint32_t BN_THREE[8] = {0x50ad28d7u, 0x7a17caa9u, 0xe15521b9u, 0x1f6ac17au, 0x696bd284u,
+    0x334bea4eu, 0xce179d8eu, 0x2a1f6744u};
+static const uint32_t BN_HALF[8] = {0x4f060572u, 0x87bee7d2u, 0x2f1c6ae5u, 0xd0fd2addu, 0xfcfd4f44u, 0x8f5f7492u,
+    0x3d9cbfacu, 0x1f37631au};
+static const uint32_t BN_PM2_RAW[8] = {0xd87cfd45u, 0x3c208c16u, 0x6871ca8du, 0x97816a91u, 0x8181585du,
+    0xb85045b6u, 0xe131a029u, 0x30644e72u};
+static const uint32_t BN_R_RAW[8] = {0xf0000001u, 0x43e1f593u, 0x79b97091u, 0x2833e848u, 0x8181585du,
+    0xb85045b6u, 0xe131a029u, 0x30644e72u};
+static const uint32_t BN_ATE_RAW[8] = {0xbe763ba8u, 0x9d797039u, 0x00000001u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u};
+#define BN_ATE_BITS 65u
+static const uint32_t BN_X_RAW[8] = {0x4a6909f1u, 0x44e992b4u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u};
+#define BN_X_BITS 63u
+static const uint32_t BN_BT[2][8] = {{0x77b802a8u, 0x3bf938e3u, 0x3633535du, 0x020b1b27u, 0x49755260u,
+    0x26b7edf0u, 0x4384a86du, 0x2514c632u}, {0xd1dcff67u, 0x38e7ecccu, 0x93ce0d3eu, 0x65f0b37du, 0x22ac00aau,
+    0xd749d0ddu, 0x4a688d4du, 0x0141b9ceu}};
+static const uint32_t BN_G1F[6][2][8] = {{{0xc58f0d9du, 0xd35d438du, 0xf5c70b3du, 0x0a78eb28u, 0x7879462cu,
+    0x666ea36fu, 0x9a07df2fu, 0x0e0a77c1u}, {0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u}}, {{0x33144907u, 0xaf9ba696u, 0x87afb78au, 0xca6b1d73u, 0xf08a2087u,
+    0x11bded5eu, 0x1a1f3a7cu, 0x02f34d75u}, {0x4c492d72u, 0xa222ae23u, 0x565de15bu, 0xd00f02a4u, 0x53dfc926u,
+    0xdc2ff3a2u, 0xb3899551u, 0x10a75716u}}, {{0x4563ab30u, 0xb5773b10u, 0xa9aa6454u, 0x347f91c8u, 0x242e0991u,
+    0x7a007127u, 0x118214ecu, 0x1956bcd8u}, {0xa0aa4757u, 0x6e849f1eu, 0x89f89141u, 0xaa1c7b6du, 0xfae0ca3au,
+    0xb6e713cdu, 0x4e82ebc3u, 0x26694fbbu}}, {{0x2936b629u, 0xe4bbdd0cu, 0xe133bacbu, 0xbb30f162u, 0xf9645366u,
+    0x31a9d1b6u, 0xa500f8ddu, 0x253570beu}, {0x5ffe77c7u, 0xa1d77ce4u, 0x7826d1dbu, 0x07affd11u, 0xbb7edc6bu,
+    0x6d16bd27u, 0x85defeccu, 0x2c872002u}}, {{0x843abe92u, 0x7361d77fu, 0x273411fbu, 0xa5bb2bd3u, 0x4b3e2399u,
+    0x9c941f31u, 0xbb9fd3ecu, 0x15df9cddu}, {0x4bd8c949u, 0x5dddfd15u, 0xa4445b60u, 0x62cb29a5u, 0x0c7dd2b9u,
+    0x37bc870au, 0x3171f0fdu, 0x24830a9du}}, {{0x41690fe7u, 0xc970692fu, 0x27694b0bu, 0xe2403421u, 0x83c459e8u,
+    0x32bee66bu, 0x0ab08841u, 0x12aabcedu}, {0x40aebfa9u, 0x0d485d23u, 0xab2fcc57u, 0x05193418u, 0x8a4910f5u,
+    0xd3b0a40bu, 0x35d2925au, 0x2f21ebb5u}}};
+static const uint32_t BN_G2F[6][8] = {{0xc58f0d9du, 0xd35d438du, 0xf5c70b3du, 0x0a78eb28u, 0x7879462cu,
+    0x666ea36fu, 0x9a07df2fu, 0x0e0a77c1u}, {0x00fa1bf2u, 0xca8d8005u, 0x68b39769u, 0xf0c5d614u, 0xad0d4418u,
+    0x0e201271u, 0xbad856e6u, 0x04290f65u}, {0x13e80b9cu, 0x3350c88eu, 0xdb5e56b9u, 0x7dce557cu, 0xb615564au,
+    0x6001b4b8u, 0x020217e0u, 0x2682e617u}, {0x12edefaau, 0x68c34889u, 0x72aabf4fu, 0x8d087f68u, 0x09081231u,
+    0x51e1a247u, 0x4729c0fau, 0x2259d6b1u}, {0xd782e155u, 0x71930c11u, 0xffbe3323u, 0xa6bb947cu, 0xd4741444u,
+    0xaa303344u, 0x26594943u, 0x2c3b3f0du}, {0xc494f1abu, 0x08cfc388u, 0x8d1373d4u, 0x19b31514u, 0xcb6c0213u,
+    0x584e90fdu, 0xdf2f8849u, 0x09e1685bu}};
+
+
+/* Fp2 = Fp[u] / (u^2 + 1): a + b u. */
+typedef struct {
+  uint32_t a[8];
+  uint32_t b[8];
+} F2;
+
+/* Fp6 = Fp2[v] / (v^3 - xi), xi = 9 + u: a + b v + c v^2. */
+typedef struct {
+  F2 a;
+  F2 b;
+  F2 c;
+} F6;
+
+/* Fp12 = Fp6[w] / (w^2 - v): a + b w. */
+typedef struct {
+  F6 a;
+  F6 b;
+} F12;
+
+/* A point (X, Y, Z) of the twist y^2 = x^3 + b' over Fp2. G2H: homogeneous
+   form (X / Z, Y / Z), the Miller loop. G2J: Jacobian form (X / Z^2,
+   Y / Z^3), the subgroup check. */
+typedef struct {
+  F2 x;
+  F2 y;
+  F2 z;
+} G2P3;
+
+/* An affine G2 point. (0, 0) is the point at infinity. */
+typedef struct {
+  F2 x;
+  F2 y;
+} G2A;
+
+static const uint32_t FE_NIL[8] = {0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+
+static int bit_at(const uint32_t *e, uint32_t i) {
+  return ((e[i / 32u] >> (i % 32u)) & 1u) != 0u;
+}
+
+static void fp_neg(const PtMod *d, const uint32_t *x, uint32_t *t) {
+  pt_sub(d, FE_NIL, x, t);
+}
+
+/* x^e over the BITS low bits of E, the top bit first, from 1. T can be X. */
+static void fp_pow(const PtMod *d, const uint32_t *x, const uint32_t *e, uint32_t bits, uint32_t *t) {
+  uint32_t r[8];
+  uint32_t b[8];
+  uint32_t i;
+  fe_copy(b, x);
+  fe_copy(r, BN_ONE);
+  for (i = bits; i > 0u; i--) {
+    pt_fm(d, r, r, r);
+    if (bit_at(e, i - 1u))
+      pt_fm(d, r, b, r);
+  }
+  fe_copy(t, r);
+}
+
+static int fe_same(const uint32_t *x, const uint32_t *y) {
+  uint32_t i;
+  uint32_t o = 0u;
+  for (i = 0u; i < 8u; i++)
+    o |= x[i] ^ y[i];
+  return o == 0u;
+}
+
+static void f2_set(F2 *t, const uint32_t (*g)[8]) {
+  fe_copy(t->a, g[0]);
+  fe_copy(t->b, g[1]);
+}
+
+static void f2_zero(F2 *t) {
+  fe_copy(t->a, FE_NIL);
+  fe_copy(t->b, FE_NIL);
+}
+
+static void f2_one(F2 *t) {
+  fe_copy(t->a, BN_ONE);
+  fe_copy(t->b, FE_NIL);
+}
+
+static int f2_is_zero(const F2 *x) {
+  return fe_zero(x->a) && fe_zero(x->b);
+}
+
+static int f2_same(const F2 *x, const F2 *y) {
+  return fe_same(x->a, y->a) && fe_same(x->b, y->b);
+}
+
+/* f2Add, f2Sub and the other F2 ops: T can be X or Y. */
+static void f2_add(const PtMod *d, const F2 *x, const F2 *y, F2 *t) {
+  pt_add(d, x->a, y->a, t->a);
+  pt_add(d, x->b, y->b, t->b);
+}
+
+static void f2_sub(const PtMod *d, const F2 *x, const F2 *y, F2 *t) {
+  pt_sub(d, x->a, y->a, t->a);
+  pt_sub(d, x->b, y->b, t->b);
+}
+
+static void f2_neg(const PtMod *d, const F2 *x, F2 *t) {
+  fp_neg(d, x->a, t->a);
+  fp_neg(d, x->b, t->b);
+}
+
+static void f2_conj(const PtMod *d, const F2 *x, F2 *t) {
+  fe_copy(t->a, x->a);
+  fp_neg(d, x->b, t->b);
+}
+
+/* f2Mul (Karatsuba, 3 Montgomery products): v0 = a0 b0, v1 = a1 b1,
+   (v0 - v1) + ((a0 + a1) (b0 + b1) - v0 - v1) u. */
+static void f2_mul(const PtMod *d, const F2 *x, const F2 *y, F2 *t) {
+  uint32_t v0[8];
+  uint32_t v1[8];
+  uint32_t s[8];
+  uint32_t u[8];
+  pt_fm(d, x->a, y->a, v0);
+  pt_fm(d, x->b, y->b, v1);
+  pt_add(d, x->a, x->b, s);
+  pt_add(d, y->a, y->b, u);
+  pt_fm(d, s, u, s);
+  pt_sub(d, v0, v1, t->a);
+  pt_sub(d, s, v0, s);
+  pt_sub(d, s, v1, t->b);
+}
+
+/* f2Scale: x s for an Fp value S. */
+static void f2_scale(const PtMod *d, const F2 *x, const uint32_t *s, F2 *t) {
+  pt_fm(d, x->a, s, t->a);
+  pt_fm(d, x->b, s, t->b);
+}
+
+/* fe9: 9 x as x2 = x + x, x4 = x2 + x2, x4 + x4 + x. */
+static void fp_nine(const PtMod *d, const uint32_t *x, uint32_t *t) {
+  uint32_t x2[8];
+  uint32_t x4[8];
+  pt_add(d, x, x, x2);
+  pt_add(d, x2, x2, x4);
+  pt_add(d, x4, x4, x2);
+  pt_add(d, x2, x, t);
+}
+
+/* f2Xi: (9 + u) (a + b u) = (9 a - b) + (9 b + a) u. */
+static void f2_xi(const PtMod *d, const F2 *x, F2 *t) {
+  uint32_t a[8];
+  uint32_t b[8];
+  fp_nine(d, x->a, a);
+  fp_nine(d, x->b, b);
+  pt_sub(d, a, x->b, a);
+  pt_add(d, b, x->a, t->b);
+  fe_copy(t->a, a);
+}
+
+/* f2Inv: (a - b u) / (a^2 + b^2). 0 gives 0. */
+static void f2_inv(const PtMod *d, const F2 *x, F2 *t) {
+  uint32_t n[8];
+  uint32_t s[8];
+  pt_fm(d, x->a, x->a, n);
+  pt_fm(d, x->b, x->b, s);
+  pt_add(d, n, s, n);
+  fp_pow(d, n, BN_PM2_RAW, 256u, n);
+  pt_fm(d, x->a, n, t->a);
+  pt_fm(d, x->b, n, s);
+  fp_neg(d, s, t->b);
+}
+
+static void f6_zero(F6 *t) {
+  f2_zero(&t->a);
+  f2_zero(&t->b);
+  f2_zero(&t->c);
+}
+
+static void f6_add(const PtMod *d, const F6 *x, const F6 *y, F6 *t) {
+  f2_add(d, &x->a, &y->a, &t->a);
+  f2_add(d, &x->b, &y->b, &t->b);
+  f2_add(d, &x->c, &y->c, &t->c);
+}
+
+static void f6_sub(const PtMod *d, const F6 *x, const F6 *y, F6 *t) {
+  f2_sub(d, &x->a, &y->a, &t->a);
+  f2_sub(d, &x->b, &y->b, &t->b);
+  f2_sub(d, &x->c, &y->c, &t->c);
+}
+
+static void f6_neg(const PtMod *d, const F6 *x, F6 *t) {
+  f2_neg(d, &x->a, &t->a);
+  f2_neg(d, &x->b, &t->b);
+  f2_neg(d, &x->c, &t->c);
+}
+
+/* f6MulV: (a + b v + c v^2) v = xi c + a v + b v^2. */
+static void f6_mul_v(const PtMod *d, const F6 *x, F6 *t) {
+  F2 c;
+  f2_xi(d, &x->c, &c);
+  t->c = x->b;
+  t->b = x->a;
+  t->a = c;
+}
+
+/* f6Mul (Karatsuba, 6 f2Mul): v0 = a0 b0, v1 = a1 b1, v2 = a2 b2,
+   c0 = v0 + xi ((a1 + a2) (b1 + b2) - v1 - v2),
+   c1 = (a0 + a1) (b0 + b1) - v0 - v1 + xi v2,
+   c2 = (a0 + a2) (b0 + b2) - v0 - v2 + v1. */
+static void f6_mul(const PtMod *d, const F6 *x, const F6 *y, F6 *t) {
+  F2 v0;
+  F2 v1;
+  F2 v2;
+  F2 s;
+  F2 u;
+  F2 c0;
+  F2 c1;
+  f2_mul(d, &x->a, &y->a, &v0);
+  f2_mul(d, &x->b, &y->b, &v1);
+  f2_mul(d, &x->c, &y->c, &v2);
+  f2_add(d, &x->b, &x->c, &s);
+  f2_add(d, &y->b, &y->c, &u);
+  f2_mul(d, &s, &u, &s);
+  f2_sub(d, &s, &v1, &s);
+  f2_sub(d, &s, &v2, &s);
+  f2_xi(d, &s, &s);
+  f2_add(d, &v0, &s, &c0);
+  f2_add(d, &x->a, &x->b, &s);
+  f2_add(d, &y->a, &y->b, &u);
+  f2_mul(d, &s, &u, &s);
+  f2_sub(d, &s, &v0, &s);
+  f2_sub(d, &s, &v1, &s);
+  f2_xi(d, &v2, &u);
+  f2_add(d, &s, &u, &c1);
+  f2_add(d, &x->a, &x->c, &s);
+  f2_add(d, &y->a, &y->c, &u);
+  f2_mul(d, &s, &u, &s);
+  f2_sub(d, &s, &v0, &s);
+  f2_sub(d, &s, &v2, &s);
+  f2_add(d, &s, &v1, &t->c);
+  t->a = c0;
+  t->b = c1;
+}
+
+/* f6Inv: t0 = a^2 - xi b c, t1 = xi c^2 - a b, t2 = b^2 - a c,
+   n = a t0 + xi (c t1 + b t2), then (t0, t1, t2) / n. */
+static void f6_inv(const PtMod *d, const F6 *x, F6 *t) {
+  F2 t0;
+  F2 t1;
+  F2 t2;
+  F2 s;
+  F2 n;
+  f2_mul(d, &x->a, &x->a, &t0);
+  f2_mul(d, &x->b, &x->c, &s);
+  f2_xi(d, &s, &s);
+  f2_sub(d, &t0, &s, &t0);
+  f2_mul(d, &x->c, &x->c, &t1);
+  f2_xi(d, &t1, &t1);
+  f2_mul(d, &x->a, &x->b, &s);
+  f2_sub(d, &t1, &s, &t1);
+  f2_mul(d, &x->b, &x->b, &t2);
+  f2_mul(d, &x->a, &x->c, &s);
+  f2_sub(d, &t2, &s, &t2);
+  f2_mul(d, &x->c, &t1, &n);
+  f2_mul(d, &x->b, &t2, &s);
+  f2_add(d, &n, &s, &n);
+  f2_xi(d, &n, &n);
+  f2_mul(d, &x->a, &t0, &s);
+  f2_add(d, &s, &n, &n);
+  f2_inv(d, &n, &n);
+  f2_mul(d, &t0, &n, &t->a);
+  f2_mul(d, &t1, &n, &t->b);
+  f2_mul(d, &t2, &n, &t->c);
+}
+
+static void f12_one(F12 *t) {
+  f6_zero(&t->a);
+  f6_zero(&t->b);
+  f2_one(&t->a.a);
+}
+
+static int f12_is_one(const F12 *x) {
+  F12 one;
+  f12_one(&one);
+  return f2_same(&x->a.a, &one.a.a) && f2_is_zero(&x->a.b) && f2_is_zero(&x->a.c) && f2_is_zero(&x->b.a) &&
+         f2_is_zero(&x->b.b) && f2_is_zero(&x->b.c);
+}
+
+/* f12Mul (Karatsuba, 3 f6Mul): v0 = a0 b0, v1 = a1 b1,
+   (v0 + v v1) + ((a0 + a1) (b0 + b1) - v0 - v1) w. T can be X or Y. */
+static void f12_mul(const PtMod *d, const F12 *x, const F12 *y, F12 *t) {
+  F6 v0;
+  F6 v1;
+  F6 s;
+  F6 u;
+  f6_mul(d, &x->a, &y->a, &v0);
+  f6_mul(d, &x->b, &y->b, &v1);
+  f6_add(d, &x->a, &x->b, &s);
+  f6_add(d, &y->a, &y->b, &u);
+  f6_mul(d, &s, &u, &s);
+  f6_sub(d, &s, &v0, &s);
+  f6_sub(d, &s, &v1, &t->b);
+  f6_mul_v(d, &v1, &v1);
+  f6_add(d, &v0, &v1, &t->a);
+}
+
+/* f12Conj: a - b w, the p^6 power. */
+static void f12_conj(const PtMod *d, const F12 *x, F12 *t) {
+  t->a = x->a;
+  f6_neg(d, &x->b, &t->b);
+}
+
+/* f12Inv: (a - b w) / (a^2 - v b^2). */
+static void f12_inv(const PtMod *d, const F12 *x, F12 *t) {
+  F6 s;
+  F6 u;
+  f6_mul(d, &x->a, &x->a, &s);
+  f6_mul(d, &x->b, &x->b, &u);
+  f6_mul_v(d, &u, &u);
+  f6_sub(d, &s, &u, &s);
+  f6_inv(d, &s, &s);
+  f6_mul(d, &x->a, &s, &t->a);
+  f6_mul(d, &x->b, &s, &u);
+  f6_neg(d, &u, &t->b);
+}
+
+/* The coefficient of w^k of x = sum c_k w^k: k 0, 2, 4 are a.a, a.b, a.c and
+   k 1, 3, 5 are b.a, b.b, b.c. */
+static F2 *f12_at(F12 *x, uint32_t k) {
+  F6 *h = k % 2u == 0u ? &x->a : &x->b;
+  return k / 2u == 0u ? &h->a : k / 2u == 1u ? &h->b : &h->c;
+}
+
+/* f12Frob: the p power, c_k -> conj(c_k) xi^(k (p - 1) / 6). */
+static void f12_frob(const PtMod *d, const F12 *x, F12 *t) {
+  F12 r = *x;
+  F2 g;
+  uint32_t k;
+  for (k = 0u; k < 6u; k++) {
+    f2_conj(d, f12_at(&r, k), f12_at(&r, k));
+    if (k > 0u) {
+      f2_set(&g, BN_G1F[k]);
+      f2_mul(d, f12_at(&r, k), &g, f12_at(&r, k));
+    }
+  }
+  *t = r;
+}
+
+/* f12Frob2: the p^2 power, c_k -> c_k xi^(k (p^2 - 1) / 6) (an Fp value). */
+static void f12_frob2(const PtMod *d, const F12 *x, F12 *t) {
+  F12 r = *x;
+  uint32_t k;
+  for (k = 1u; k < 6u; k++)
+    f2_scale(d, f12_at(&r, k), BN_G2F[k], f12_at(&r, k));
+  *t = r;
+}
+
+/* x^e over the BITS low bits of E, the top bit first, from 1. */
+static void f12_pow(const PtMod *d, const F12 *x, const uint32_t *e, uint32_t bits, F12 *t) {
+  F12 r;
+  F12 b = *x;
+  uint32_t i;
+  f12_one(&r);
+  for (i = bits; i > 0u; i--) {
+    f12_mul(d, &r, &r, &r);
+    if (bit_at(e, i - 1u))
+      f12_mul(d, &r, &b, &r);
+  }
+  *t = r;
+}
+
+/* The final exponentiation f^((p^12 - 1) / r): the easy part f^((p^6 - 1)
+   (p^2 + 1)), then the hard part (p^4 - p^2 + 1) / r with three powers of
+   x (Beuchat et al. 2010, Algorithm 1 steps 13 to 15). */
+static void final_exp(const PtMod *d, const F12 *in, F12 *out) {
+  F12 t0;
+  F12 t1;
+  F12 t2;
+  F12 fp;
+  F12 fp2;
+  F12 fp3;
+  F12 fu;
+  F12 fu2;
+  F12 fu3;
+  F12 fu2p;
+  F12 fu3p;
+  F12 y0;
+  F12 y1;
+  F12 y2;
+  F12 y3;
+  F12 y4;
+  F12 y5;
+  F12 y6;
+  f12_conj(d, in, &t1);
+  f12_inv(d, in, &t2);
+  f12_mul(d, &t1, &t2, &t1);
+  f12_frob2(d, &t1, &t2);
+  f12_mul(d, &t1, &t2, &t1);
+  f12_frob(d, &t1, &fp);
+  f12_frob2(d, &t1, &fp2);
+  f12_frob(d, &fp2, &fp3);
+  f12_pow(d, &t1, BN_X_RAW, BN_X_BITS, &fu);
+  f12_pow(d, &fu, BN_X_RAW, BN_X_BITS, &fu2);
+  f12_pow(d, &fu2, BN_X_RAW, BN_X_BITS, &fu3);
+  f12_frob(d, &fu, &y3);
+  f12_frob(d, &fu2, &fu2p);
+  f12_frob(d, &fu3, &fu3p);
+  f12_frob2(d, &fu2, &y2);
+  f12_mul(d, &fp, &fp2, &y0);
+  f12_mul(d, &y0, &fp3, &y0);
+  f12_conj(d, &t1, &y1);
+  f12_conj(d, &fu2, &y5);
+  f12_conj(d, &y3, &y3);
+  f12_mul(d, &fu, &fu2p, &y4);
+  f12_conj(d, &y4, &y4);
+  f12_mul(d, &fu3, &fu3p, &y6);
+  f12_conj(d, &y6, &y6);
+  f12_mul(d, &y6, &y6, &t0);
+  f12_mul(d, &t0, &y4, &t0);
+  f12_mul(d, &t0, &y5, &t0);
+  f12_mul(d, &y3, &y5, &t1);
+  f12_mul(d, &t1, &t0, &t1);
+  f12_mul(d, &t0, &y2, &t0);
+  f12_mul(d, &t1, &t1, &t1);
+  f12_mul(d, &t1, &t0, &t1);
+  f12_mul(d, &t1, &t1, &t1);
+  f12_mul(d, &t1, &y1, &t0);
+  f12_mul(d, &t1, &y0, &t1);
+  f12_mul(d, &t0, &t0, &t0);
+  f12_mul(d, &t0, &t1, out);
+}
+
+/* mDbl: T = 2 T and f = f^2 l, l the tangent line at T at the point
+   (px, py) of G1 (Aranha et al. 2011, homogeneous form, D-type twist):
+   A = X Y / 2, B = Y^2, C = Z^2, E = 3 b' C, F = 3 E, G = (B + F) / 2,
+   H = (Y + Z)^2 - (B + C), J = X^2; T = (A (B - F), G^2 - 3 E^2, B H);
+   l = -H py + 3 J px w + (E - B) v w. */
+static void miller_dbl(const PtMod *d, G2P3 *t, const uint32_t *px, const uint32_t *py, F12 *f) {
+  F2 a;
+  F2 b;
+  F2 c;
+  F2 e;
+  F2 ff;
+  F2 g;
+  F2 h;
+  F2 j;
+  F2 s;
+  F2 bt;
+  F12 l;
+  f2_set(&bt, BN_BT);
+  f2_mul(d, &t->x, &t->y, &a);
+  f2_scale(d, &a, BN_HALF, &a);
+  f2_mul(d, &t->y, &t->y, &b);
+  f2_mul(d, &t->z, &t->z, &c);
+  f2_add(d, &c, &c, &s);
+  f2_add(d, &s, &c, &s);
+  f2_mul(d, &bt, &s, &e);
+  f2_add(d, &e, &e, &ff);
+  f2_add(d, &ff, &e, &ff);
+  f2_add(d, &b, &ff, &g);
+  f2_scale(d, &g, BN_HALF, &g);
+  f2_add(d, &t->y, &t->z, &h);
+  f2_mul(d, &h, &h, &h);
+  f2_add(d, &b, &c, &s);
+  f2_sub(d, &h, &s, &h);
+  f2_mul(d, &t->x, &t->x, &j);
+  f6_zero(&l.a);
+  f6_zero(&l.b);
+  f2_neg(d, &h, &s);
+  f2_scale(d, &s, py, &l.a.a);
+  f2_add(d, &j, &j, &s);
+  f2_add(d, &s, &j, &s);
+  f2_scale(d, &s, px, &l.b.a);
+  f2_sub(d, &e, &b, &l.b.b);
+  f2_sub(d, &b, &ff, &s);
+  f2_mul(d, &a, &s, &t->x);
+  f2_mul(d, &e, &e, &s);
+  f2_add(d, &s, &s, &c);
+  f2_add(d, &c, &s, &s);
+  f2_mul(d, &g, &g, &t->y);
+  f2_sub(d, &t->y, &s, &t->y);
+  f2_mul(d, &b, &h, &t->z);
+  f12_mul(d, f, f, f);
+  f12_mul(d, f, &l, f);
+}
+
+/* mAdd: T = T + Q and f = f l, l the line through T and Q (affine) at the
+   point (px, py): theta = Y - qy Z, lambda = X - qx Z, C = theta^2,
+   D = lambda^2, E = lambda D, F = Z C, G = X D, H = E + F - 2 G;
+   T = (lambda H, theta (G - H) - Y E, Z E);
+   l = lambda py - theta px w + (theta qx - lambda qy) v w. */
+static void miller_add(const PtMod *d, G2P3 *t, const G2A *q, const uint32_t *px, const uint32_t *py, F12 *f) {
+  F2 th;
+  F2 la;
+  F2 c;
+  F2 dd;
+  F2 e;
+  F2 ff;
+  F2 g;
+  F2 h;
+  F2 s;
+  F12 l;
+  f2_mul(d, &q->y, &t->z, &s);
+  f2_sub(d, &t->y, &s, &th);
+  f2_mul(d, &q->x, &t->z, &s);
+  f2_sub(d, &t->x, &s, &la);
+  f2_mul(d, &th, &th, &c);
+  f2_mul(d, &la, &la, &dd);
+  f2_mul(d, &la, &dd, &e);
+  f2_mul(d, &t->z, &c, &ff);
+  f2_mul(d, &t->x, &dd, &g);
+  f2_add(d, &e, &ff, &h);
+  f2_sub(d, &h, &g, &h);
+  f2_sub(d, &h, &g, &h);
+  f6_zero(&l.a);
+  f6_zero(&l.b);
+  f2_scale(d, &la, py, &l.a.a);
+  f2_neg(d, &th, &s);
+  f2_scale(d, &s, px, &l.b.a);
+  f2_mul(d, &th, &q->x, &l.b.b);
+  f2_mul(d, &la, &q->y, &s);
+  f2_sub(d, &l.b.b, &s, &l.b.b);
+  f2_mul(d, &la, &h, &t->x);
+  f2_sub(d, &g, &h, &s);
+  f2_mul(d, &th, &s, &s);
+  f2_mul(d, &t->y, &e, &c);
+  f2_sub(d, &s, &c, &t->y);
+  f2_mul(d, &t->z, &e, &t->z);
+  f12_mul(d, f, &l, f);
+}
+
+/* The Miller loop of the optimal ate pairing over the bits of 6 x + 2 (the
+   top bit first), then the lines to pi(Q) and -pi^2(Q):
+   pi(Q) = (conj(qx) xi^((p - 1) / 3), conj(qy) xi^((p - 1) / 2)),
+   -pi^2(Q) = (qx xi^((p^2 - 1) / 3), qy). */
+static void miller(const PtMod *d, const uint32_t *px, const uint32_t *py, const G2A *q, F12 *f) {
+  G2P3 t;
+  G2A q1;
+  F2 g;
+  uint32_t i;
+  t.x = q->x;
+  t.y = q->y;
+  f2_one(&t.z);
+  f12_one(f);
+  for (i = BN_ATE_BITS - 1u; i > 0u; i--) {
+    miller_dbl(d, &t, px, py, f);
+    if (bit_at(BN_ATE_RAW, i - 1u))
+      miller_add(d, &t, q, px, py, f);
+  }
+  f2_conj(d, &q->x, &q1.x);
+  f2_set(&g, BN_G1F[2]);
+  f2_mul(d, &q1.x, &g, &q1.x);
+  f2_conj(d, &q->y, &q1.y);
+  f2_set(&g, BN_G1F[3]);
+  f2_mul(d, &q1.y, &g, &q1.y);
+  miller_add(d, &t, &q1, px, py, f);
+  f2_scale(d, &q->x, BN_G2F[2], &q1.x);
+  q1.y = q->y;
+  miller_add(d, &t, &q1, px, py, f);
+}
+
+/* g2Dbl: ptDbl over Fp2, the same field ops in the same order. O can be A. */
+static void g2_dbl(const PtMod *d, const G2P3 *a, G2P3 *o) {
+  F2 yy;
+  F2 s;
+  F2 xx;
+  F2 mm;
+  F2 x3;
+  F2 y8;
+  F2 yz;
+  F2 t;
+  if (f2_is_zero(&a->z) || f2_is_zero(&a->y)) {
+    f2_zero(&o->x);
+    f2_zero(&o->y);
+    f2_zero(&o->z);
+    return;
+  }
+  f2_mul(d, &a->y, &a->y, &yy);
+  f2_mul(d, &a->x, &yy, &s);
+  f2_add(d, &s, &s, &s);
+  f2_add(d, &s, &s, &s);
+  f2_mul(d, &a->x, &a->x, &xx);
+  f2_add(d, &xx, &xx, &mm);
+  f2_add(d, &mm, &xx, &mm);
+  f2_mul(d, &mm, &mm, &t);
+  f2_sub(d, &t, &s, &t);
+  f2_sub(d, &t, &s, &x3);
+  f2_mul(d, &yy, &yy, &y8);
+  f2_add(d, &y8, &y8, &y8);
+  f2_add(d, &y8, &y8, &y8);
+  f2_add(d, &y8, &y8, &y8);
+  f2_mul(d, &a->y, &a->z, &yz);
+  f2_sub(d, &s, &x3, &t);
+  f2_mul(d, &mm, &t, &t);
+  f2_sub(d, &t, &y8, &o->y);
+  f2_add(d, &yz, &yz, &o->z);
+  o->x = x3;
+}
+
+/* g2Madd: ptMadd over Fp2 (Jacobian a plus affine b). O can be A. */
+static void g2_madd(const PtMod *d, const G2P3 *a, const G2A *b, G2P3 *o) {
+  F2 zz;
+  F2 h;
+  F2 r;
+  F2 hh;
+  F2 hhh;
+  F2 v;
+  F2 x3;
+  F2 t;
+  F2 u;
+  if (f2_is_zero(&b->x) && f2_is_zero(&b->y)) {
+    *o = *a;
+    return;
+  }
+  if (f2_is_zero(&a->z)) {
+    o->x = b->x;
+    o->y = b->y;
+    f2_one(&o->z);
+    return;
+  }
+  f2_mul(d, &a->z, &a->z, &zz);
+  f2_mul(d, &b->x, &zz, &h);
+  f2_sub(d, &h, &a->x, &h);
+  f2_mul(d, &b->y, &zz, &r);
+  f2_mul(d, &r, &a->z, &r);
+  f2_sub(d, &r, &a->y, &r);
+  if (f2_is_zero(&h)) {
+    if (f2_is_zero(&r)) {
+      g2_dbl(d, a, o);
+      return;
+    }
+    f2_zero(&o->x);
+    f2_zero(&o->y);
+    f2_zero(&o->z);
+    return;
+  }
+  f2_mul(d, &h, &h, &hh);
+  f2_mul(d, &h, &hh, &hhh);
+  f2_mul(d, &a->x, &hh, &v);
+  f2_mul(d, &r, &r, &t);
+  f2_sub(d, &t, &hhh, &t);
+  f2_sub(d, &t, &v, &t);
+  f2_sub(d, &t, &v, &x3);
+  f2_sub(d, &v, &x3, &t);
+  f2_mul(d, &r, &t, &t);
+  f2_mul(d, &a->y, &hhh, &u);
+  f2_sub(d, &t, &u, &o->y);
+  f2_mul(d, &a->z, &h, &o->z);
+  o->x = x3;
+}
+
+/* 1 when the G1 point (x, y) is (0, 0), or its coordinates are below p and
+   y^2 = x^3 + 3. */
+static int g1_valid(const PtMod *d, const uint32_t *x, const uint32_t *y) {
+  uint32_t l[8];
+  uint32_t r[8];
+  if (fe_zero(x) && fe_zero(y))
+    return 1;
+  if (!fe_below(x, d->m) || !fe_below(y, d->m))
+    return 0;
+  pt_fm(d, y, y, l);
+  pt_fm(d, x, x, r);
+  pt_fm(d, r, x, r);
+  pt_add(d, r, BN_THREE, r);
+  return fe_same(l, r);
+}
+
+/* 1 when the G2 point q is (0, 0), or its coordinates are below p,
+   y^2 = x^3 + b' and r q is the point at infinity (USER ruling Q-S8b-8 (a)). */
+static int g2_valid(const PtMod *d, const G2A *q) {
+  F2 l;
+  F2 r;
+  G2P3 acc;
+  uint32_t i;
+  if (f2_is_zero(&q->x) && f2_is_zero(&q->y))
+    return 1;
+  if (!fe_below(q->x.a, d->m) || !fe_below(q->x.b, d->m) || !fe_below(q->y.a, d->m) || !fe_below(q->y.b, d->m))
+    return 0;
+  f2_mul(d, &q->y, &q->y, &l);
+  f2_mul(d, &q->x, &q->x, &r);
+  f2_mul(d, &r, &q->x, &r);
+  f2_set(&acc.x, BN_BT);
+  f2_add(d, &r, &acc.x, &r);
+  if (!f2_same(&l, &r))
+    return 0;
+  f2_zero(&acc.x);
+  f2_zero(&acc.y);
+  f2_zero(&acc.z);
+  for (i = 256u; i > 0u; i--) {
+    g2_dbl(d, &acc, &acc);
+    if (bit_at(BN_R_RAW, i - 1u))
+      g2_madd(d, &acc, q, &acc);
+  }
+  return f2_is_zero(&acc.z);
+}
+
+/* pairCheck: 1 when each point is valid and the product of the pairings
+   e(P_i, Q_i) is 1. A pair with a point at infinity gives 1. */
+
+/* The value X of the pairCheckC call A when it is a constructor of ARGC
+   fields. 0 when *OUT is the stuck operation or an error. */
+static int pair_ctor(Machine *m, const Value *x, uint32_t argc, const Value *const *a, uint32_t n, const Value **out) {
+  if (blocked(m, x, OP_PAIR_CHECK, 0, 0, a, n, out))
+    return 0;
+  if (val_is(x, OP_HCOMP)) {
+    *out = val_op(m, VAL_STUCK, OP_PAIR_CHECK, 0, 0, a, n);
+    return 0;
+  }
+  if (!val_is(x, OP_CTOR) || x->argc != argc) {
+    *out = internal(m, "a pairCheckC argument that is not a PairList of Pt1 and Pt2");
+    return 0;
+  }
+  return 1;
+}
+
+/* The PairList value X of the pairCheckC call A: 0 for plEnd, 1 for plPair,
+   -1 when *OUT is the stuck operation or an error. */
+static int pair_node(Machine *m, const Value *x, const Value *const *a, uint32_t n, const Value **out) {
+  if (blocked(m, x, OP_PAIR_CHECK, 0, 0, a, n, out))
+    return -1;
+  if (val_is(x, OP_HCOMP)) {
+    *out = val_op(m, VAL_STUCK, OP_PAIR_CHECK, 0, 0, a, n);
+    return -1;
+  }
+  if (!val_is(x, OP_CTOR) || (x->argc != 0u && x->argc != 3u)) {
+    *out = internal(m, "a pairCheckC list that is not a PairList");
+    return -1;
+  }
+  return x->argc == 0u ? 0 : 1;
+}
+
+/* The coordinates of the node X (plPair p q next) of the pairCheckC call A:
+   the Pt1 p into PX and PY, the Pt2 q into Q. */
+static int pair_read(Machine *m, const Value *x, const Value *const *a, uint32_t n, uint32_t *px, uint32_t *py, G2A *q,
+                     const Value **out) {
+  const Value *p = x->args[0];
+  const Value *t = x->args[1];
+  if (!pair_ctor(m, p, 2u, a, n, out) || !fe_limbs(m, OP_PAIR_CHECK, p->args[0], a, n, px, out) ||
+      !fe_limbs(m, OP_PAIR_CHECK, p->args[1], a, n, py, out) || !pair_ctor(m, t, 2u, a, n, out) ||
+      !pair_ctor(m, t->args[0], 2u, a, n, out) || !pair_ctor(m, t->args[1], 2u, a, n, out))
+    return 0;
+  return fe_limbs(m, OP_PAIR_CHECK, t->args[0]->args[0], a, n, q->x.a, out) &&
+         fe_limbs(m, OP_PAIR_CHECK, t->args[0]->args[1], a, n, q->x.b, out) &&
+         fe_limbs(m, OP_PAIR_CHECK, t->args[1]->args[0], a, n, q->y.a, out) &&
+         fe_limbs(m, OP_PAIR_CHECK, t->args[1]->args[1], a, n, q->y.b, out);
+}
+
+/* pairCheckC md ps (S8b, USER rulings Q-S8b-1 (a) and Q-S8b-8 (a)): the
+   pairing check of the domain def pairCheck. md must be the BN254 base field
+   modulus (fpMod). The points are in Montgomery form. The result is inr tt
+   when each pair (P, Q) of ps is valid and the product of the e(P, Q) is 1,
+   else inl tt. A pair is not valid when a coordinate is not below p, a point
+   is not on its curve, or r Q is not the point at infinity. A pair with a
+   point at infinity gives 1. Each pair has its Miller loop; the product has
+   one final exponentiation. One call charges 64 steps for each Montgomery
+   product of the worst case (S8b s4 COST lines): 22000 for each pair and
+   16500 for the final exponentiation. */
+static const Value *pair_check_c(Machine *m, const Value *const *a, uint32_t n) {
+  const Value *out = NULL;
+  const Value *x = a[1];
+  PtMod d;
+  G2A q;
+  F12 acc;
+  F12 f;
+  uint32_t px[8];
+  uint32_t py[8];
+  uint64_t pairs = 0u;
+  int tag = 1;
+  int ok = 1;
+  if (!fe_mod(m, OP_PAIR_CHECK, a, n, d.m, &d.n0, &out))
+    return out;
+  if (!fe_same(d.m, BN_P) || d.n0 != BN_N0)
+    return internal(m, "a pairCheckC modulus that is not the BN254 base field");
+  fe_copy(d.r1, BN_ONE);
+  d.e = NULL;
+  while (tag != 0) {
+    tag = pair_node(m, x, a, n, &out);
+    if (tag < 0 || (tag == 1 && !pair_read(m, x, a, n, px, py, &q, &out)))
+      return out;
+    pairs += tag == 1 ? 1u : 0u;
+    x = tag == 1 ? x->args[2] : x;
+  }
+  if (!spend(m, 64u * (22000u * pairs + 16500u)))
+    return NULL;
+  f12_one(&acc);
+  for (x = a[1]; ok && x->argc == 3u; x = x->args[2]) {
+    ok = pair_read(m, x, a, n, px, py, &q, &out) && g1_valid(&d, px, py) && g2_valid(&d, &q);
+    if (ok && !(fe_zero(px) && fe_zero(py)) && !(f2_is_zero(&q.x) && f2_is_zero(&q.y))) {
+      miller(&d, px, py, &q, &f);
+      f12_mul(&d, &acc, &f, &acc);
+    }
+  }
+  if (ok)
+    final_exp(&d, &acc, &f);
+  return make(m, VAL_OP, ok && f12_is_one(&f) ? OP_INR : OP_INL, 0, 1, constant(m, OP_UNIT_VAL), NULL, NULL);
+}
+
 static const Value *reduce_flag_if(Machine *m, const Value *const *a, uint32_t n) {
   const Value *out;
   if (blocked(m, a[0], OP_FLAG_IF, 0, 0, a, n, &out))
@@ -2748,6 +3587,7 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_W_EQ:
   case OP_FE_MUL:
   case OP_PT_MUL:
+  case OP_PAIR_CHECK:
   case OP_DEF_APP:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
@@ -3744,6 +4584,8 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return fe_mul_c(m, a, n);
   case OP_PT_MUL:
     return pt_mul_c(m, a, n);
+  case OP_PAIR_CHECK:
+    return pair_check_c(m, a, n);
   case OP_DEF_APP:
     return seal_spine(m, inst, a, n, 0);
   case OP_NONZERO_OF:

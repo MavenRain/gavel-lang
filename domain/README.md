@@ -252,16 +252,16 @@ minus 2. The constants come from quorum-lang `bn254.h`.
 
 The C oracle is `build/cryptotool`. `src/crypto` is a byte copy of
 quorum-lang 8d1a113 (`u256`, `bn254`, `keccak`, `poseidon`). The tool
-prints 501 rows (424 at S8) `FILE NAME ARGS => RESULT` from a fixed
+prints 537 rows (424 at S8, 501 at S8a) `FILE NAME ARGS => RESULT` from a fixed
 seed and known answers. `examples/crypto.lang` has the 360 Word rows (it lowers).
 `test/crypto/crypto.lang` has the 64 field rows (add 9, sub 9, mul 8, inv
 6 for each of `Fr` and `Fp`). `test/gate.sh` evaluates each row with `langc
---kit eval` and prints `crypto oracle: 501 rows, 0 mismatches`.
+--kit eval` and prints `crypto oracle: 537 rows, 0 mismatches`.
 
 The field rows are outside the Wasm set. The lowering refuses `frInv` with
 `EVAL_DEPTH`, because it nests deeper than 2000 levels. The evaluator
 handles it: `feMul` costs 9182 eval steps, and the `frInv` row costs
-3713353 steps and 303.4 MiB. The limits are `EVAL_FUEL_STEPS` 20M and the
+3713353 steps and 303.4 MiB. The limits are `EVAL_FUEL_STEPS` 40M (20M before S8b) and the
 1 GiB arena. A def that calls `feInv` on a concrete modulus costs about
 3.3M steps and 300 MiB at check time, so the row helpers take the modulus
 as a binder.
@@ -334,6 +334,93 @@ Costs in eval steps (measured early in S8a, before the switch of `Hash`,
 
 The oracle has 501 rows at S8a: `test/crypto/crypto.lang` adds the
 keccak, Poseidon, curve, `ptMulC`, Schnorr, `hsMsg` and fixture rows.
+
+## The crypto prelude part 2
+
+S8b adds the pairing and the Groth16 verifier (`docs/PLAN.md` section 1,
+Q-S8b-1 (a) to Q-S8b-20 (a)).
+
+| Kind | Names |
+|---|---|
+| The pairing spec | `mdGate2`, the Fp2 words (`f2Add`, `f2Mul`, `f2Inv`), the Fp12 words (`f12Mul`, `f12Frob`, `f12PowFrom`), `Pt2`, `g2Gen`, `g2Zero`, `g2MulBits`, `millerBits`, `pairCheck` |
+| Groth16 | `G16Ics`, `G16Pubs`, `G16Vk`, `p1Canon`, `f2Canon`, `p2Canon`, `g16Msm`, `g16Verify` |
+| Keys | `eligVk`, `outcomeVk`, `shareVk` |
+| Proofs | `EligibilityProof` (`elgProof`), `OutcomeProof` (`outcomeProof`), `ShareProof` (`shareProof`) |
+| Verifiers | `elgVrf`, `outcomeVrf`, `shareVrf` |
+| Golden data | `eligPrfA` to `eligPrfC`, `eligPub0` to `eligPub2`, `elig2PrfA` to `elig2PrfC`, `elig2Pub0` to `elig2Pub2` |
+| Kit builtin | `pairCheckC` |
+
+`pairCheckC` is the C pairing check on BN254 (Q-S8b-1 (a)): it gives yes
+when the product of the pairings of its points is 1. First it checks that
+each point is on its curve and that each G2 point is in the subgroup of
+order r (Q-S8b-8 (a)). The guest words are the spec: the tower Fp2, Fp6
+and Fp12, the Miller loop (`millerBits`), the final exponentiation and
+`pairCheck`. `test/crypto/pair-spec.lang` has 16 rows that compare the
+spec with the C oracle: 8 rows on small cases, 4 value rows (a `Word`
+digest of an Fp12 product, a Frobenius map, a Miller double step and a
+Miller add step) and 4 chain rows (a G2 multiply from zero, a G2 multiply,
+an Fp12 power and a Miller loop, each on a short bit chain). A full guest
+pairing does not fit the 1 GiB arena, so no row runs one (`docs/PLAN.md`
+OI-38). The `build/cryptotool` self-check has the EIP-197 known answers
+and two Fp12 bilinearity rows for the C pairing.
+
+The checker evaluates each argument of an application at check time.
+Thus each Fp2 word takes its modulus through `mdGate2 md (fun (gu : Unit)
+=> ...)`: the body stays stuck while `md` is open (Q-S8b-16 (b)). The
+check of the spec defs went from 7.3M steps to 184k steps. Use the same
+gate for a new heavy word that takes a modulus.
+
+`g16Verify vk pubs a b c` is the Groth16 check on BN254 (Q-S8b-2 (a)). It
+checks that each coordinate is canonical (below p). It computes vk_x, the
+sum of IC0 and each public times its IC point, with `ptMulC` (`g16Msm`): a
+public that is not below r, or a wrong count of publics, gives no. Then it
+calls `pairCheckC` on the 4 pairs (-A, B), (alpha, beta), (vk_x, gamma)
+and (C, delta). The key and proof values are raw words, and `g16Verify`
+converts them to Montgomery form. `g16Verify` is the third sealed def.
+`pairCheck` has no seal, because no guest def gives it open points.
+
+`elgVrf r h c p` runs `g16Verify eligVk` on the publics (root, handle,
+commitment) of the eligibility circuit (Q-S8b-3 (b), Q-S8b-13 (c)).
+`EligibilityProof` is `elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)`.
+`outcomeVrf a h p pf` uses `outcomeVk` on (auction, winner handle, price),
+and `shareVrf a i c pf` uses `shareVk` on (auction, share index, share
+commitment) (Q-S8b-4 (b), Q-S8b-12 (a)). `outcomeVrf` reads the `Amount`
+price by an elim and gives only a yes or no bit: it is the fifth `Amount`
+reader after `amLe`, `amSelect`, `amMax` and `amMin`. No word gives an
+`Amount` as an `Fe` (Q-S8b-18 (a)).
+
+The golden files are in `test/noir/` (Q-S8b-6 (a)): the dirs `elig`,
+`elig2`, `outcome` and `share`, 7 files each. The eligibility circuit is
+Alg 2 of the paper (Q-S8b-7 (b)): a Merkle path of depth 8 with the hash
+hsMsg(tag, x, y), and the tags 3 leaf, 4 node, 5 handle, 6 commitment and
+7 secret (Q-S8b-11 (a), Q-S8b-14 (a)). AucID is a private witness
+(OI-37). `elig2` is a second proof for the same deposit and handle with a
+second bid, so a second commitment (Q-S8b-17 (a)). The outcome and share
+circuits are stubs: they bind only their 3 publics. The proofs come from
+Noir with a Groth16 back end, and snarkjs, with the Hermez powers of tau
+file of power 14 and one phase-2 contribution (Q-S8b-5 (a), Q-S8b-10
+(a)). These tools made the files once. The gate does not use them, and
+the generation script is not in the repo. The keys are for tests only
+(OI-39).
+
+`build/cryptotool noir NAME DIR` checks one golden proof in C and prints
+its 14 def lines. The gate runs it on the 4 dirs (`noir: 4 golden proofs
+passed`, Q-S8b-20 (a)). The 18 rows of `test/crypto/g16.lang` check that
+the guest verifier gives the same result. The refusal rows are a changed
+public, a public plus r, a short list of publics, swapped proof points, a
+proof of a different circuit, the commitment of the other proof, a wrong
+price, a wrong index and a coordinate that is not canonical.
+
+`examples/sealed.lang` and `examples/log.lang` use the golden statements
+(Q-S8b-17 (a)): the root, the handle and the two commitments are the
+publics of `elig` and `elig2`, so the slash example has two valid proofs
+for one handle. The StA and StL fixtures sign the stamp message of the
+golden commitment (`eligPub2`). With these statements, `replayAll` in
+`examples/log.lang` needs more than 20M steps, thus the fuel is 40M for
+each declaration (Q-S8b-15 (a), Q-S8b-19 (a)). One closed `g16Verify` row
+takes 0.2 to 0.6 s of CPU time.
+
+The oracle has 537 rows at S8b.
 
 ## The IR test families
 

@@ -1,0 +1,50 @@
+-- The BN254 pairing spec rows (S8b 4b). Each row def uses the guest spec of
+-- domain/domain.lang (the Fp2 and Fp12 towers, the Frobenius maps, the G1 and
+-- G2 checks and one Miller step) and gives 1 when the spec agrees with
+-- itself. The full pairing (pairCheck) and the full G2 subgroup check do not
+-- fit the 1 GiB arena, thus no row runs them. This is a kit file:
+-- test/gate.sh evaluates each row with `langc --kit eval`, and it is not in
+-- test/crypto/crypto.lang because each row run checks every def of its file.
+def g1GenM : Pt1 := ptToMont fpMod g1Gen
+def spB : Sum Unit Unit -> Nat := fun (s : Sum Unit Unit) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) s
+def spX2 : Fp2 := p2X g2Gen
+def spA12 : Fp12 := fp12 (fp6 (p2X g2Gen) (p2Y g2Gen) (f2One fpMod)) (fp6 (p2Y g2Gen) (p2X g2Gen) (f2Add fpMod (p2X g2Gen) (p2Y g2Gen)))
+def spEq12 : Fp12 -> Fp12 -> Sum Unit Unit :=
+  fun (a : Fp12) (b : Fp12) =>
+    sAnd (sAnd (f2Eq (f6a (f12a a)) (f6a (f12a b))) (sAnd (f2Eq (f6b (f12a a)) (f6b (f12a b))) (f2Eq (f6c (f12a a)) (f6c (f12a b)))))
+      (sAnd (f2Eq (f6a (f12b a)) (f6a (f12b b))) (sAnd (f2Eq (f6b (f12b a)) (f6b (f12b b))) (f2Eq (f6c (f12b a)) (f6c (f12b b)))))
+def spInv2 : Nat := spB (f2Eq (f2Mul fpMod spX2 (f2Inv fpMod spX2)) (f2One fpMod))
+def spInv12 : Nat := spB (f12IsOne fpMod (f12Mul fpMod spA12 (f12Inv fpMod spA12)))
+def spFrob2 : Nat := spB (spEq12 (f12Frob2 fpMod spA12) (f12Frob fpMod (f12Frob fpMod spA12)))
+def spFrob6 : Nat := spB (spEq12 (f12Conj fpMod spA12) (f12Frob fpMod (f12Frob fpMod (f12Frob fpMod (f12Frob fpMod (f12Frob fpMod (f12Frob fpMod spA12)))))))
+def spG1V : Nat := spB (g1Valid fpMod g1GenM)
+def spG1N : Nat := spB (sNot (g1Valid fpMod (pt1 (p1X g1GenM) (p1X g1GenM))))
+def spG2N : Nat := spB (sNot (g2Valid fpMod (pt2 (p2X g2Gen) (p2X g2Gen))))
+def spMStep : Nat := spB (sNot (f12IsOne fpMod (msF (mAddS fpMod (p1X g1GenM) (p1Y g1GenM) g2Gen (mDblS fpMod (p1X g1GenM) (p1Y g1GenM) (mstep (g2p (p2X g2Gen) (p2Y g2Gen) (f2One fpMod)) (f12One fpMod)))))))
+-- The value rows (S8b 4c). Each one gives a digest word of a spec value:
+-- h = wXor (wRotl h 5w) w for each word w, limb 0 first, f2a before f2b,
+-- f6a, f6b, f6c, f12a before f12b. For a Miller step, the digest of msT (g2X,
+-- g2Y, g2Z) continues with msF. build/cryptotool computes the same value
+-- with the C oracle and prints its digest. Thus each row compares the spec
+-- with the C oracle.
+def dgW : Word -> Word -> Word := fun (h : Word) (w : Word) => wXor (wRotl h 5w) w
+def dgFe : Word -> Fe -> Word := fun (h : Word) (a : Fe) => dgW (dgW (dgW (dgW (dgW (dgW (dgW (dgW h (fe0 a)) (fe1 a)) (fe2 a)) (fe3 a)) (fe4 a)) (fe5 a)) (fe6 a)) (fe7 a)
+def dgF2 : Word -> Fp2 -> Word := fun (h : Word) (a : Fp2) => dgFe (dgFe h (f2a a)) (f2b a)
+def dgF6 : Word -> Fp6 -> Word := fun (h : Word) (a : Fp6) => dgF2 (dgF2 (dgF2 h (f6a a)) (f6b a)) (f6c a)
+def dgF12 : Word -> Fp12 -> Word := fun (h : Word) (a : Fp12) => dgF6 (dgF6 h (f12a a)) (f12b a)
+def dgMs : MStep -> Word := fun (s : MStep) => dgF12 (dgF2 (dgF2 (dgF2 0w (g2X (msT s))) (g2Y (msT s))) (g2Z (msT s))) (msF s)
+def spB12 : Fp12 := fp12 (fp6 (p2Y g2Gen) (f2One fpMod) (p2X g2Gen)) (fp6 (f2Add fpMod (p2X g2Gen) (f2One fpMod)) (p2Y g2Gen) (p2X g2Gen))
+def spMS0 : MStep := mstep (g2p (p2X g2Gen) (p2Y g2Gen) (f2One fpMod)) (f12One fpMod)
+def spMulD : Word := dgF12 0w (f12Mul fpMod spA12 spB12)
+def spFrobD : Word := dgF12 0w (f12Frob fpMod spA12)
+def spDblD : Word := dgMs (mDblS fpMod (p1X g1GenM) (p1Y g1GenM) spMS0)
+def spAddD : Word := dgMs (mAddS fpMod (p1X g1GenM) (p1Y g1GenM) g2Gen (mDblS fpMod (p1X g1GenM) (p1Y g1GenM) spMS0))
+-- The short chain rows (S8b 4b). Each one walks a chain of a few bits (the
+-- top bit first) with g2MulBits, f12PowFrom or millerBits, and gives a
+-- digest word as the value rows. dgG2P gives the digest of a G2 point: g2X,
+-- g2Y, then g2Z. spZeroD starts from g2Zero, and its 3 bits are 0.
+def dgG2P : Word -> G2P -> Word := fun (h : Word) (a : G2P) => dgF2 (dgF2 (dgF2 h (g2X a)) (g2Y a)) (g2Z a)
+def spZeroD : Word := dgG2P 0w (g2MulBits fpMod g2Gen (fbZero (fbZero (fbZero fbEnd))) g2Zero)
+def spG2MulD : Word := dgG2P 0w (g2MulBits fpMod g2Gen (fbZero (fbOne (fbZero (fbOne (fbOne fbEnd))))) g2Zero)
+def spPowD : Word := dgF12 0w (f12PowFrom fpMod spA12 (fbOne (fbZero (fbZero (fbOne (fbOne fbEnd))))) spB12)
+def spMillD : Word := dgMs (millerBits fpMod (p1X g1GenM) (p1Y g1GenM) g2Gen (fbOne (fbZero (fbOne fbEnd))) spMS0)

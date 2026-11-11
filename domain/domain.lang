@@ -276,7 +276,9 @@ and Echo := echoBack (backHop : Hop)
 -- family, so A1, A2 and A4 are proofs by elim and stay DISCHARGED. A
 -- program reads an Amount only through the four domain operations amLe
 -- (compare), amSelect (select), amMax (max) and amMin (the second max of
--- two amounts): an elim, a fold or a projection of Amount, or amSucc on a
+-- two amounts), and through outcomeVrf (S8b, Q-S8b-18 (a): the price
+-- public of the outcome proof; it gives only a yes or no bit): an elim, a
+-- fold or a projection of Amount, or amSucc on a
 -- term that is not a literal, gives REFUSE_AMOUNT (Q-S0-1 (a)). The
 -- compare result is Sum Unit Unit as in consP: inr unit is "at most" and
 -- inl unit is "more than". amSelect A x y p q is p when x is at most y,
@@ -715,6 +717,12 @@ family Pt1 := pt1 (p1X : Fe) (p1Y : Fe)
 -- A Jac is a point (X, Y, Z) in Jacobian form: the affine point
 -- (X / Z^2, Y / Z^3), in Montgomery form. Z = 0 is the point at infinity.
 family Jac := jac (jcX : Fe) (jcY : Fe) (jcZ : Fe)
+family Fp2 := fp2 (f2a : Fe) (f2b : Fe)
+family Fp6 := fp6 (f6a : Fp2) (f6b : Fp2) (f6c : Fp2)
+family Fp12 := fp12 (f12a : Fp6) (f12b : Fp6)
+family Pt2 := pt2 (p2X : Fp2) (p2Y : Fp2)
+family G2P := g2p (g2X : Fp2) (g2Y : Fp2) (g2Z : Fp2)
+family PairList := plEnd | plPair (plP : Pt1) (plQ : Pt2) (plNext : PairList)
 def jacZero : Jac := jac feZero feZero feZero
 -- p1Eq p q is inr unit when the coordinates of p and q are equal. For
 -- canonical points, this is the point equality.
@@ -1024,6 +1032,330 @@ def psRcsFr : PsRcs :=
 -- y^2 = x^3 + 3 with each coordinate less than p, and s must be less than r.
 -- Each value is canonical (not in Montgomery form). g1Gen is G = (1, 2).
 def g1Gen : Pt1 := pt1 (fe 1w 0w 0w 0w 0w 0w 0w 0w) (fe 2w 0w 0w 0w 0w 0w 0w 0w)
+-- The generator of G2 (EIP-197) in Montgomery form (S8b): x = (x0, x1) and
+-- y = (y0, y1) in Fp2 (fp2 c0 c1 is c0 + c1 i), each value as 8 Words,
+-- least significant first.
+def g2Gen : Pt2 :=
+  pt2 (fp2 (fe 0x02bc2026w 0x8e83b5d1w 0x497b0172w 0xdceb1935w 0x97811adfw 0xfbb82647w 0xaf96503bw 0x19573841w) (fe 0xa84c6140w 0xafb4737dw 0x5802d8c4w 0x6043dd5aw 0x52a02f86w 0x09e950fcw 0x3aea7b6bw 0x14fef083w))
+    (fp2 (fe 0x886be9f6w 0x619dfa9dw 0xf59e9b78w 0xfe7fd297w 0x231b7dfew 0xff9e1a62w 0xae9e4206w 0x28fd7eebw) (fe 0xc71856eew 0x64095b56w 0x327d3cbbw 0xdc57f922w 0x33351076w 0x55f935bew 0x93fd6482w 0x0da4a0e6w))
+-- The BN254 pairing spec (S8b, USER ruling Q-S8b-1 (a)). The C builtin
+-- pairCheckC is the fast path. These defs are the spec: they do the same
+-- field ops as the C code (src/front/eval.c, Part 2), in the same order. The
+-- tower is Fp2 = Fp[u] / (u^2 + 1), Fp6 = Fp2[v] / (v^3 - xi) with
+-- xi = 9 + u, and Fp12 = Fp6[w] / (w^2 - v). All values are in Montgomery
+-- form. md is the BN254 p modulus (fpMod).
+-- The BN254 pairing constants (Montgomery form). bnHalf is 1 / 2, bnThree
+-- is 3 (the G1 curve b) and bnBt is the twist b' = 3 / xi. bnG1F1 to
+-- bnG1F5 are xi^(k (p - 1) / 6) and bnG2F1 to bnG2F5 are
+-- xi^(k (p^2 - 1) / 6). bnAteBits holds the bits of 6 x + 2 below the top
+-- bit, bnXBits the bits of x and bnRBits the 256 bits of r, the top bit
+-- first.
+def bnHalf : Fe := fe 0x4f060572w 0x87bee7d2w 0x2f1c6ae5w 0xd0fd2addw 0xfcfd4f44w 0x8f5f7492w 0x3d9cbfacw 0x1f37631aw
+def bnThree : Fe := fe 0x50ad28d7w 0x7a17caa9w 0xe15521b9w 0x1f6ac17aw 0x696bd284w 0x334bea4ew 0xce179d8ew 0x2a1f6744w
+def bnBt : Fp2 := fp2 (fe 0x77b802a8w 0x3bf938e3w 0x3633535dw 0x020b1b27w 0x49755260w 0x26b7edf0w 0x4384a86dw 0x2514c632w) (fe 0xd1dcff67w 0x38e7ecccw 0x93ce0d3ew 0x65f0b37dw 0x22ac00aaw 0xd749d0ddw 0x4a688d4dw 0x0141b9cew)
+def bnG1F1 : Fp2 := fp2 (fe 0x33144907w 0xaf9ba696w 0x87afb78aw 0xca6b1d73w 0xf08a2087w 0x11bded5ew 0x1a1f3a7cw 0x02f34d75w) (fe 0x4c492d72w 0xa222ae23w 0x565de15bw 0xd00f02a4w 0x53dfc926w 0xdc2ff3a2w 0xb3899551w 0x10a75716w)
+def bnG1F2 : Fp2 := fp2 (fe 0x4563ab30w 0xb5773b10w 0xa9aa6454w 0x347f91c8w 0x242e0991w 0x7a007127w 0x118214ecw 0x1956bcd8w) (fe 0xa0aa4757w 0x6e849f1ew 0x89f89141w 0xaa1c7b6dw 0xfae0ca3aw 0xb6e713cdw 0x4e82ebc3w 0x26694fbbw)
+def bnG1F3 : Fp2 := fp2 (fe 0x2936b629w 0xe4bbdd0cw 0xe133bacbw 0xbb30f162w 0xf9645366w 0x31a9d1b6w 0xa500f8ddw 0x253570bew) (fe 0x5ffe77c7w 0xa1d77ce4w 0x7826d1dbw 0x07affd11w 0xbb7edc6bw 0x6d16bd27w 0x85defeccw 0x2c872002w)
+def bnG1F4 : Fp2 := fp2 (fe 0x843abe92w 0x7361d77fw 0x273411fbw 0xa5bb2bd3w 0x4b3e2399w 0x9c941f31w 0xbb9fd3ecw 0x15df9cddw) (fe 0x4bd8c949w 0x5dddfd15w 0xa4445b60w 0x62cb29a5w 0x0c7dd2b9w 0x37bc870aw 0x3171f0fdw 0x24830a9dw)
+def bnG1F5 : Fp2 := fp2 (fe 0x41690fe7w 0xc970692fw 0x27694b0bw 0xe2403421w 0x83c459e8w 0x32bee66bw 0x0ab08841w 0x12aabcedw) (fe 0x40aebfa9w 0x0d485d23w 0xab2fcc57w 0x05193418w 0x8a4910f5w 0xd3b0a40bw 0x35d2925aw 0x2f21ebb5w)
+def bnG2F1 : Fe := fe 0x00fa1bf2w 0xca8d8005w 0x68b39769w 0xf0c5d614w 0xad0d4418w 0x0e201271w 0xbad856e6w 0x04290f65w
+def bnG2F2 : Fe := fe 0x13e80b9cw 0x3350c88ew 0xdb5e56b9w 0x7dce557cw 0xb615564aw 0x6001b4b8w 0x020217e0w 0x2682e617w
+def bnG2F3 : Fe := fe 0x12edefaaw 0x68c34889w 0x72aabf4fw 0x8d087f68w 0x09081231w 0x51e1a247w 0x4729c0faw 0x2259d6b1w
+def bnG2F4 : Fe := fe 0xd782e155w 0x71930c11w 0xffbe3323w 0xa6bb947cw 0xd4741444w 0xaa303344w 0x26594943w 0x2c3b3f0dw
+def bnG2F5 : Fe := fe 0xc494f1abw 0x08cfc388w 0x8d1373d4w 0x19b31514w 0xcb6c0213w 0x584e90fdw 0xdf2f8849w 0x09e1685bw
+def bnAteBits1 : FeBits :=
+  fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbEnd))))))))))))))))))))))))))))))))
+def bnAteBits : FeBits :=
+  fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (bnAteBits1))))))))))))))))))))))))))))))))
+def bnXBits1 : FeBits :=
+  fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbEnd)))))))))))))))))))))))))))))))
+def bnXBits : FeBits :=
+  fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (bnXBits1))))))))))))))))))))))))))))))))
+def bnRBits7 : FeBits :=
+  fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbEnd))))))))))))))))))))))))))))))))
+def bnRBits6 : FeBits :=
+  fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (bnRBits7))))))))))))))))))))))))))))))))
+def bnRBits5 : FeBits :=
+  fbZero (fbOne (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (bnRBits6))))))))))))))))))))))))))))))))
+def bnRBits4 : FeBits :=
+  fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (bnRBits5))))))))))))))))))))))))))))))))
+def bnRBits3 : FeBits :=
+  fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbOne (bnRBits4))))))))))))))))))))))))))))))))
+def bnRBits2 : FeBits :=
+  fbOne (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (fbOne (fbOne (fbZero (bnRBits3))))))))))))))))))))))))))))))))
+def bnRBits1 : FeBits :=
+  fbOne (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbZero (fbOne (fbZero (fbZero (fbOne (bnRBits2))))))))))))))))))))))))))))))))
+def bnRBits : FeBits :=
+  fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbZero (fbZero (fbZero (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (fbZero (fbZero (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbOne (fbOne (fbZero (fbZero (fbOne (fbZero (bnRBits1))))))))))))))))))))))))))))))))
+family MStep := mstep (msT : G2P) (msF : Fp12)
+-- The let helpers. Each one gives its first argument to its continuation.
+def lFeFe : Fe -> (Fe -> Fe) -> Fe := fun (x : Fe) (k : Fe -> Fe) => k x
+def lFeF2 : Fe -> (Fe -> Fp2) -> Fp2 := fun (x : Fe) (k : Fe -> Fp2) => k x
+def lF2F6 : Fp2 -> (Fp2 -> Fp6) -> Fp6 := fun (x : Fp2) (k : Fp2 -> Fp6) => k x
+def lF6F12 : Fp6 -> (Fp6 -> Fp12) -> Fp12 := fun (x : Fp6) (k : Fp6 -> Fp12) => k x
+def lF12F12 : Fp12 -> (Fp12 -> Fp12) -> Fp12 := fun (x : Fp12) (k : Fp12 -> Fp12) => k x
+def lF2M : Fp2 -> (Fp2 -> MStep) -> MStep := fun (x : Fp2) (k : Fp2 -> MStep) => k x
+def lF12M : Fp12 -> (Fp12 -> MStep) -> MStep := fun (x : Fp12) (k : Fp12 -> MStep) => k x
+def lF2G : Fp2 -> (Fp2 -> G2P) -> G2P := fun (x : Fp2) (k : Fp2 -> G2P) => k x
+-- fe9 md x is 9 x (three doublings and one add).
+def fe9 : FeMod -> Fe -> Fe :=
+  fun (md : FeMod) (x : Fe) => lFeFe (feAdd md x x) (fun (x2 : Fe) => lFeFe (feAdd md x2 x2) (fun (x4 : Fe) => feAdd md (feAdd md x4 x4) x))
+-- mdGate2 md k is k unit. It takes md apart first: on an open md the
+-- checker stops there and does not run the Fp2 arithmetic (USER ruling
+-- Q-S8b-16 (b)). On a closed md it is one elim step.
+def mdGate2 : FeMod -> (Unit -> Fp2) -> Fp2 :=
+  fun (md : FeMod) (k : Unit -> Fp2) => elim (fun (z : FeMod) => Fp2) (fun (gm : Fe) (gn : Word) (gr2 : Fe) (gr1 : Fe) (ge : FeBits) => k unit) md
+-- Fp2: a = f2a a + f2b a u.
+def f2Zero : Fp2 := fp2 feZero feZero
+def f2One : FeMod -> Fp2 := fun (md : FeMod) => fp2 (modR1 md) feZero
+def f2IsZero : Fp2 -> Sum Unit Unit := fun (a : Fp2) => sAnd (feIsZero (f2a a)) (feIsZero (f2b a))
+def f2Eq : Fp2 -> Fp2 -> Sum Unit Unit := fun (a : Fp2) (b : Fp2) => sAnd (feEq (f2a a) (f2a b)) (feEq (f2b a) (f2b b))
+def f2Add : FeMod -> Fp2 -> Fp2 -> Fp2 := fun (md : FeMod) (a : Fp2) (b : Fp2) => mdGate2 md (fun (gu : Unit) => fp2 (feAdd md (f2a a) (f2a b)) (feAdd md (f2b a) (f2b b)))
+def f2Sub : FeMod -> Fp2 -> Fp2 -> Fp2 := fun (md : FeMod) (a : Fp2) (b : Fp2) => mdGate2 md (fun (gu : Unit) => fp2 (feSub md (f2a a) (f2a b)) (feSub md (f2b a) (f2b b)))
+def f2Neg : FeMod -> Fp2 -> Fp2 := fun (md : FeMod) (a : Fp2) => mdGate2 md (fun (gu : Unit) => fp2 (feSub md feZero (f2a a)) (feSub md feZero (f2b a)))
+def f2Conj : FeMod -> Fp2 -> Fp2 := fun (md : FeMod) (a : Fp2) => mdGate2 md (fun (gu : Unit) => fp2 (f2a a) (feSub md feZero (f2b a)))
+-- f2Mul (Karatsuba, 3 Montgomery products): v0 = a0 b0, v1 = a1 b1,
+-- (v0 - v1) + ((a0 + a1) (b0 + b1) - v0 - v1) u.
+def f2Mul : FeMod -> Fp2 -> Fp2 -> Fp2 :=
+  fun (md : FeMod) (a : Fp2) (b : Fp2) => mdGate2 md (fun (gu : Unit) =>
+    lFeF2 (feMulC md (f2a a) (f2a b)) (fun (v0 : Fe) =>
+    lFeF2 (feMulC md (f2b a) (f2b b)) (fun (v1 : Fe) =>
+    fp2 (feSub md v0 v1) (feSub md (feSub md (feMulC md (feAdd md (f2a a) (f2b a)) (feAdd md (f2a b) (f2b b))) v0) v1))))
+def f2Scale : FeMod -> Fp2 -> Fe -> Fp2 := fun (md : FeMod) (a : Fp2) (s : Fe) => mdGate2 md (fun (gu : Unit) => fp2 (feMulC md (f2a a) s) (feMulC md (f2b a) s))
+-- f2Xi md a is a xi = (9 a0 - a1) + (9 a1 + a0) u.
+def f2Xi : FeMod -> Fp2 -> Fp2 :=
+  fun (md : FeMod) (a : Fp2) => mdGate2 md (fun (gu : Unit) => fp2 (feSub md (fe9 md (f2a a)) (f2b a)) (feAdd md (fe9 md (f2b a)) (f2a a)))
+-- f2Inv md a is conj(a) / (a0^2 + a1^2), with one feInv (Fermat). 0 gives 0.
+def f2Inv : FeMod -> Fp2 -> Fp2 :=
+  fun (md : FeMod) (a : Fp2) => mdGate2 md (fun (gu : Unit) =>
+    lFeF2 (feInv md (feAdd md (feMulC md (f2a a) (f2a a)) (feMulC md (f2b a) (f2b a)))) (fun (n : Fe) =>
+    fp2 (feMulC md (f2a a) n) (feSub md feZero (feMulC md (f2b a) n))))
+-- Fp6: a = f6a a + f6b a v + f6c a v^2.
+def f6Zero : Fp6 := fp6 f2Zero f2Zero f2Zero
+def f6Add : FeMod -> Fp6 -> Fp6 -> Fp6 := fun (md : FeMod) (a : Fp6) (b : Fp6) => fp6 (f2Add md (f6a a) (f6a b)) (f2Add md (f6b a) (f6b b)) (f2Add md (f6c a) (f6c b))
+def f6Sub : FeMod -> Fp6 -> Fp6 -> Fp6 := fun (md : FeMod) (a : Fp6) (b : Fp6) => fp6 (f2Sub md (f6a a) (f6a b)) (f2Sub md (f6b a) (f6b b)) (f2Sub md (f6c a) (f6c b))
+def f6Neg : FeMod -> Fp6 -> Fp6 := fun (md : FeMod) (a : Fp6) => fp6 (f2Neg md (f6a a)) (f2Neg md (f6b a)) (f2Neg md (f6c a))
+-- f6MulV md a is a v = xi c + a v + b v^2.
+def f6MulV : FeMod -> Fp6 -> Fp6 := fun (md : FeMod) (a : Fp6) => fp6 (f2Xi md (f6c a)) (f6a a) (f6b a)
+-- f6Mul (Karatsuba, 6 f2Mul): v0 = a0 b0, v1 = a1 b1, v2 = a2 b2,
+-- c0 = v0 + xi ((a1 + a2) (b1 + b2) - v1 - v2),
+-- c1 = (a0 + a1) (b0 + b1) - v0 - v1 + xi v2,
+-- c2 = (a0 + a2) (b0 + b2) - v0 - v2 + v1.
+def f6Mul : FeMod -> Fp6 -> Fp6 -> Fp6 :=
+  fun (md : FeMod) (a : Fp6) (b : Fp6) =>
+    lF2F6 (f2Mul md (f6a a) (f6a b)) (fun (v0 : Fp2) =>
+    lF2F6 (f2Mul md (f6b a) (f6b b)) (fun (v1 : Fp2) =>
+    lF2F6 (f2Mul md (f6c a) (f6c b)) (fun (v2 : Fp2) =>
+    fp6 (f2Add md v0 (f2Xi md (f2Sub md (f2Sub md (f2Mul md (f2Add md (f6b a) (f6c a)) (f2Add md (f6b b) (f6c b))) v1) v2)))
+      (f2Add md (f2Sub md (f2Sub md (f2Mul md (f2Add md (f6a a) (f6b a)) (f2Add md (f6a b) (f6b b))) v0) v1) (f2Xi md v2))
+      (f2Add md (f2Sub md (f2Sub md (f2Mul md (f2Add md (f6a a) (f6c a)) (f2Add md (f6a b) (f6c b))) v0) v2) v1))))
+-- f6Inv: t0 = a^2 - xi b c, t1 = xi c^2 - a b, t2 = b^2 - a c,
+-- n = a t0 + xi (c t1 + b t2), the inverse is (t0, t1, t2) / n.
+def f6Inv : FeMod -> Fp6 -> Fp6 :=
+  fun (md : FeMod) (a : Fp6) =>
+    lF2F6 (f2Sub md (f2Mul md (f6a a) (f6a a)) (f2Xi md (f2Mul md (f6b a) (f6c a)))) (fun (t0 : Fp2) =>
+    lF2F6 (f2Sub md (f2Xi md (f2Mul md (f6c a) (f6c a))) (f2Mul md (f6a a) (f6b a))) (fun (t1 : Fp2) =>
+    lF2F6 (f2Sub md (f2Mul md (f6b a) (f6b a)) (f2Mul md (f6a a) (f6c a))) (fun (t2 : Fp2) =>
+    lF2F6 (f2Inv md (f2Add md (f2Mul md (f6a a) t0) (f2Xi md (f2Add md (f2Mul md (f6c a) t1) (f2Mul md (f6b a) t2))))) (fun (n : Fp2) =>
+    fp6 (f2Mul md t0 n) (f2Mul md t1 n) (f2Mul md t2 n)))))
+-- Fp12: a = f12a a + f12b a w. The coefficient of w^k is, for k = 0 to 5:
+-- a.a, b.a, a.b, b.b, a.c, b.c.
+def f12One : FeMod -> Fp12 := fun (md : FeMod) => fp12 (fp6 (f2One md) f2Zero f2Zero) f6Zero
+def f12IsOne : FeMod -> Fp12 -> Sum Unit Unit :=
+  fun (md : FeMod) (a : Fp12) =>
+    sAnd (sAnd (f2Eq (f6a (f12a a)) (f2One md)) (sAnd (f2IsZero (f6b (f12a a))) (f2IsZero (f6c (f12a a)))))
+      (sAnd (f2IsZero (f6a (f12b a))) (sAnd (f2IsZero (f6b (f12b a))) (f2IsZero (f6c (f12b a)))))
+-- f12Mul (Karatsuba, 3 f6Mul): v0 = a0 b0, v1 = a1 b1,
+-- (v0 + v v1) + ((a0 + a1) (b0 + b1) - v0 - v1) w.
+def f12Mul : FeMod -> Fp12 -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (a : Fp12) (b : Fp12) =>
+    lF6F12 (f6Mul md (f12a a) (f12a b)) (fun (v0 : Fp6) =>
+    lF6F12 (f6Mul md (f12b a) (f12b b)) (fun (v1 : Fp6) =>
+    fp12 (f6Add md v0 (f6MulV md v1)) (f6Sub md (f6Sub md (f6Mul md (f6Add md (f12a a) (f12b a)) (f6Add md (f12a b) (f12b b))) v0) v1)))
+def f12Conj : FeMod -> Fp12 -> Fp12 := fun (md : FeMod) (a : Fp12) => fp12 (f12a a) (f6Neg md (f12b a))
+-- f12Inv: (a - b w) / (a^2 - v b^2).
+def f12Inv : FeMod -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (a : Fp12) =>
+    lF6F12 (f6Inv md (f6Sub md (f6Mul md (f12a a) (f12a a)) (f6MulV md (f6Mul md (f12b a) (f12b a))))) (fun (s : Fp6) =>
+    fp12 (f6Mul md (f12a a) s) (f6Neg md (f6Mul md (f12b a) s)))
+-- f12Frob: the p power, c_k -> conj(c_k) xi^(k (p - 1) / 6).
+def f12Frob : FeMod -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (x : Fp12) =>
+    fp12 (fp6 (f2Conj md (f6a (f12a x))) (f2Mul md (f2Conj md (f6b (f12a x))) bnG1F2) (f2Mul md (f2Conj md (f6c (f12a x))) bnG1F4))
+      (fp6 (f2Mul md (f2Conj md (f6a (f12b x))) bnG1F1) (f2Mul md (f2Conj md (f6b (f12b x))) bnG1F3) (f2Mul md (f2Conj md (f6c (f12b x))) bnG1F5))
+-- f12Frob2: the p^2 power, c_k -> c_k xi^(k (p^2 - 1) / 6) (an Fp value).
+def f12Frob2 : FeMod -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (x : Fp12) =>
+    fp12 (fp6 (f6a (f12a x)) (f2Scale md (f6b (f12a x)) bnG2F2) (f2Scale md (f6c (f12a x)) bnG2F4))
+      (fp6 (f2Scale md (f6a (f12b x)) bnG2F1) (f2Scale md (f6b (f12b x)) bnG2F3) (f2Scale md (f6c (f12b x)) bnG2F5))
+-- f12PowFrom md a e x is x^(2^n) a^e for the n bits of e (the top bit
+-- first), as fePowFrom. f12Pow starts from 1.
+def f12PowFrom : FeMod -> Fp12 -> FeBits -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (a : Fp12) (e : FeBits) => elim (fun (k : FeBits) => Fp12 -> Fp12)
+    (fun (x : Fp12) => x)
+    (fun (t : FeBits) (ih : Fp12 -> Fp12) => fun (x : Fp12) => ih (f12Mul md x x))
+    (fun (t : FeBits) (ih : Fp12 -> Fp12) => fun (x : Fp12) => ih (f12Mul md (f12Mul md x x) a)) e
+def f12Pow : FeMod -> Fp12 -> FeBits -> Fp12 := fun (md : FeMod) (a : Fp12) (e : FeBits) => f12PowFrom md a e (f12One md)
+-- finalExp md f is f^((p^12 - 1) / r): the easy part f^((p^6 - 1) (p^2 + 1)),
+-- then the hard part (p^4 - p^2 + 1) / r with three powers of x (Beuchat et
+-- al. 2010, Algorithm 1 steps 13 to 15).
+-- finalExpB takes the bits of x as a parameter: the checker evaluates
+-- each argument of an application, and a fixed bit chain unrolls the
+-- loop on open values. millerB, g2ValidB and pairLoop do the same.
+def finalExpB : FeMod -> FeBits -> Fp12 -> Fp12 :=
+  fun (md : FeMod) (xb : FeBits) (f : Fp12) =>
+    lF12F12 (f12Mul md (f12Conj md f) (f12Inv md f)) (fun (e1 : Fp12) =>
+    lF12F12 (f12Mul md e1 (f12Frob2 md e1)) (fun (t1 : Fp12) =>
+    lF12F12 (f12Frob2 md t1) (fun (fp2v : Fp12) =>
+    lF12F12 (f12Pow md t1 xb) (fun (fu : Fp12) =>
+    lF12F12 (f12Pow md fu xb) (fun (fu2 : Fp12) =>
+    lF12F12 (f12Pow md fu2 xb) (fun (fu3 : Fp12) =>
+    lF12F12 (f12Mul md (f12Mul md (f12Frob md t1) fp2v) (f12Frob md fp2v)) (fun (y0 : Fp12) =>
+    lF12F12 (f12Conj md (f12Mul md fu (f12Frob md fu2))) (fun (y4 : Fp12) =>
+    lF12F12 (f12Conj md (f12Mul md fu3 (f12Frob md fu3))) (fun (y6 : Fp12) =>
+    lF12F12 (f12Conj md fu2) (fun (y5 : Fp12) =>
+    lF12F12 (f12Mul md (f12Mul md (f12Mul md y6 y6) y4) y5) (fun (t0 : Fp12) =>
+    lF12F12 (f12Mul md (f12Mul md (f12Conj md (f12Frob md fu)) y5) t0) (fun (u1 : Fp12) =>
+    lF12F12 (f12Mul md t0 (f12Frob2 md fu2)) (fun (u0 : Fp12) =>
+    lF12F12 (f12Mul md (f12Mul md u1 u1) u0) (fun (u2 : Fp12) =>
+    lF12F12 (f12Mul md u2 u2) (fun (u3 : Fp12) =>
+    lF12F12 (f12Mul md u3 (f12Conj md t1)) (fun (v0 : Fp12) =>
+    f12Mul md (f12Mul md v0 v0) (f12Mul md u3 y0)))))))))))))))))
+def finalExp : FeMod -> Fp12 -> Fp12 := fun (md : FeMod) (f : Fp12) => finalExpB md bnXBits f
+-- mDbl: T = 2 T and f = f^2 l, l the tangent line at T at the point
+-- (px, py) of G1 (Aranha et al. 2011, homogeneous form, D-type twist):
+-- A = X Y / 2, B = Y^2, C = Z^2, E = 3 b' C, F = 3 E, G = (B + F) / 2,
+-- H = (Y + Z)^2 - (B + C), J = X^2; T = (A (B - F), G^2 - 3 E^2, B H);
+-- l = -H py + 3 J px w + (E - B) v w.
+def mDbl : FeMod -> Fe -> Fe -> G2P -> Fp12 -> MStep :=
+  fun (md : FeMod) (px : Fe) (py : Fe) (t : G2P) (f : Fp12) =>
+    lF2M (f2Scale md (f2Mul md (g2X t) (g2Y t)) bnHalf) (fun (a : Fp2) =>
+    lF2M (f2Mul md (g2Y t) (g2Y t)) (fun (b : Fp2) =>
+    lF2M (f2Mul md (g2Z t) (g2Z t)) (fun (c : Fp2) =>
+    lF2M (f2Mul md bnBt (f2Add md (f2Add md c c) c)) (fun (e : Fp2) =>
+    lF2M (f2Add md (f2Add md e e) e) (fun (ff : Fp2) =>
+    lF2M (f2Scale md (f2Add md b ff) bnHalf) (fun (g : Fp2) =>
+    lF2M (f2Sub md (f2Mul md (f2Add md (g2Y t) (g2Z t)) (f2Add md (g2Y t) (g2Z t))) (f2Add md b c)) (fun (h : Fp2) =>
+    lF2M (f2Mul md (g2X t) (g2X t)) (fun (j : Fp2) =>
+    lF2M (f2Mul md e e) (fun (es : Fp2) =>
+    lF12M (f12Mul md f f) (fun (fsq : Fp12) =>
+    mstep (g2p (f2Mul md a (f2Sub md b ff)) (f2Sub md (f2Mul md g g) (f2Add md (f2Add md es es) es)) (f2Mul md b h))
+      (f12Mul md fsq (fp12 (fp6 (f2Scale md (f2Sub md f2Zero h) py) f2Zero f2Zero) (fp6 (f2Scale md (f2Add md (f2Add md j j) j) px) (f2Sub md e b) f2Zero)))))))))))))
+-- mAdd: T = T + Q and f = f l, l the line through T and the affine Q:
+-- theta = Y - qy Z, lambda = X - qx Z, C = theta^2, D = lambda^2,
+-- E = lambda D, F = Z C, G = X D, H = E + F - 2 G;
+-- T = (lambda H, theta (G - H) - Y E, Z E);
+-- l = lambda py - theta px w + (theta qx - lambda qy) v w.
+def mAdd : FeMod -> Fe -> Fe -> Pt2 -> G2P -> Fp12 -> MStep :=
+  fun (md : FeMod) (px : Fe) (py : Fe) (q : Pt2) (t : G2P) (f : Fp12) =>
+    lF2M (f2Sub md (g2Y t) (f2Mul md (p2Y q) (g2Z t))) (fun (th : Fp2) =>
+    lF2M (f2Sub md (g2X t) (f2Mul md (p2X q) (g2Z t))) (fun (la : Fp2) =>
+    lF2M (f2Mul md th th) (fun (c : Fp2) =>
+    lF2M (f2Mul md la la) (fun (dd : Fp2) =>
+    lF2M (f2Mul md la dd) (fun (e : Fp2) =>
+    lF2M (f2Mul md (g2X t) dd) (fun (g : Fp2) =>
+    lF2M (f2Sub md (f2Sub md (f2Add md e (f2Mul md (g2Z t) c)) g) g) (fun (h : Fp2) =>
+    mstep (g2p (f2Mul md la h) (f2Sub md (f2Mul md th (f2Sub md g h)) (f2Mul md (g2Y t) e)) (f2Mul md (g2Z t) e))
+      (f12Mul md f (fp12 (fp6 (f2Scale md la py) f2Zero f2Zero) (fp6 (f2Scale md (f2Neg md th) px) (f2Sub md (f2Mul md th (p2X q)) (f2Mul md la (p2Y q))) f2Zero))))))))))
+def mDblS : FeMod -> Fe -> Fe -> MStep -> MStep :=
+  fun (md : FeMod) (px : Fe) (py : Fe) (s : MStep) => mDbl md px py (msT s) (msF s)
+def mAddS : FeMod -> Fe -> Fe -> Pt2 -> MStep -> MStep :=
+  fun (md : FeMod) (px : Fe) (py : Fe) (q : Pt2) (s : MStep) => mAdd md px py q (msT s) (msF s)
+-- millerBits walks the bits of 6 x + 2 below the top bit (the top bit
+-- first): each bit does mDbl, and a 1 bit then does mAdd with Q.
+def millerBits : FeMod -> Fe -> Fe -> Pt2 -> FeBits -> MStep -> MStep :=
+  fun (md : FeMod) (px : Fe) (py : Fe) (q : Pt2) (e : FeBits) => elim (fun (k : FeBits) => MStep -> MStep)
+    (fun (s : MStep) => s)
+    (fun (k : FeBits) (ih : MStep -> MStep) => fun (s : MStep) => ih (mDblS md px py s))
+    (fun (k : FeBits) (ih : MStep -> MStep) => fun (s : MStep) => ih (mAddS md px py q (mDblS md px py s))) e
+-- miller md p q is the Miller loop of the optimal ate pairing, then the lines
+-- to pi(Q) = (conj(qx) xi^((p - 1) / 3), conj(qy) xi^((p - 1) / 2)) and
+-- -pi^2(Q) = (qx xi^((p^2 - 1) / 3), qy).
+def millerB : FeMod -> FeBits -> Pt1 -> Pt2 -> Fp12 :=
+  fun (md : FeMod) (ab : FeBits) (p : Pt1) (q : Pt2) =>
+    msF (mAddS md (p1X p) (p1Y p) (pt2 (f2Scale md (p2X q) bnG2F2) (p2Y q))
+      (mAddS md (p1X p) (p1Y p) (pt2 (f2Mul md (f2Conj md (p2X q)) bnG1F2) (f2Mul md (f2Conj md (p2Y q)) bnG1F3))
+        (millerBits md (p1X p) (p1Y p) q ab (mstep (g2p (p2X q) (p2Y q) (f2One md)) (f12One md)))))
+def miller : FeMod -> Pt1 -> Pt2 -> Fp12 := fun (md : FeMod) (p : Pt1) (q : Pt2) => millerB md bnAteBits p q
+-- G2 in Jacobian form (Z = 0 is the point at infinity), as ptDbl and ptMadd.
+def g2Zero : G2P := g2p f2Zero f2Zero f2Zero
+def g2DblRaw : FeMod -> G2P -> G2P :=
+  fun (md : FeMod) (a : G2P) =>
+    lF2G (f2Mul md (g2Y a) (g2Y a)) (fun (yy : Fp2) =>
+    lF2G (f2Mul md (g2X a) yy) (fun (s1 : Fp2) =>
+    lF2G (f2Add md (f2Add md s1 s1) (f2Add md s1 s1)) (fun (s : Fp2) =>
+    lF2G (f2Mul md (g2X a) (g2X a)) (fun (xx : Fp2) =>
+    lF2G (f2Add md (f2Add md xx xx) xx) (fun (mm : Fp2) =>
+    lF2G (f2Sub md (f2Sub md (f2Mul md mm mm) s) s) (fun (x3 : Fp2) =>
+    lF2G (f2Mul md yy yy) (fun (yq : Fp2) =>
+    lF2G (f2Add md (f2Add md yq yq) (f2Add md yq yq)) (fun (y4 : Fp2) =>
+    lF2G (f2Mul md (g2Y a) (g2Z a)) (fun (yz : Fp2) =>
+    g2p x3 (f2Sub md (f2Mul md mm (f2Sub md s x3)) (f2Add md y4 y4)) (f2Add md yz yz))))))))))
+def g2Dbl : FeMod -> G2P -> G2P :=
+  fun (md : FeMod) (a : G2P) =>
+    either (fun (u : Unit) => g2DblRaw md a) (fun (u : Unit) => g2Zero) (sOr (f2IsZero (g2Z a)) (f2IsZero (g2Y a)))
+def g2MaddH : FeMod -> G2P -> Fp2 -> Fp2 -> G2P :=
+  fun (md : FeMod) (a : G2P) (h : Fp2) (r : Fp2) =>
+    lF2G (f2Mul md h h) (fun (hh : Fp2) =>
+    lF2G (f2Mul md h hh) (fun (hhh : Fp2) =>
+    lF2G (f2Mul md (g2X a) hh) (fun (v : Fp2) =>
+    lF2G (f2Sub md (f2Sub md (f2Sub md (f2Mul md r r) hhh) v) v) (fun (x3 : Fp2) =>
+    g2p x3 (f2Sub md (f2Mul md r (f2Sub md v x3)) (f2Mul md (g2Y a) hhh)) (f2Mul md (g2Z a) h)))))
+def g2MaddRaw : FeMod -> G2P -> Pt2 -> G2P :=
+  fun (md : FeMod) (a : G2P) (b : Pt2) =>
+    lF2G (f2Mul md (g2Z a) (g2Z a)) (fun (zz : Fp2) =>
+    lF2G (f2Sub md (f2Mul md (p2X b) zz) (g2X a)) (fun (h : Fp2) =>
+    lF2G (f2Sub md (f2Mul md (f2Mul md (p2Y b) zz) (g2Z a)) (g2Y a)) (fun (r : Fp2) =>
+    either (fun (u : Unit) => g2MaddH md a h r)
+      (fun (u : Unit) => either (fun (v : Unit) => g2Zero) (fun (v : Unit) => g2Dbl md a) (f2IsZero r))
+      (f2IsZero h))))
+def p2IsInf : Pt2 -> Sum Unit Unit := fun (p : Pt2) => sAnd (f2IsZero (p2X p)) (f2IsZero (p2Y p))
+def g2Madd : FeMod -> G2P -> Pt2 -> G2P :=
+  fun (md : FeMod) (a : G2P) (b : Pt2) =>
+    either (fun (u : Unit) =>
+      either (fun (v : Unit) => g2MaddRaw md a b) (fun (v : Unit) => g2p (p2X b) (p2Y b) (f2One md)) (f2IsZero (g2Z a)))
+      (fun (u : Unit) => a) (p2IsInf b)
+-- g2MulBits md q e x is the double-and-add walk of e (the top bit first).
+def g2MulBits : FeMod -> Pt2 -> FeBits -> G2P -> G2P :=
+  fun (md : FeMod) (q : Pt2) (e : FeBits) => elim (fun (k : FeBits) => G2P -> G2P)
+    (fun (x : G2P) => x)
+    (fun (k : FeBits) (ih : G2P -> G2P) => fun (x : G2P) => ih (g2Dbl md x))
+    (fun (k : FeBits) (ih : G2P -> G2P) => fun (x : G2P) => ih (g2Madd md (g2Dbl md x) q)) e
+-- The point checks (USER ruling Q-S8b-8 (a)). (0, 0) is valid. Else each
+-- coordinate is below p and the point is on the curve; a G2 point also gives
+-- r Q = O.
+def feBelowMod : FeMod -> Fe -> Sum Unit Unit := fun (md : FeMod) (x : Fe) => feLt x (modM md)
+def g1Valid : FeMod -> Pt1 -> Sum Unit Unit :=
+  fun (md : FeMod) (p : Pt1) =>
+    either (fun (u : Unit) =>
+      either (fun (v : Unit) => feNo)
+        (fun (v : Unit) => feEq (feMulC md (p1Y p) (p1Y p)) (feAdd md (feMulC md (feMulC md (p1X p) (p1X p)) (p1X p)) bnThree))
+        (sAnd (feBelowMod md (p1X p)) (feBelowMod md (p1Y p))))
+      (fun (u : Unit) => feYes) (p1IsInf p)
+def p2Below : FeMod -> Pt2 -> Sum Unit Unit :=
+  fun (md : FeMod) (q : Pt2) =>
+    sAnd (sAnd (feBelowMod md (f2a (p2X q))) (feBelowMod md (f2b (p2X q)))) (sAnd (feBelowMod md (f2a (p2Y q))) (feBelowMod md (f2b (p2Y q))))
+def g2OnCurve : FeMod -> Pt2 -> Sum Unit Unit :=
+  fun (md : FeMod) (q : Pt2) => f2Eq (f2Mul md (p2Y q) (p2Y q)) (f2Add md (f2Mul md (f2Mul md (p2X q) (p2X q)) (p2X q)) bnBt)
+def g2ValidB : FeMod -> FeBits -> Pt2 -> Sum Unit Unit :=
+  fun (md : FeMod) (rb : FeBits) (q : Pt2) =>
+    either (fun (u : Unit) =>
+      either (fun (v : Unit) => feNo)
+        (fun (v : Unit) => either (fun (w : Unit) => feNo) (fun (w : Unit) => f2IsZero (g2Z (g2MulBits md q rb g2Zero))) (g2OnCurve md q))
+        (p2Below md q))
+      (fun (u : Unit) => feYes) (p2IsInf q)
+def g2Valid : FeMod -> Pt2 -> Sum Unit Unit := fun (md : FeMod) (q : Pt2) => g2ValidB md bnRBits q
+-- pairCheck md l is inr unit when each point of l is valid and the product of
+-- the pairings e(P_i, Q_i) is 1. A pair with a point at infinity gives 1.
+-- One Miller loop for each pair, then one final exponentiation.
+def pairLoop : FeMod -> FeBits -> FeBits -> FeBits -> PairList -> Fp12 -> Sum Unit Unit :=
+  fun (md : FeMod) (ab : FeBits) (xb : FeBits) (rb : FeBits) (l : PairList) => elim (fun (k : PairList) => Fp12 -> Sum Unit Unit)
+    (fun (acc : Fp12) => f12IsOne md (finalExpB md xb acc))
+    (fun (p : Pt1) (q : Pt2) (k : PairList) (ih : Fp12 -> Sum Unit Unit) => fun (acc : Fp12) =>
+      either (fun (u : Unit) => feNo)
+        (fun (u : Unit) => either (fun (v : Unit) => ih (f12Mul md acc (millerB md ab p q))) (fun (v : Unit) => ih acc) (sOr (p1IsInf p) (p2IsInf q)))
+        (sAnd (g1Valid md p) (g2ValidB md rb q))) l
+def pairCheck : FeMod -> PairList -> Sum Unit Unit := fun (md : FeMod) (l : PairList) => pairLoop md bnAteBits bnXBits bnRBits l (f12One md)
 def scOnCurve : Pt1 -> Sum Unit Unit :=
   fun (p : Pt1) => (fun (q : Pt1) => feEq (feMulC fpMod (p1Y q) (p1Y q)) (feAdd fpMod (feMulC fpMod (feMulC fpMod (p1X q) (p1X q)) (p1X q)) (feToMont fpMod (fe 3w 0w 0w 0w 0w 0w 0w 0w)))) (ptToMont fpMod p)
 def scValid : Pt1 -> Sum Unit Unit :=
@@ -1037,6 +1369,81 @@ def scEquation : Fe -> Pt1 -> Pt1 -> Fe -> Sum Unit Unit :=
 def schnorrCheck : KRcs -> Pt1 -> Pt1 -> Fe -> Fe -> Sum Unit Unit :=
   fun (rcs : KRcs) (pk : Pt1) (r : Pt1) (s : Fe) (m : Fe) =>
     sAnd (scValid pk) (sAnd (scValid r) (sAnd (feLt s (modM frMod)) (scEquation (kcChallenge rcs (p1X r) (p1Y r) (p1X pk) (p1Y pk) m) (ptToMont fpMod pk) (ptToMont fpMod r) s)))
+-- The Groth16 verifier (S8b, USER rulings Q-S8b-2 (a) and Q-S8b-12 (a)).
+-- A verification key holds alpha, beta, gamma, delta and the points IC_0 to
+-- IC_n; a proof holds A, B and C. The values are raw (not in Montgomery
+-- form), as snarkjs writes them. The check is e(-A, B) e(alpha, beta)
+-- e(vk_x, gamma) e(C, delta) = 1 with vk_x = IC_0 + x_1 IC_1 + ... + x_n
+-- IC_n. The scalar products use ptMulC and the check uses pairCheckC.
+family G16Ics := icEnd | icNext (icHead : Pt1) (icTail : G16Ics)
+family G16Pubs := pbEnd | pbNext (pbHead : Fe) (pbTail : G16Pubs)
+family G16Vk := g16Vk (vkAlpha : Pt1) (vkBeta : Pt2) (vkGamma : Pt2) (vkDelta : Pt2) (vkIc0 : Pt1) (vkIcs : G16Ics)
+def f2ToMont : FeMod -> Fp2 -> Fp2 := fun (md : FeMod) (a : Fp2) => fp2 (feToMont md (f2a a)) (feToMont md (f2b a))
+def p2ToMont : FeMod -> Pt2 -> Pt2 := fun (md : FeMod) (q : Pt2) => pt2 (f2ToMont md (p2X q)) (f2ToMont md (p2Y q))
+-- The proof points must be canonical: each raw coordinate is below p.
+def p1Canon : Pt1 -> Sum Unit Unit := fun (p : Pt1) => sAnd (feLt (p1X p) (modM fpMod)) (feLt (p1Y p) (modM fpMod))
+def f2Canon : Fp2 -> Sum Unit Unit := fun (a : Fp2) => sAnd (feLt (f2a a) (modM fpMod)) (feLt (f2b a) (modM fpMod))
+def p2Canon : Pt2 -> Sum Unit Unit := fun (q : Pt2) => sAnd (f2Canon (p2X q)) (f2Canon (p2Y q))
+def g16Neg : FeMod -> Pt1 -> Pt1 := fun (md : FeMod) (p : Pt1) => pt1 (p1X p) (feSub md feZero (p1Y p))
+-- g16IcEnd ics a is inr a when ics is empty (each public has its IC point).
+def g16IcEnd : G16Ics -> Jac -> Sum Unit Jac :=
+  fun (ics : G16Ics) (a : Jac) => elim (fun (k : G16Ics) => Sum Unit Jac) (inr a) (fun (p : Pt1) (k : G16Ics) (ih : Sum Unit Jac) => inl unit) ics
+-- g16IcStep md x k ics a adds x IC to a, with IC the head of ics, then
+-- continues with k on the tail. An empty ics gives inl tt.
+def g16IcStep : FeMod -> Fe -> (G16Ics -> Jac -> Sum Unit Jac) -> G16Ics -> Jac -> Sum Unit Jac :=
+  fun (md : FeMod) (x : Fe) (k : G16Ics -> Jac -> Sum Unit Jac) (ics : G16Ics) (a : Jac) =>
+    elim (fun (q : G16Ics) => Sum Unit Jac) (inl unit) (fun (p : Pt1) (q : G16Ics) (ih : Sum Unit Jac) => k q (ptMadd md a (ptMulC md x (ptToMont md p)))) ics
+-- g16Msm md ps ics a is a + x_1 IC_1 + ... + x_n IC_n in Montgomery form.
+-- It is inl tt when ps and ics do not have the same length, or when a
+-- public is not below r (a public x + r gives the same vk_x as x).
+def g16Msm : FeMod -> G16Pubs -> G16Ics -> Jac -> Sum Unit Jac :=
+  fun (md : FeMod) (ps : G16Pubs) => elim (fun (k : G16Pubs) => G16Ics -> Jac -> Sum Unit Jac)
+    (fun (ics : G16Ics) (a : Jac) => g16IcEnd ics a)
+    (fun (x : Fe) (k : G16Pubs) (ih : G16Ics -> Jac -> Sum Unit Jac) => fun (ics : G16Ics) (a : Jac) =>
+      either (fun (u : Unit) => inl unit) (fun (u : Unit) => g16IcStep md x ih ics a) (feLt x (modM frMod))) ps
+-- g16Verify vk ps a b c is inr tt when (a, b, c) is a valid proof for the
+-- publics ps under vk. It is a sealed def (Q-S8a-9 (a)): the checker does
+-- not open it on open values.
+def g16Verify : G16Vk -> G16Pubs -> Pt1 -> Pt2 -> Pt1 -> Sum Unit Unit :=
+  fun (vk : G16Vk) (ps : G16Pubs) (a : Pt1) (b : Pt2) (c : Pt1) =>
+    sAnd (sAnd (p1Canon a) (sAnd (p2Canon b) (p1Canon c)))
+      (either (fun (u : Unit) => feNo)
+        (fun (x : Jac) => pairCheckC fpMod
+          (plPair (g16Neg fpMod (ptToMont fpMod a)) (p2ToMont fpMod b)
+          (plPair (ptToMont fpMod (vkAlpha vk)) (p2ToMont fpMod (vkBeta vk))
+          (plPair (ptToAffine fpMod x) (p2ToMont fpMod (vkGamma vk))
+          (plPair (ptToMont fpMod c) (p2ToMont fpMod (vkDelta vk)) plEnd)))))
+        (g16Msm fpMod ps (vkIcs vk) (ptMadd fpMod jacZero (ptToMont fpMod (vkIc0 vk)))))
+-- The verification keys (Q-S8b-10 (a): test-only, from one fixed phase-2
+-- contribution; Q-S8b-12 (a)). The cryptotool noir command makes these
+-- lines from test/noir/NAME/verification_key.json.
+def eligVkAlpha : Pt1 := pt1 (fe 0xbe6df2e2w 0x22f599a2w 0xb16c643bw 0xdbea33fbw 0x07949d05w 0x41749d55w 0xe302d9dfw 0x2d4d9aa7w) (fe 0x004d1926w 0xf076caffw 0x19230301w 0xce89830aw 0x209fe345w 0x61d8ec60w 0x3c37ceb0w 0x14bedd50w)
+def eligVkBeta : Pt2 := pt2 (fp2 (fe 0xc13db7abw 0x0213bc7fw 0xe071241ew 0x7dd68bc0w 0x2bf50184w 0x74d0d673w 0xad4c7983w 0x0e187847w) (fe 0x3bf3060cw 0xa9794cbcw 0x53f2decaw 0xd38480a6w 0x8877f182w 0xafc985f8w 0xcbf776d1w 0x0967032fw)) (fp2 (fe 0x7ad0cec8w 0xd57f0654w 0x3eea05a9w 0xf896b7c6w 0x4d2f9192w 0x313123d2w 0xa457a8c7w 0x1739c1b1w) (fe 0x112346a7w 0x9da69a4dw 0x6b7a0d37w 0xaafddec4w 0xd93f8c3cw 0x99f5e847w 0xe08a704aw 0x304cfbd1w))
+def eligVkGamma : Pt2 := pt2 (fp2 (fe 0xd992f6edw 0x46debd5cw 0xf75edaddw 0x674322d4w 0x5e5c4479w 0x426a0066w 0x121f1e76w 0x1800deefw) (fe 0xaef312c2w 0x97e485b7w 0x35a9e712w 0xf1aa4933w 0x31fb5d25w 0x7260bfb7w 0x920d483aw 0x198e9393w)) (fp2 (fe 0x66fa7daaw 0x4ce6cc01w 0x0c43d37bw 0xe3d1e769w 0x8dcb408fw 0x4aab7180w 0xdb8c6debw 0x12c85ea5w) (fe 0xd122975bw 0x55acdadcw 0x70b38ef3w 0xbc4b3133w 0x690c3395w 0xec9e99adw 0x585ff075w 0x090689d0w))
+def eligVkDelta : Pt2 := pt2 (fp2 (fe 0x75fa0b1cw 0x04c6c506w 0xa88ed33dw 0x38610da0w 0x4a16e7b4w 0x9c75b106w 0x8d6ec32dw 0x18ab9ba9w) (fe 0x18cc9558w 0xb79b310ew 0xa695228dw 0x70d057c5w 0x8eb3cd64w 0x1c52a645w 0xd2fce644w 0x234d668fw)) (fp2 (fe 0xe3070897w 0xa57e1117w 0xafdd2bbdw 0x064e25e8w 0x51ac2bdcw 0xabf16309w 0x45243173w 0x28135d35w) (fe 0xe3567bb1w 0x56bb8df4w 0x0bfcf4edw 0x4899ff7bw 0x10c88ee3w 0x406b1fd8w 0x6ccd83faw 0x00d0df26w))
+def eligVkIc0 : Pt1 := pt1 (fe 0x2ae60b8fw 0xfc12884bw 0x4fd1574dw 0x6fd0879dw 0xa4b22167w 0x4cc057a1w 0x421f6abbw 0x07806bd9w) (fe 0xd1d68dd5w 0xd1744e04w 0xee175640w 0xeea97924w 0x9fd80fbbw 0x7443cdbcw 0xd837df5dw 0x1b0573f9w)
+def eligVkIc1 : Pt1 := pt1 (fe 0xc0fdee8bw 0x96f77911w 0x5dd1d277w 0xc07f48a3w 0x7e36ff27w 0xf44562b7w 0x7384b8a5w 0x0187e115w) (fe 0x93fb0748w 0x10b5bb7bw 0x5abe6d1aw 0xb4a399daw 0xc92497d1w 0xad08ddaew 0xbc58eebbw 0x19c6442dw)
+def eligVkIc2 : Pt1 := pt1 (fe 0x4096eb6bw 0xadff0932w 0xe77ebfeaw 0xea6c6566w 0x31b70323w 0xf4a79981w 0x781eef0cw 0x0ee82405w) (fe 0xd32a1567w 0x5e8d5044w 0xe30a780ew 0xe3f61eb6w 0x940b4cdcw 0xbc6350e3w 0x7212ca81w 0x10e773d0w)
+def eligVkIc3 : Pt1 := pt1 (fe 0x1af2434bw 0x3d6acd7fw 0x63a0fd29w 0xfc0f9d76w 0x1e3f9ce1w 0x34f25cb0w 0x1b96270cw 0x2757835cw) (fe 0x6d800d5dw 0xbe2683f3w 0xce240412w 0xd2c798bfw 0xc24ef39bw 0xa1bd288aw 0x1a424b0dw 0x0010cafew)
+def eligVk : G16Vk := g16Vk eligVkAlpha eligVkBeta eligVkGamma eligVkDelta eligVkIc0 (icNext eligVkIc1 (icNext eligVkIc2 (icNext eligVkIc3 icEnd)))
+def outcomeVkAlpha : Pt1 := pt1 (fe 0xbe6df2e2w 0x22f599a2w 0xb16c643bw 0xdbea33fbw 0x07949d05w 0x41749d55w 0xe302d9dfw 0x2d4d9aa7w) (fe 0x004d1926w 0xf076caffw 0x19230301w 0xce89830aw 0x209fe345w 0x61d8ec60w 0x3c37ceb0w 0x14bedd50w)
+def outcomeVkBeta : Pt2 := pt2 (fp2 (fe 0xc13db7abw 0x0213bc7fw 0xe071241ew 0x7dd68bc0w 0x2bf50184w 0x74d0d673w 0xad4c7983w 0x0e187847w) (fe 0x3bf3060cw 0xa9794cbcw 0x53f2decaw 0xd38480a6w 0x8877f182w 0xafc985f8w 0xcbf776d1w 0x0967032fw)) (fp2 (fe 0x7ad0cec8w 0xd57f0654w 0x3eea05a9w 0xf896b7c6w 0x4d2f9192w 0x313123d2w 0xa457a8c7w 0x1739c1b1w) (fe 0x112346a7w 0x9da69a4dw 0x6b7a0d37w 0xaafddec4w 0xd93f8c3cw 0x99f5e847w 0xe08a704aw 0x304cfbd1w))
+def outcomeVkGamma : Pt2 := pt2 (fp2 (fe 0xd992f6edw 0x46debd5cw 0xf75edaddw 0x674322d4w 0x5e5c4479w 0x426a0066w 0x121f1e76w 0x1800deefw) (fe 0xaef312c2w 0x97e485b7w 0x35a9e712w 0xf1aa4933w 0x31fb5d25w 0x7260bfb7w 0x920d483aw 0x198e9393w)) (fp2 (fe 0x66fa7daaw 0x4ce6cc01w 0x0c43d37bw 0xe3d1e769w 0x8dcb408fw 0x4aab7180w 0xdb8c6debw 0x12c85ea5w) (fe 0xd122975bw 0x55acdadcw 0x70b38ef3w 0xbc4b3133w 0x690c3395w 0xec9e99adw 0x585ff075w 0x090689d0w))
+def outcomeVkDelta : Pt2 := pt2 (fp2 (fe 0xdd2507a5w 0x9b4b73f6w 0x89aeed9bw 0xeba04738w 0x78ab6d1cw 0xbd4b3f8ew 0x08e55a33w 0x07888eebw) (fe 0xd42c0556w 0x210b3d4aw 0x96e44a2dw 0x999a8e05w 0x83a7b79dw 0x8e6c3dd2w 0x9dc4245aw 0x2a5abf1dw)) (fp2 (fe 0xfe720896w 0xb8983915w 0xd9345814w 0x0abc6141w 0x31027a7cw 0xe8a2601fw 0x98ad4861w 0x2acfce79w) (fe 0x5bf7d638w 0xf7c4dcedw 0xf47f4929w 0x42bf716fw 0xfc2325d7w 0x82202effw 0x248db9dbw 0x01ae695bw))
+def outcomeVkIc0 : Pt1 := pt1 (fe 0x559a404aw 0x259926eaw 0xeb5853f5w 0xc2529b81w 0x34246eb9w 0xed3d1b4cw 0xaa284183w 0x1f903fb1w) (fe 0x2039174cw 0xf7f1e05bw 0x370fc117w 0xb7ec455ew 0x4c5ca575w 0xbf39b6d1w 0x88f17792w 0x2084b16bw)
+def outcomeVkIc1 : Pt1 := pt1 (fe 0x2558c68bw 0xac197760w 0x32363698w 0xd385dcdaw 0xf176738ew 0x16b593c0w 0xef53a66dw 0x127a3924w) (fe 0xc6f224a8w 0xb66a14cew 0x7954f7eaw 0x4ea2a222w 0x57143237w 0x9e2d07d5w 0x9633b83dw 0x27873544w)
+def outcomeVkIc2 : Pt1 := pt1 (fe 0xc146acb9w 0x632694baw 0xb6ea27bcw 0x84acd57aw 0x790f02b8w 0x411f4b0aw 0x07d97e41w 0x10fbc1caw) (fe 0xbfa2ec81w 0x973e982ew 0x012d3812w 0x4265d69ew 0xea131939w 0xa46c690ew 0xec3c144aw 0x1bc09b79w)
+def outcomeVkIc3 : Pt1 := pt1 (fe 0xaabea241w 0x44edc141w 0xac793857w 0xf471d1f3w 0x66b63512w 0x591808d4w 0x7d74ae62w 0x0857b5a2w) (fe 0xe047663ew 0xa2e7c8e5w 0x6f004771w 0xe54f4651w 0xd1747c6aw 0xc018ed07w 0xb02485bbw 0x03c1fab4w)
+def outcomeVk : G16Vk := g16Vk outcomeVkAlpha outcomeVkBeta outcomeVkGamma outcomeVkDelta outcomeVkIc0 (icNext outcomeVkIc1 (icNext outcomeVkIc2 (icNext outcomeVkIc3 icEnd)))
+def shareVkAlpha : Pt1 := pt1 (fe 0xbe6df2e2w 0x22f599a2w 0xb16c643bw 0xdbea33fbw 0x07949d05w 0x41749d55w 0xe302d9dfw 0x2d4d9aa7w) (fe 0x004d1926w 0xf076caffw 0x19230301w 0xce89830aw 0x209fe345w 0x61d8ec60w 0x3c37ceb0w 0x14bedd50w)
+def shareVkBeta : Pt2 := pt2 (fp2 (fe 0xc13db7abw 0x0213bc7fw 0xe071241ew 0x7dd68bc0w 0x2bf50184w 0x74d0d673w 0xad4c7983w 0x0e187847w) (fe 0x3bf3060cw 0xa9794cbcw 0x53f2decaw 0xd38480a6w 0x8877f182w 0xafc985f8w 0xcbf776d1w 0x0967032fw)) (fp2 (fe 0x7ad0cec8w 0xd57f0654w 0x3eea05a9w 0xf896b7c6w 0x4d2f9192w 0x313123d2w 0xa457a8c7w 0x1739c1b1w) (fe 0x112346a7w 0x9da69a4dw 0x6b7a0d37w 0xaafddec4w 0xd93f8c3cw 0x99f5e847w 0xe08a704aw 0x304cfbd1w))
+def shareVkGamma : Pt2 := pt2 (fp2 (fe 0xd992f6edw 0x46debd5cw 0xf75edaddw 0x674322d4w 0x5e5c4479w 0x426a0066w 0x121f1e76w 0x1800deefw) (fe 0xaef312c2w 0x97e485b7w 0x35a9e712w 0xf1aa4933w 0x31fb5d25w 0x7260bfb7w 0x920d483aw 0x198e9393w)) (fp2 (fe 0x66fa7daaw 0x4ce6cc01w 0x0c43d37bw 0xe3d1e769w 0x8dcb408fw 0x4aab7180w 0xdb8c6debw 0x12c85ea5w) (fe 0xd122975bw 0x55acdadcw 0x70b38ef3w 0xbc4b3133w 0x690c3395w 0xec9e99adw 0x585ff075w 0x090689d0w))
+def shareVkDelta : Pt2 := pt2 (fp2 (fe 0x2eef2db3w 0x6b4eb749w 0xd356597aw 0x6c47d697w 0x41e08ba8w 0xe219fd6cw 0x4356275aw 0x1aca076aw) (fe 0xc9a59a76w 0x4e365564w 0xe66f5de9w 0x8b12eb96w 0xdfee1b38w 0x7ff257ddw 0x525a4fd8w 0x0fbe75f4w)) (fp2 (fe 0xda6af2c7w 0x031425dfw 0x83c42582w 0xa2d5bd9cw 0xb619977aw 0xf53ee1dcw 0xe321fc3dw 0x09a7b7bcw) (fe 0xb3659ee6w 0x129a4d50w 0x29477d56w 0x00175594w 0xac7bfb1dw 0xbea00e2dw 0xc313f582w 0x0d412ef6w))
+def shareVkIc0 : Pt1 := pt1 (fe 0x559a404aw 0x259926eaw 0xeb5853f5w 0xc2529b81w 0x34246eb9w 0xed3d1b4cw 0xaa284183w 0x1f903fb1w) (fe 0x2039174cw 0xf7f1e05bw 0x370fc117w 0xb7ec455ew 0x4c5ca575w 0xbf39b6d1w 0x88f17792w 0x2084b16bw)
+def shareVkIc1 : Pt1 := pt1 (fe 0x2558c68bw 0xac197760w 0x32363698w 0xd385dcdaw 0xf176738ew 0x16b593c0w 0xef53a66dw 0x127a3924w) (fe 0xc6f224a8w 0xb66a14cew 0x7954f7eaw 0x4ea2a222w 0x57143237w 0x9e2d07d5w 0x9633b83dw 0x27873544w)
+def shareVkIc2 : Pt1 := pt1 (fe 0xc146acb9w 0x632694baw 0xb6ea27bcw 0x84acd57aw 0x790f02b8w 0x411f4b0aw 0x07d97e41w 0x10fbc1caw) (fe 0xbfa2ec81w 0x973e982ew 0x012d3812w 0x4265d69ew 0xea131939w 0xa46c690ew 0xec3c144aw 0x1bc09b79w)
+def shareVkIc3 : Pt1 := pt1 (fe 0xaabea241w 0x44edc141w 0xac793857w 0xf471d1f3w 0x66b63512w 0x591808d4w 0x7d74ae62w 0x0857b5a2w) (fe 0xe047663ew 0xa2e7c8e5w 0x6f004771w 0xe54f4651w 0xd1747c6aw 0xc018ed07w 0xb02485bbw 0x03c1fab4w)
+def shareVk : G16Vk := g16Vk shareVkAlpha shareVkBeta shareVkGamma shareVkDelta shareVkIc0 (icNext shareVkIc1 (icNext shareVkIc2 (icNext shareVkIc3 icEnd)))
 -- The message words (S8a). szToFe n is n in Fr, in Montgomery form (n
 -- additions of R mod r). hsMsg t x y is poseidon2 (t, poseidon2 (x, y)) in
 -- Fr. Each input is in Montgomery form. The result is canonical, because
@@ -1070,18 +1477,18 @@ def fxHs2K5R : Pt1 := pt1 (fe 0xaf85721fw 0xb2fb7865w 0xa2847f1aw 0xede7a96bw 0x
 def fxHs2K5S : Fe := fe 0x561b91f1w 0x0164ec73w 0x6a72b15cw 0x304e8cf1w 0xad99c92fw 0x54afd97ew 0xb1190868w 0x02fc85e7w
 def fxHs3K3R : Pt1 := pt1 (fe 0xe3181f17w 0xe7f1dfabw 0xa4713c84w 0xcc1fc444w 0xf80abe3ew 0x3d982092w 0xec60b2e2w 0x2ec55b15w) (fe 0x9324cf19w 0xbf21a0e2w 0x7ab6ea16w 0xd56a7ffaw 0xdbea9379w 0x9e5e5ac4w 0xb7545490w 0x1d9e9a89w)
 def fxHs3K3S : Fe := fe 0x8c542f98w 0x1dd5cb16w 0x27fabc82w 0xfb0c3c66w 0xd86db374w 0x66c9883bw 0x698dbfe9w 0x1573cc86w
-def fxStAK1R : Pt1 := pt1 (fe 0xe83e0a87w 0x3c4cb7cfw 0x724c7dcaw 0xa9d91a47w 0x93722708w 0x2314b6b9w 0x6962b34ew 0x1c3c9ebfw) (fe 0xd9ecc7a5w 0x5d95808ew 0xdaba06f9w 0x886f3162w 0x7abc8b8aw 0xc255cc58w 0x324fd813w 0x300a8196w)
-def fxStAK1S : Fe := fe 0xbf43d34ew 0x2e522a9aw 0x9928d302w 0xbd2c0680w 0x1d25f8b4w 0x175ff827w 0xa324cc4bw 0x226330eew
-def fxStAK2R : Pt1 := pt1 (fe 0x7dabdd9dw 0x7a9a0c41w 0x10a7356bw 0xa8a29199w 0x6d90a181w 0x019bbb38w 0x4d45ab44w 0x1cd71232w) (fe 0x79db1e0cw 0xb993d058w 0x5299f725w 0x28d554few 0xcc1cc84ew 0x601075e3w 0xdc256e45w 0x00b1ce9aw)
-def fxStAK2S : Fe := fe 0x1bb61f9fw 0x5ec90f4aw 0x03610e28w 0xfaaa0d6fw 0x3dd3359fw 0x3e6c7459w 0x269a4e19w 0x17abc743w
-def fxStAK3R : Pt1 := pt1 (fe 0x60988feaw 0x7fa9c493w 0x863fddcaw 0xc19ceaefw 0x69f6373bw 0xe4689fcfw 0x850eadc5w 0x0d741d04w) (fe 0x9afc861aw 0xdfa185e9w 0x8e898f77w 0x3d9da0b7w 0x053adc9ew 0x4eac55acw 0x9a319f4bw 0x21ab41bbw)
-def fxStAK3S : Fe := fe 0x92f2969fw 0x1cdcb232w 0xe3dc33a4w 0xbdea27b7w 0xe5454e5bw 0x277a1bb9w 0xe4a1b58ew 0x24cd9487w
-def fxStLK1R : Pt1 := pt1 (fe 0xf216bf3dw 0x2faf8ce7w 0xe4ebc7cdw 0x4e273cedw 0x9ce0c88ew 0xc583ccd6w 0x13f0b57dw 0x1f61d020w) (fe 0x44541ca0w 0x42ea9796w 0x340ceae4w 0x3da7fd47w 0xd1f9f15bw 0xe146d1caw 0x0a9e3bb2w 0x08cc8d94w)
-def fxStLK1S : Fe := fe 0x1d355749w 0xb17fdb65w 0x36749f69w 0xc7612a47w 0x41ab1fd2w 0x0ade3177w 0xb1221cb9w 0x26b814d3w
-def fxStLK2R : Pt1 := pt1 (fe 0x68a5a097w 0xb5aa5703w 0x0e0374d5w 0xc1baaeb5w 0x36bfa95cw 0xe50bce41w 0xf65249c8w 0x0239d3bdw) (fe 0x32a8a5b8w 0x7713ae7cw 0xcafea1f7w 0x57dd6174w 0x3b7db877w 0x8128c807w 0xfa5043eaw 0x2ef2a8fdw)
-def fxStLK2S : Fe := fe 0xed0bf96dw 0x34a817e5w 0x7bba74f5w 0xfd58ad7bw 0x01100114w 0xcd685c0cw 0xe77e3d97w 0x1518dd30w
-def fxStLK3R : Pt1 := pt1 (fe 0xa1b52978w 0xa1831a3ew 0x42279396w 0x71dff6b6w 0x06f3cd9bw 0x0c862599w 0x597b533fw 0x26985c72w) (fe 0xc0491156w 0xd6ca7a99w 0x54262a4ew 0x446f90b3w 0xb4a620caw 0x2693ff2ew 0x096dde6bw 0x21d7a72dw)
-def fxStLK3S : Fe := fe 0x2d38a822w 0xe9773047w 0x61d7bee4w 0x9d50b52fw 0x71d891a6w 0xb27336ecw 0x7364d6e0w 0x2a9f5c9bw
+def fxStAK1R : Pt1 := pt1 (fe 0xb4b6593bw 0x85eb9358w 0xe4808bcbw 0x3b5b0512w 0xbd03a74fw 0x5d82de3fw 0xa6565196w 0x0cedb360w) (fe 0xfd0fad69w 0x35ca222ew 0xa096418bw 0xdd0c6351w 0x3fa47b5cw 0x15c438c8w 0x61be4f24w 0x26d51303w)
+def fxStAK1S : Fe := fe 0xd6c2f900w 0x2fa0611dw 0xc4c18f3fw 0x863871c6w 0x050b9f1bw 0xcd953b4aw 0xa1c993c9w 0x0fb96aa2w
+def fxStAK2R : Pt1 := pt1 (fe 0x3585497dw 0x51c58362w 0xfcf8dcdew 0xfb2eff15w 0x510fc301w 0xc2bbe0dcw 0xd3de38bdw 0x028c5f3dw) (fe 0x74eae9f9w 0x97a18466w 0xc99a255fw 0xff09b56dw 0xbb318460w 0xb76e11b5w 0xd5dc4e5cw 0x04344d24w)
+def fxStAK2S : Fe := fe 0x18fa3982w 0xae47d19fw 0xe43cc52cw 0x6ed0c0bdw 0x7be280d9w 0xa2c02686w 0x2fa76b8aw 0x01e56a3fw
+def fxStAK3R : Pt1 := pt1 (fe 0x654c28a0w 0x93996aa3w 0x4276c40aw 0x7d823d68w 0x26053a2bw 0x7c74a4b1w 0xb15248c3w 0x1284f8ffw) (fe 0x658c1d9cw 0x4d314ed3w 0x700947bdw 0x85f54276w 0x735f2d74w 0xafe62f89w 0xfb5be319w 0x0ce48d3fw)
+def fxStAK3S : Fe := fe 0xa0d10202w 0x4f49ae1dw 0xd5d7fb43w 0x834359a1w 0x9d7bb206w 0xcf85b047w 0x505149f4w 0x28b0725aw
+def fxStLK1R : Pt1 := pt1 (fe 0x8222ab36w 0xbff6f215w 0xd34228d8w 0xda2abc5fw 0x095c43ebw 0xc4757b38w 0x177a959ew 0x10b9b72dw) (fe 0xce7d2191w 0xc3860770w 0x5f46a816w 0xa5d933fdw 0x9ac00a10w 0x58a51c63w 0xf50e67fdw 0x298a8bc8w)
+def fxStLK1S : Fe := fe 0xfe495339w 0x2c423599w 0xa50d731bw 0x92bf9702w 0x217bb8c2w 0x0f264d8aw 0x34930382w 0x187d3c5aw
+def fxStLK2R : Pt1 := pt1 (fe 0x7c2141fbw 0x4bf48cc5w 0x9904b534w 0x567c923cw 0xe50210f7w 0x60fa0a15w 0x18594df2w 0x18077607w) (fe 0xca2396d2w 0x3072341cw 0xfc5d3bb3w 0x6bd3c753w 0x67e63de3w 0xdd4c6f98w 0xa7abbd62w 0x1d40e63cw)
+def fxStLK2S : Fe := fe 0x5b03d8d2w 0x0e310bc3w 0x43a146b9w 0xaff20cecw 0xc014679bw 0x23062437w 0x1d68c9d4w 0x2784c0e1w
+def fxStLK3R : Pt1 := pt1 (fe 0x5424b640w 0x23eeedaaw 0x62ce3c81w 0x0eb4834bw 0x7f4f0ed7w 0xc4c829e6w 0xce90ea78w 0x1f38b8a8w) (fe 0xaa55f0f1w 0x883257faw 0x465a2695w 0xcc2e09b4w 0x974f68f7w 0xb12fc053w 0x96c81b9bw 0x0ace69aew)
+def fxStLK3S : Fe := fe 0xd3a5a800w 0x271fbe99w 0x9f357bc5w 0x1e364d31w 0x83420e1aw 0x97490512w 0xd7db0625w 0x06606f89w
 def fxOpAK2R : Pt1 := pt1 (fe 0xe6c39ca2w 0x86eaa84bw 0x81cdd435w 0x0c84055ew 0xb81231eaw 0x49466cf4w 0xbb2a4e49w 0x0cc82ae3w) (fe 0xeaa23a91w 0x78fa280bw 0x52a8b651w 0x0db45458w 0x213c8e1fw 0xfc8135b1w 0x13b1218bw 0x26aa4e5bw)
 def fxOpAK2S : Fe := fe 0x5813319bw 0xae0fb4a3w 0xc62b7b69w 0x1043f1b8w 0xe015b9e6w 0xb8ff40b7w 0xd63ae56ew 0x1c164b9aw
 def fxOpAK3R : Pt1 := pt1 (fe 0x9be0a930w 0x5e81487bw 0x402f6b1cw 0x435d9d89w 0x250fdc76w 0x2741141dw 0x1bdb1e58w 0x04443834w) (fe 0xbeec87afw 0x17713ccdw 0xfde81df7w 0xeb9029daw 0xb4f295caw 0x4558c093w 0x7515de76w 0x0cbfbf52w)
@@ -1102,6 +1509,22 @@ def fxAmAK3R : Pt1 := pt1 (fe 0xff3c15a4w 0x544ecc03w 0x30dde3b9w 0xef7fe10dw 0x
 def fxAmAK3S : Fe := fe 0x083fea72w 0x8de35ecdw 0xbf46b8f4w 0xc63ae5b2w 0x349a4f3aw 0xce25294cw 0x554281d5w 0x2fc0d520w
 def fxAmAK4R : Pt1 := pt1 (fe 0xad7d112cw 0xf5b561e6w 0x96135ccfw 0xc655906fw 0x3fef9429w 0x8e776877w 0x0c79b11cw 0x1ccf3d8dw) (fe 0x57355289w 0xcf621ce4w 0xf80420d7w 0xc062447cw 0x14784dfbw 0x80def391w 0x79686cc5w 0x299420a0w)
 def fxAmAK4S : Fe := fe 0xfaa68516w 0x5becb867w 0x1ace1584w 0xbea9e6fcw 0xe553d60bw 0x5c3b381aw 0x9bfc84fdw 0x073a9bfbw
+-- The golden elig proofs (S8b 4d, Q-S8b-17 (a)): the Groth16 proofs and
+-- publics of test/noir/elig and test/noir/elig2 (cryptotool noir). The
+-- publics are the statement (root_s, hu, cm): Pub0 is the root, Pub1 the
+-- handle (the same in the two proofs) and Pub2 the commitment.
+def eligPrfA : Pt1 := pt1 (fe 0x8e26d215w 0x12123298w 0x25d89572w 0x5b6d0c13w 0xdb04c68dw 0xec659d72w 0xe66b64f0w 0x0b81dae3w) (fe 0x74441d55w 0x5d0d01dcw 0x64decbfew 0xeeae3d5fw 0x5fd4694bw 0x0b030d92w 0x3ae57a73w 0x2aaac682w)
+def eligPrfB : Pt2 := pt2 (fp2 (fe 0x7602b884w 0xc7bfcbe7w 0x0a971157w 0x7c2600e9w 0x03d61832w 0x167a4c0fw 0x46a2920ew 0x1b81ef42w) (fe 0xe5909496w 0x2f3a7a7fw 0xf9a643b8w 0x875669a0w 0x68693e24w 0x4e82d1aaw 0x96c94fe7w 0x0bb0d792w)) (fp2 (fe 0xa31d63efw 0x3cabfbafw 0x56b7bec2w 0x1d23c136w 0x8d49be99w 0x61b858baw 0x0cce3f80w 0x2a876d65w) (fe 0xd68cd633w 0x2e9dc16fw 0xb664e2baw 0xbe109992w 0x9bca6d52w 0x46033a5aw 0xa85de27ew 0x273a5afcw))
+def eligPrfC : Pt1 := pt1 (fe 0xfb7855ecw 0x378dc43aw 0x155c95daw 0x55b24dbdw 0x2bd84115w 0x5d6a06dew 0x30f42de4w 0x27abdd3bw) (fe 0xf88e0d09w 0x7eb3d69ew 0x20653b68w 0xfadace27w 0x1b192fdcw 0x10a95f88w 0x6768eb79w 0x2d8aefe9w)
+def eligPub0 : Fe := fe 0x01c257faw 0xc6f142c2w 0xbe07f625w 0x4d23537dw 0x6fccee79w 0x70dc0c38w 0xe5744ff7w 0x29a72ffew
+def eligPub1 : Fe := fe 0xaa984ef2w 0x07a32114w 0xcec42604w 0x3513b74cw 0xbf6edbc4w 0xf712fcd5w 0x3699dcbew 0x2c346202w
+def eligPub2 : Fe := fe 0x75aef4d9w 0x761babe9w 0x5c759e15w 0x48a8be3dw 0x0243fee4w 0x7e32287aw 0x816e1268w 0x12f8384cw
+def elig2PrfA : Pt1 := pt1 (fe 0x7fc08d74w 0x9f1abec4w 0x7d335e57w 0xc50fb50bw 0x5c1bc21fw 0x0f01b08dw 0x8e0e9c9fw 0x11b0ababw) (fe 0x57eeb6d7w 0x13fd9dd5w 0xc2c3b2abw 0x3b72e1d2w 0x05b775bdw 0x033f5520w 0x5983923aw 0x22c3b622w)
+def elig2PrfB : Pt2 := pt2 (fp2 (fe 0xa864d19fw 0x859c8d5ew 0x217ba2c9w 0x2dd41feaw 0x06f67764w 0x0938d700w 0x8193fdfaw 0x1b2b05fbw) (fe 0x5f381496w 0x7036e2f2w 0x56c54bf4w 0xe08afc1cw 0x0ee22d58w 0xc1d14d35w 0x7d4a292ew 0x2981e6bcw)) (fp2 (fe 0x0c8622f4w 0x3c14d1c9w 0xec160ca2w 0x12c86033w 0x2c8f2f01w 0x23800ed7w 0xe6e15eb2w 0x1d0f50a7w) (fe 0xb62d0be7w 0xfb4250e9w 0x536d894aw 0x961c97d0w 0x1e109c39w 0xc6f86be4w 0x3a2155ebw 0x095d3629w))
+def elig2PrfC : Pt1 := pt1 (fe 0x487ba07bw 0x966491aaw 0x8730b7fcw 0x7f66da56w 0x7ef68b25w 0xcff31b81w 0xfc380d64w 0x0a89a32bw) (fe 0xb76db6acw 0xf870c75fw 0x50add65cw 0x966825abw 0xf43cf2f9w 0xc977a6efw 0x14e8008bw 0x0084d676w)
+def elig2Pub0 : Fe := fe 0x01c257faw 0xc6f142c2w 0xbe07f625w 0x4d23537dw 0x6fccee79w 0x70dc0c38w 0xe5744ff7w 0x29a72ffew
+def elig2Pub1 : Fe := fe 0xaa984ef2w 0x07a32114w 0xcec42604w 0x3513b74cw 0xbf6edbc4w 0xf712fcd5w 0x3699dcbew 0x2c346202w
+def elig2Pub2 : Fe := fe 0x2a433cecw 0xed2e6bd8w 0xb55d5cc1w 0xe743492aw 0xfc2c5f7dw 0x1f25f371w 0xff2c5544w 0x018c6232w
 -- The committee (S5, design section 4, USER rulings Q-S5-1 to Q-S5-11).
 -- A Hash is a value in Fr, not in Montgomery form, and hsOf n is the Hash
 -- of the Size n. A Party is a BN254 G1 key (S8a; before S8a a Size tag
@@ -1181,13 +1604,29 @@ def auEq : AucID -> AucID -> Sum Unit Unit := fun (a : AucID) (b : AucID) => szE
 def rtEq : Root -> Root -> Sum Unit Unit := fun (a : Root) (b : Root) => hsEq (rtHash a) (rtHash b)
 def hdEq : Handle -> Handle -> Sum Unit Unit := fun (a : Handle) (b : Handle) => hsEq (hdHash a) (hdHash b)
 def coEq : Commitment -> Commitment -> Sum Unit Unit := fun (a : Commitment) (b : Commitment) => hsEq (coHash a) (coHash b)
--- The eligibility proof is an ideal record of the statement (root, handle,
--- commitment) (Q-S6-5 (a)): elgVrf says yes when the three match. At S8b
--- the match becomes the Noir verifier.
-family EligibilityProof := elgProof (epRoot : Root) (epHandle : Handle) (epCommit : Commitment)
+-- The eligibility proof (S8b, Q-S8b-2 (a), Q-S8b-13 (c)) is a Groth16
+-- proof (A, B, C) of the Noir elig circuit. The public inputs are the
+-- statement (root, handle, commitment), in this order. elgVrf says yes when
+-- g16Verify accepts the proof under the elig key.
+family EligibilityProof := elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)
 def elgVrf : Root -> Handle -> Commitment -> EligibilityProof -> Sum Unit Unit :=
   fun (r : Root) (h : Handle) (c : Commitment) (e : EligibilityProof) =>
-    sAnd (rtEq r (epRoot e)) (sAnd (hdEq h (epHandle e)) (coEq c (epCommit e)))
+    g16Verify eligVk (pbNext (hsTag (rtHash r)) (pbNext (hsTag (hdHash h)) (pbNext (hsTag (coHash c)) pbEnd))) (epA e) (epB e) (epC e)
+-- The outcome proof and the share proof (S8b, Q-S8b-4 (b), Q-S8b-12 (a))
+-- are Groth16 proofs of the stub circuits. The outcome publics are the
+-- auction tag, the winner handle and the price. The share publics are the
+-- auction tag, the share index and the share commitment. A Size or an
+-- Amount goes to Fr as in hsOf (canonical form). outcomeVrf reads the
+-- price by its own elim (the szToFe shape over Amount): it is the fifth
+-- Amount reader (Q-S8b-18 (a)), and it gives only a yes or no bit.
+family OutcomeProof := outcomeProof (ouA : Pt1) (ouB : Pt2) (ouC : Pt1)
+family ShareProof := shareProof (shA : Pt1) (shB : Pt2) (shC : Pt1)
+def outcomeVrf : AucID -> Handle -> Amount -> OutcomeProof -> Sum Unit Unit :=
+  fun (a : AucID) (h : Handle) (p : Amount) (e : OutcomeProof) =>
+    g16Verify outcomeVk (pbNext (feFromMont frMod (szToFe (auTag a))) (pbNext (hsTag (hdHash h)) (pbNext (feFromMont frMod (elim (fun (q : Amount) => Fe) feZero (fun (q : Amount) (ih : Fe) => feAdd frMod ih (modR1 frMod)) p)) pbEnd))) (ouA e) (ouB e) (ouC e)
+def shareVrf : AucID -> Size -> Commitment -> ShareProof -> Sum Unit Unit :=
+  fun (a : AucID) (i : Size) (c : Commitment) (e : ShareProof) =>
+    g16Verify shareVk (pbNext (feFromMont frMod (szToFe (auTag a))) (pbNext (feFromMont frMod (szToFe i)) (pbNext (hsTag (coHash c)) pbEnd))) (shA e) (shB e) (shC e)
 -- The sealed value (P1, Q-S6-3 (a)) is a cell monad. A guest program makes
 -- a sealed value with seal, but an elim, a fold or a projection of Sealed
 -- in a guest program def gives REFUSE_PEEK. Only the domain word release

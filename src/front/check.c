@@ -111,6 +111,7 @@ typedef enum {
   RULE_LEN, /* S3: len A r (survey section 7) */
   RULE_FE_MUL, /* S8a: feMulC md a b (Q-S8a-6 (a)) */
   RULE_PT_MUL, /* S8a: ptMulC md k p (Q-S8a-7 (a)) */
+  RULE_PAIR_CHECK, /* S8b: pairCheckC md ps (Q-S8b-1 (a)) */
   RULE_FLAG_IF,
   RULE_NONZERO,       /* S3: NonZero Nat */
   RULE_NONZERO_OF,    /* nonZero x */
@@ -218,6 +219,7 @@ static const Builtin BUILTINS[] = {
   {"wEq", 2, RULE_WORD2, OP_W_EQ, OP_SUM, 0, VIS_WORD},
   {"feMulC", 3, RULE_FE_MUL, OP_FE_MUL, OP_FAMILY, 0, VIS_WORD},
   {"ptMulC", 3, RULE_PT_MUL, OP_PT_MUL, OP_FAMILY, 0, VIS_WORD},
+  {"pairCheckC", 2, RULE_PAIR_CHECK, OP_PAIR_CHECK, OP_SUM, 0, VIS_WORD},
 };
 
 #define BUILTIN_COUNT ((uint32_t)(sizeof BUILTINS / sizeof BUILTINS[0]))
@@ -2279,6 +2281,23 @@ static const Core *rule_pt_mul(Call *k) {
   return args[2] == NULL ? NULL : core_op(c, OP_PT_MUL, 0, 0, args, 3);
 }
 
+/* pairCheckC md ps (S8b, USER ruling Q-S8b-1 (a)): the pairing check of the
+   domain def pairCheck, as a C builtin. md has the type FeMod and ps the type
+   PairList. The result has the type Sum Unit Unit (inr tt is yes). The domain
+   file declares FeMod and PairList. */
+static const Core *rule_pair_check(Call *k) {
+  Checker *c = k->c;
+  uint32_t mod = find_family(c->m, "FeMod");
+  uint32_t pl = find_family(c->m, "PairList");
+  const Core *args[2];
+  if (mod >= c->m->family_count || pl >= c->m->family_count)
+    return NULL;
+  args[0] = check(c, k->args[0], val_op(c->m, VAL_OP, OP_FAMILY, mod, 0, NULL, 0));
+  args[1] = args[0] == NULL ? NULL : check(c, k->args[1], val_op(c->m, VAL_OP, OP_FAMILY, pl, 0, NULL, 0));
+  k->type = prim_result(c, OP_SUM, NULL);
+  return args[1] == NULL ? NULL : core_op(c, OP_PAIR_CHECK, 0, 0, args, 2);
+}
+
 /* Fin n: n : Nat, Fin n : Type 0. */
 static const Core *rule_fin(Call *k) {
   const Core *n = check(k->c, k->args[0], nat_type(k->c));
@@ -2484,6 +2503,8 @@ static const Core *rule(Call *k) {
     return rule_fe_mul(k);
   case RULE_PT_MUL:
     return rule_pt_mul(k);
+  case RULE_PAIR_CHECK:
+    return rule_pair_check(k);
   case RULE_FIN_OP:
     return rule_fin_op(k);
   case RULE_FIN:
@@ -2563,7 +2584,7 @@ static void law_field(Checker *c, const CtorInfo *ci, uint32_t j) {
   const char *fam = c->m->families[ci->family].name;
   const char *field = ci->fields[j].name;
   uint32_t i;
-  if (d->code == NULL || strcmp(d->code, "OOM") == 0 || fam == NULL || field == NULL)
+  if (d->code == NULL || kept_failure(d->code) || fam == NULL || field == NULL)
     return;
   for (i = 0; i < (uint32_t)(sizeof LAW_FIELDS / sizeof LAW_FIELDS[0]); i++) {
     if (strcmp(fam, LAW_FIELDS[i].family) == 0 && strcmp(field, LAW_FIELDS[i].field) == 0) {
@@ -5078,6 +5099,9 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, C
   c.mode = mode;
   for (i = 0; i < decls->count; i++) {
     checker_reset(&c, i, decls->items[i].name);
+    /* Each declaration starts with the full fuel (Q-S8b-15), thus a
+       program does not lose fuel to the prelude before it. */
+    m->fuel = EVAL_FUEL_STEPS;
     if (!check_decl(&c, &decls->items[i]))
       return 0;
     /* The other sorts of a block are checked with its first sort (S6). */

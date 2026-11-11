@@ -585,20 +585,24 @@ static int apply_into(Low *l, Buf *b, const Value *fn, const Operand *args, uint
   return got(l, v) && lower_into(l, b, v, res);
 }
 
-/* A C builtin of 3 arguments (S8a): feMulC md a b (USER ruling Q-S8a-6 (a))
-   or ptMulC md k p (Q-S8a-7 (a)), as OP tells. Wasm runs the guest spec: the
-   value of the domain def feMul or ptMul, applied to the three arguments, is
-   lowered in place of the C builtin (the lowering inlines each domain def). */
+/* A C builtin (S8a, S8b): feMulC md a b (USER ruling Q-S8a-6 (a)), ptMulC md
+   k p (Q-S8a-7 (a)) or pairCheckC md ps (Q-S8b-1 (a)), as OP tells. Wasm
+   runs the guest spec: the value of the domain def feMul, ptMul or
+   pairCheck, applied to the arguments, is lowered in place of the C builtin
+   (the lowering inlines each domain def). */
 static int builtin_spec(Low *l, Buf *b, const Value *v, Op op, Operand *out) {
-  const char *spec = op == OP_PT_MUL ? "ptMul" : "feMul";
+  const char *spec = op == OP_PAIR_CHECK ? "pairCheck" : op == OP_PT_MUL ? "ptMul" : "feMul";
+  uint32_t arity = op == OP_PAIR_CHECK ? 2u : 3u;
   const Value *f = NULL;
   uint32_t i;
   for (i = 0u; i < l->m->def_count && f == NULL; i++)
     if (strcmp(l->m->defs[i].name, spec) == 0)
       f = def_value(l->m, i);
   if (f == NULL && !l->m->diag->set)
-    return refuse(l, op == OP_PT_MUL ? "ptMulC without the domain def ptMul" : "feMulC without the domain def feMul");
-  for (i = 0u; i < 3u && f != NULL; i++)
+    return refuse(l, op == OP_PAIR_CHECK ? "pairCheckC without the domain def pairCheck"
+                     : op == OP_PT_MUL ? "ptMulC without the domain def ptMul"
+                                       : "feMulC without the domain def feMul");
+  for (i = 0u; i < arity && f != NULL; i++)
     f = apply_value(l->m, f, v->args[i]);
   return got(l, f) && lower(l, b, f, out);
 }
@@ -702,6 +706,7 @@ static int lower_canon(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_W_EQ:
   case OP_FE_MUL:
   case OP_PT_MUL:
+  case OP_PAIR_CHECK:
   case OP_DEF_APP:
   case OP_NAT_SUB:
   case OP_NAT_EQ:
@@ -1335,6 +1340,8 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
     return builtin_spec(l, b, v, OP_FE_MUL, out);
   case OP_PT_MUL:
     return builtin_spec(l, b, v, OP_PT_MUL, out);
+  case OP_PAIR_CHECK:
+    return builtin_spec(l, b, v, OP_PAIR_CHECK, out);
   case OP_DEF_APP:
     return sealed_spec(l, b, v, out);
   case OP_NONZERO_OF:

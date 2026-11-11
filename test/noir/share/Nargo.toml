@@ -1,0 +1,6 @@
+[package]
+name = "share"
+type = "bin"
+authors = [""]
+
+[dependencies]

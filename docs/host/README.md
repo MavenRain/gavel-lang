@@ -214,7 +214,7 @@ module's IR; node and `langc eval` must agree on every result.
   declared type.
 - A definition with a `List`, `Prod` or other non-scalar result is not an
   entry. `ir` and `abi` skip it.
-- `langc eval` stops after 20000000 steps (`EVAL_FUEL`). The Wasm module
+- `langc eval` stops after 40000000 steps (`EVAL_FUEL`). The Wasm module
   has no step limit, so a large loop count can run on Wasm and stop in
   `eval`. The grid of `test/grid.awk` uses large values only for
   entries with no loop.

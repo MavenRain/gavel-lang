@@ -18,7 +18,11 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S8a DONE (commit pending), S8b NEXT. S8a adds keccak-256,
+Status: S8b DONE (commit pending), S8c NEXT. S8b adds the BN254 pairing
+(the C builtin `pairCheckC` and the guest spec), the Groth16 verifier
+`g16Verify`, `elgVrf` on Groth16, `outcomeVrf`, `shareVrf` and the golden
+Noir proofs in `test/noir/` (Q-S8b-1 (a) to Q-S8b-20 (a)).
+S8a DONE: keccak-256,
 Poseidon, the BN254 G1 curve, the Schnorr check, the builtins `feMulC` and
 `ptMulC`, the signed certificate and the Poseidon messages, and the
 kernel parts for them: the open `wEq` rule, the sealed defs and the memo
@@ -41,7 +45,7 @@ deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
 `append`, `paramsAt`, `Machine`, `Verdicts`, `replay`, `slashedOf`, the
 laws G4 and G5, `REFUSE_FIXPOINT`, `REFUSE_CLOCK` and the ballot half of
 `REFUSE_BOUND` (Q-S7-1 (a) to Q-S7-10 (a)). Section 1 has the rulings.
-Next: S8b (the BN254 pairing and the Noir verifier).
+Next: S8c (ChaCha20, the seed input and the MPC output check).
 
 ## 1. Rulings
 
@@ -154,6 +158,26 @@ Next: S8b (the BN254 pairing and the Noir verifier).
 | 2026-11-08 | Q-S8a-8 "(a) Kernel wEq rule": `wEq x y` gives `inr unit` when x and y have the same form, also for open words (`word_same` in `src/front/eval.c`, a bounded structural test). `feEqRefl` proves `feEq a a` is `inr unit` for an open a, and `p3Slash` uses it, so P3 stays an open law on an Fe tag. The rule is in `src/front/eval.c`, not in `check.c`, because the check only builds the Core term. |
 | 2026-11-08 | Q-S8a-9 "(a) Closed-only unfolding": the sealed defs `hsMsg` and `schnorrCheck` unfold only on closed arguments. On an open argument the application stays neutral (`OP_DEF_APP`), and conversion compares it by the def and the arguments. The eval rows do not change, and the proof field `eaOk` (Q-S7-4 (a)) stays. |
 | 2026-11-09 | Q-S8a-10 "(a) Memo of closed sealed applications": the machine keeps a memo of each closed sealed application (the def and the arguments). Each distinct `hsMsg` or `schnorrCheck` value is computed one time in a langc run, and the list-bound walk and the eval rows use the memo. The memo-ok rule: a sealed def whose body reaches a `LIST_BOUNDS` family gets no memo, so a memo hit hides no list from the bound check. |
+| 2026-11-09 | Q-S8b-1 "(a) C pairing builtin": the pairing check is the C builtin `pairCheckC` (`VIS_WORD`). The guest tower, the Miller loop and the final exponentiation are the spec, and Wasm runs the spec (OI-17). |
+| 2026-11-09 | Q-S8b-2 "(a) Groth16": the verifier is Groth16 on BN254: an MSM on G1 with `ptMulC`, then one check of 4 pairs. |
+| 2026-11-09 | Q-S8b-3 "(b) Real Noir proofs now": the golden proofs are real proofs of Noir circuits. |
+| 2026-11-09 | Q-S8b-4 "(b) All three now": `elgVrf`, `outcomeVrf` and `shareVrf` are all built at S8b. |
+| 2026-11-09 | Q-S8b-5 "(a) noir-groth16 + snarkjs": the proofs come from Noir with a Groth16 back end, and snarkjs. These are generation tools only (circomlibjs 0.1.7 too). The gate does not use them. |
+| 2026-11-09 | Q-S8b-6 "(a) Golden files, offline gate": the golden files are in `test/noir/`, and the gate is offline. |
+| 2026-11-09 | Q-S8b-7 "(b) Real eligibility now": the eligibility circuit is the real Alg 2 relation. The outcome and share circuits are stubs. |
+| 2026-11-09 | Q-S8b-8 "(a) On-curve + G2 subgroup": `pairCheckC` and the spec check that each point is on its curve and that each G2 point is in the subgroup. |
+| 2026-11-09 | Q-S8b-9 "(a) USER runs script": the USER runs the generation script once, outside the gate. The script and its tools are not in the repo. |
+| 2026-11-09 | Q-S8b-10 "(a) hez ptau 14 + fixed p2": the setup is the Hermez powers of tau file of power 14 and one phase-2 contribution with fixed entropy. The keys are for tests only (OI-39). |
+| 2026-11-09 | Q-S8b-11 "(a) Tagged hsMsg, depth 8": the circuit hash is hsMsg(tag, x, y) = poseidon2(tag, poseidon2(x, y)), and the Merkle depth is 8. |
+| 2026-11-09 | Q-S8b-12 "(a) Fixture constants": the verification keys are domain data defs (`build/cryptotool noir` converts `verification_key.json`). The stub publics are (auction, winner handle, price) for the outcome and (auction, share index, share commitment) for a share. |
+| 2026-11-09 | Q-S8b-13 "(c) Private witness (paper)": AucID is a private witness of the eligibility circuit. The statement is (root, handle, commitment), and the `elgVrf` signature does not change. OI-37 records the result. |
+| 2026-11-09 | Q-S8b-14 "(a) Fifth tag": the secret commitment is C_u = hsMsg(7, rho_u, 0). The tags are 3 leaf, 4 node, 5 handle, 6 commitment and 7 secret (0, 1 and 2 are the message tags). |
+| 2026-11-10 | Q-S8b-15 (a): `check_program` gives each declaration a fresh fuel, and a law field keeps the kept failure codes: `EVAL_FUEL` does not become a law refusal. |
+| 2026-11-10 | Q-S8b-16 (b): cut the check-time evaluation of the spec defs: each Fp2 word takes its modulus through `mdGate2`. |
+| 2026-11-10 | Q-S8b-17 (a): a second golden eligibility proof (`test/noir/elig2`): the same deposit and handle, a second bid, so a second commitment. The examples use the golden statements, and the slash example still gives `slashed`. |
+| 2026-11-10 | Q-S8b-18 (a): there is no `amToFe` word. `outcomeVrf` reads the price by an inline elim and is the fifth `Amount` reader. |
+| 2026-11-10 | Q-S8b-19 (a): `EVAL_FUEL_STEPS` goes from 20000000 to 40000000: with the golden statements, `replayAll` in `examples/log.lang` replays an amend, a slash and an admit. |
+| 2026-11-10 | Q-S8b-20 (a): `test/gate.sh` runs `build/cryptotool noir` on the 4 golden dirs and prints `noir: 4 golden proofs passed`. |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -346,7 +370,10 @@ discharged.
 | K1 | Poseidon is collision resistant | ASSUMED | the S8a def of Poseidon (Q-S8-5 (a), Q-S8-8 (a)) |
 | K2 | keccak-256 is a random oracle for the Schnorr challenge | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
 | K3 | Schnorr is EUF-CMA under discrete log on BN254 G1 | ASSUMED | the S8a def of `schnorrCheck` (Q-S8-6 (a), Q-S8-8 (a)) |
-| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 501 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
+| K4 | Groth16 on BN254 is knowledge sound | ASSUMED | the S8b def of `g16Verify` (Q-S8b-2 (a)) |
+| K5 | The Groth16 setup of each circuit is honest | EXTERNAL | the setup of a deploy; the keys of `test/noir/` are for tests only (Q-S8b-10 (a), OI-39) |
+| E1 | The Word and field ops equal the C oracle on the vectors | EXTERNAL | `crypto oracle: 537 rows, 0 mismatches` (`build/cryptotool`, `src/crypto` from quorum-lang 8d1a113; Q-S8-7 (a), Q-S8-9 (a)) |
+| E2 | The guest pairing spec, the guest Groth16 verifier and the C check agree on the vectors and the golden proofs | EXTERNAL | the 16 rows of `test/crypto/pair-spec.lang`, the 18 rows of `test/crypto/g16.lang`, `noir: 4 golden proofs passed`, the EIP-197 known answers in the `build/cryptotool` self-check (Q-S8b-6 (a), Q-S8b-20 (a)) |
 
 Count at S1: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
 ASSUMED 9 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3), AT TARGET 2 (F1, Z4),
@@ -355,6 +382,9 @@ EXTERNAL 3 (G6, A3, M2). Total 24.
 Count at S8: DISCHARGED 10 (P2, P3, G1, G2, G3, G4, G5, A1, A2, A4),
 ASSUMED 12 (P1, P4, P5, Z1, Z2, Z3, Z5, M1, M3, K1, K2, K3), AT TARGET 2
 (F1, Z4), EXTERNAL 4 (G6, A3, M2, E1). Total 28.
+
+Count at S8b: DISCHARGED 10 (no change), ASSUMED 13 (K4 is new), AT
+TARGET 2 (F1, Z4), EXTERNAL 6 (K5 and E2 are new). Total 31.
 
 ## 7. Refusals
 
@@ -418,6 +448,41 @@ guest `schnorrCheck` (the 7 `scCheck` oracle rows), the C `sc_verify`
 and the domain def `feEqRefl`), the seal (`entryVerdict` in the domain
 check) and the memo (the 3 main examples in guest mode give
 `EVAL_FUEL`).
+
+S8b adds three kernel parts (`src/front/core.h`, `src/front/check.c`,
+`src/front/eval.c`, `src/front/lower.c`):
+
+- The C builtin `pairCheckC` (Q-S8b-1 (a), Q-S8b-8 (a)), `VIS_WORD` as
+  the S8a builtins (the check row `test/check/pair-check-c.lang`). It
+  gives yes when the product of the pairings of its points is 1. First it
+  checks that each point is on its curve and that each G2 point is in the
+  subgroup of order r. The guest def `pairCheck` (the tower Fp2, Fp6 and
+  Fp12, the Miller loop and the final exponentiation) stays the spec. The
+  Wasm lowering applies the spec, so Wasm runs the spec. No gate row runs
+  the pairing in Wasm (OI-17, OI-38).
+- The third sealed def, `g16Verify` (3 of `SEAL_MAX` 4). `pairCheck` has
+  no seal: no guest def gives it open points, because `g16Verify` calls
+  `pairCheckC`, and a C builtin does not unfold on an open argument.
+- The fuel (Q-S8b-15 (a), Q-S8b-19 (a)). `check_program` gives each
+  declaration a fresh `EVAL_FUEL_STEPS`, which is 40000000 (20000000
+  before S8b). A law field that uses all the fuel gives `EVAL_FUEL`, not
+  the law refusal (`test/check/fuel-law.lang`).
+
+A test fails when each part is off (S8b mutants, 29 of 29 KILLED). At
+the close, 10 mutants: the root and commitment publics of `elgVrf`
+swapped, a wrong price elim in `outcomeVrf` and a wrong index in
+`shareVrf` (the rows `vrfElig`, `vrfOutcome` and `vrfShare` of
+`test/crypto/g16.lang`); two Frobenius constants swapped (2 of the 16
+`test/crypto/pair-spec.lang` rows); the fuel back at 20000000 (the check
+of `examples/log.lang`); no fresh fuel for each declaration (`slashValid`
+in `examples/sealed.lang`); one golden proof for both bids
+(`slashValid`); the C want of each g16 row set to yes (10 of the 18
+rows); one digit of the fixture commitment (`admitValid`); one public of
+a golden proof (the `noir` gate line). During the build, 19 mutants: the
+law-field fuel rule; the EIP-197 and Fp12 rows of the C oracle (2); the
+Frobenius and Miller value rows (2); the golden check (4 data and 3 code
+mutants); the chain rows (4); the public below r check; the second
+eligibility witness; the canonical coordinate check.
 
 ### 8.2 The five targets
 
@@ -562,10 +627,10 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S5 | `Hash`, `Party`, `Members`, `Committee`, `Certificate`, `Params`, `checkCert`, `outcomeOf` and the Size and Sum words (Q-S5-1 (a) to Q-S5-11 (a)); G1 to G3 as proof fields (`cmSafe`, `cmCensor`, `prFork`); `REFUSE_SAFETY`, `REFUSE_CENSOR`, `REFUSE_FORK` (Q-S5-9 (a)); the committee half of `REFUSE_BOUND` (`COMMITTEE_BOUND` 1024). Gate: 34 examples, 17 parse refusals, 169 check refusals, 10 kit-only refusals, 1 time hint, 89 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 37 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S4: examples 32 to 34 (`examples/committee.lang`, `examples/committee-bound-edge.lang`), check refusals 163 to 169 (6 rows), evals 83 to 89 (6 committee rows), Wasm modules 35 to 37 (the 2 new examples); all other counts are the same. Mutants M1 (the `REFUSE_SAFETY` mapping), M2 (the `REFUSE_CENSOR` mapping), M3 (the `REFUSE_FORK` mapping), M4 (`COMMITTEE_BOUND` 1025), M5 (G1 `f <= t`), M6 (G2 with f dropped), M7 (G3 with `ta` for `ta + ta`): M1 to M7 KILLED (7/7). | DONE |
 | S6 | `Slot`, `Height`, `AucID`, `Root`, `Handle`, `Commitment`, `Deposit`, `EligibilityProof`, `Sealed`, `SealedBid`, `Reason`, `Verdict`, `elgVrf`, `admit`, `slash`, `Opening`, `release`; the deadline fields of `Params` (`prSlot`, `prStampEnd`, `prRelease`, `prOrder`); P2, P3; `REFUSE_PEEK`, `REFUSE_DEADLINE`; the sealed and handle bounds (Q-S6-1 (b) to Q-S6-9 (a)). Gate: 36 examples, 17 parse refusals, 177 check refusals, 10 kit-only refusals, 1 time hint, 104 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 39 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S5: examples 34 to 36 (`examples/sealed.lang`, `examples/sealed-bound-edge.lang`), check refusals 169 to 177 (8 rows), evals 89 to 104 (15 sealed rows), Wasm modules 37 to 39; all other counts are the same. Mutants M1 (the `REFUSE_PEEK` site), M2 (the `prOrder` code), M3 (the `opOk` code), M4 (`openMsg` at the stamp end), M5 (`slash` without the equal-commitment test), M6 (`htLe` for `htLt`), M7 (`SEALED_BID_BOUND` 1025), M8 (`HANDLE_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
 | S7 | `Ballot`, `Ballots`, `Amendment`, `authorize`, `amendCheck`, `Entry`, `Log` (CM), `append`, `paramsAt`, `Machine` (CC), `Verdicts`, `replay`, `slashedOf` (Q-S7-1 (a) to Q-S7-10 (a)); G4 (`appendNilL`, `appendNilR`, `appendAssoc`), G5, P3 on the log (`p3Replay`); `REFUSE_REC` renamed `REFUSE_FIXPOINT`, `REFUSE_TIME` renamed `REFUSE_CLOCK`; the ballot half of `REFUSE_BOUND` (`BALLOT_BOUND` 1024); a linear `szLe`. The S7 word is `amendCheck`, not `amend`: the DAO prelude word `amend` (`src/front/front.c`) gave `REFUSE_NAME` (rule R4) in the regimes and oneuse examples. Gate: 37 examples, 17 parse refusals, 182 check refusals, 10 kit-only refusals, 1 time hint, 115 evals, 1 build, 1 ir lowered, 5 ir refusals, 2 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 40 Wasm modules valid, 998 differential cases with 0 mismatches; the review, domain and path regressions pass. Changes against S6: examples 36 to 37 (`examples/log.lang`), check refusals 177 to 182 (`amend-self`, `bound-ballots`, `time-deadline`, `time-expires`, `time-timeout`), evals 104 to 115 (11 log rows), Wasm modules 39 to 40; all other counts are the same. Mutants M1 (the `REFUSE_FIXPOINT` site), M2 (the `eaOk` code), M3 (the `deadline` time word), M4 (`append`, cons case: a domain load failure), M5 (`paramsAt` at height 0), M6 (`entryVerdict` slash case), M7 (`entrySlashed`), M8 (`BALLOT_BOUND` 1025): M1 to M8 KILLED (8/8). | DONE |
-| S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` 20M and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
+| S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` (20M at S8, 40M from S8b) and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
 | S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). Built (Q-S8a-1 (a) to Q-S8a-10 (a)): the builtins `feMulC` and `ptMulC`; keccak-256 (`keccakF`, `kcChallenge`); Poseidon (`poseidon2`, the constants as data); `Pt1` and `ptMul`; `schnorrCheck` (the C check `sc_verify` is in `test/cryptotool.c`; there is no `schnorr.c` copy); `szToFe`, `hsMsg`, `hsOf`; the fixtures; the switch of `Hash` (Fe tag), `Party` (Pt1 key) and `Certificate` (signed entries); `szPair` and `szTri` out; the open `wEq` rule, the sealed defs and the memo. Gate: 501 oracle rows with 0 mismatches, 190 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 400 to 650 s. Mutants: 9 of 9 KILLED. | DONE |
-| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). | NEXT |
-| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | |
+| S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). Built (Q-S8b-1 (a) to Q-S8b-20 (a)): the C builtin `pairCheckC` with the on-curve and G2 subgroup checks; the guest spec (the tower Fp2, Fp6 and Fp12, the Miller loop, the final exponentiation, `pairCheck`; `mdGate2` keeps the spec stuck at check time); `g16Verify` (sealed; the MSM with `ptMulC`, then one check of 4 pairs) with the families `G16Vk`, `G16Pubs` and `G16Ics`; the keys `eligVk`, `outcomeVk` and `shareVk` as domain data; `EligibilityProof := elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)` and `elgVrf` on Groth16 (closes OI-28); `OutcomeProof` with `outcomeVrf`, and `ShareProof` with `shareVrf`; the golden files in `test/noir/` (the Alg 2 eligibility circuit with 2 proofs, stub outcome and share circuits; the generation tools are not in the gate); `build/cryptotool noir NAME DIR` (the C Groth16 check and the key converter); the C pairing oracle with the EIP-197 known answers of revm-precompile 32.1.0; a fresh fuel for each declaration and `EVAL_FUEL_STEPS` 40M; the examples use the golden statements. There is no `amToFe` word: `outcomeVrf` is the fifth `Amount` reader. Gate: 537 oracle rows with 0 mismatches, `noir: 4 golden proofs passed`, 192 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 420 to 630 s of CPU time for one run. Mutants: 29 of 29 KILLED. New open items: OI-37, OI-38, OI-39. | DONE (commit pending) |
+| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. | NEXT |
 | S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | |
 | S10 | T1 part 2: `gaveld`, the Wasm engine (Q-S0-15), the demo D1 to D8. | |
 | S11 | T5: the JSON report, `docs/REPORT-JSON.md`. | |
@@ -628,13 +693,18 @@ Design notes from S7:
 - OI-5 The paper text says the proof shows the deposit is active; the
   displayed relation has no activity term (digest, sec 5.3).
 - OI-6 The paper text lists AucID as a witness; Alg 2 does not (digest).
+  S8b makes AucID a private witness of the eligibility circuit (Q-S8b-13
+  (c), OI-37).
 - OI-7 The slashUsr signature has no slot argument; signCom passes one
   (digest, Alg 1).
 - OI-8 The paper gives no leaf encoding, node hash, Poseidon parameters or
   field encoding of hu, cm and root (digest, sec 6). T2 must fix them.
   S8 fixes the field encoding (Q-S8-4 (a)): 8 Words, Montgomery inside,
-  canonical at each boundary. Poseidon is ruled for S8a (Q-S8-5 (a)). The
-  Merkle leaf and node encoding stay open for T2.
+  canonical at each boundary. Poseidon is ruled for S8a (Q-S8-5 (a)).
+  S8b fixes the Merkle encoding of the golden eligibility circuit
+  (Q-S8b-11 (a), Q-S8b-14 (a)): the hash is hsMsg(tag, x, y), the depth is
+  8, and the tags are 3 leaf, 4 node, 5 handle, 6 commitment and 7 secret.
+  T2 must use the same encoding.
 - OI-9 Committee loss can freeze the system. Recovery needs a clock. Not a
   v1 feature (ratify-lang OI-1).
 - OI-10 The outcome leaks the winner and the price. T5 states it.
@@ -650,8 +720,11 @@ Design notes from S7:
   the WRK port are fixed at S14b (a question then). No sibling source.
 - OI-16 The TFHE parameters, the noise bound of a share and the threshold
   key generation are fixed at S13. The key generation is EXTERNAL.
-- OI-17 The run time of the BN254 pairing and the Noir verifier in the
-  prelude under the C99 interpreter is not known. S8b measures it.
+- OI-17 MEASURED in part at S8b (Q-S8b-1 (a)). With the C builtin
+  `pairCheckC`, one closed `g16Verify` row takes 0.2 to 0.6 s of CPU time
+  under the C99 interpreter. The guest spec of the pairing does not fit
+  the arena (OI-38), so its run time is not measured. S9 measures the Wasm
+  run of the spec.
 - OI-18 The reason for a lost link, a late message or a bad message in
   member mode is fixed at S14c.
 - OI-19 From S18 each gate run needs the network and the USER test inputs
@@ -687,9 +760,10 @@ Design notes from S7:
 - OI-27 CLOSED at S6. `Params` has the deadline fields `prSlot`,
   `prStampEnd` and `prRelease` and the proof field `prOrder`, and `release`
   takes an `Opening` with the proof field `opOk` (Q-S6-1 (b), Q-S6-2 (a)).
-- OI-28 `elgVrf` is an ideal check until S8b: it says yes when the root,
-  the handle and the commitment of the proof match (Q-S6-5 (a)). At S8b it
-  becomes the Noir verifier.
+- OI-28 CLOSED at S8b (Q-S8b-3 (b), Q-S8b-4 (b)). `EligibilityProof` is
+  `elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)`, a Groth16 proof, and
+  `elgVrf` runs `g16Verify eligVk` on the root, the handle and the
+  commitment. The ideal record of Q-S6-5 (a) is gone.
 - OI-29 CLOSED at S7. `replay` takes `Handles`, the slashed set, from the
   Log (Q-S7-4 (a)). `admit` keeps its S6 signature, and `entryVerdict`
   calls it with the handles so far.
@@ -710,6 +784,21 @@ Design notes from S7:
 - OI-36 The indexed `Log` has no bound: a closed `Log` value of any length
   passes the check. `Verdicts` has no bound too. Only `Ballots` has one
   (Q-S7-10 (a)). The T1 entry bounds the log (S9).
+- OI-37 AucID is a private witness of the eligibility circuit (Q-S8b-13
+  (c)); the statement is the root, the handle and the commitment. Thus a
+  deposit can get a second handle with a second AucID, and the P3 slash
+  does not catch it.
+- OI-38 A full guest pairing (`pairCheck`) does not fit the 1 GiB arena of
+  the evaluator. The gate compares the spec with the C oracle on value
+  rows and short chain rows (`test/crypto/pair-spec.lang`), and
+  `g16Verify` calls `pairCheckC`. A Wasm run of the spec needs an arena
+  reset or a larger limit (S9, OI-17).
+- OI-39 The Groth16 keys in `domain/domain.lang` and `test/noir/` are for
+  tests only (Q-S8b-10 (a)): the phase-2 entropy is fixed, so the setup
+  gives no soundness against a person who knows it. The outcome and share
+  circuits are stubs (Q-S8b-7 (b)). The generation script and its tools
+  are not in the repo. A deploy needs the real circuits and the keys of a
+  real setup.
 
 ## 14. Questions for the USER (S0)
 

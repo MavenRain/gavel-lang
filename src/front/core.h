@@ -12,7 +12,7 @@
 #include "front/base.h"
 
 #define EVAL_DEPTH_LIMIT 2000u
-#define EVAL_FUEL_STEPS 20000000u
+#define EVAL_FUEL_STEPS 40000000u
 
 /* The core names: type formers, constructors and operations. */
 typedef enum {
@@ -106,6 +106,9 @@ typedef enum {
   /* S8a (USER ruling Q-S8a-7 (a)): ptMulC md k p, the scalar product of
      the domain def ptMul as a C builtin. */
   OP_PT_MUL,
+  /* S8b (USER ruling Q-S8b-1 (a)): pairCheckC md ps, the pairing check of
+     the domain def pairCheck as a C builtin. */
+  OP_PAIR_CHECK,
   /* S8a (USER ruling Q-S8a-9 (a)): a sealed def (eval.c SEALED_DEFS) on
      arguments that are not all closed. A neutral: INST is the def index and
      the args are the arguments of the def, in order. */

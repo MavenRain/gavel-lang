@@ -1,0 +1,6 @@
+[package]
+name = "outcome"
+type = "bin"
+authors = [""]
+
+[dependencies]

@@ -1,0 +1,45 @@
+-- The Groth16 rows (S8b 4d). The proofs and publics come from the golden
+-- files in test/noir/ (cryptotool noir NAME test/noir/NAME); the elig and
+-- elig2 data are in domain/domain.lang, where the examples see them. The first 3
+-- rows are valid proofs (inr). The other rows must be inl: public 0 + 1,
+-- public 0 + r (an alias of public 0), a short public list, A and C swapped,
+-- and the elig proof under the outcome key.
+def outcomePrfA : Pt1 := pt1 (fe 0x8ba7009cw 0x1f6c4f25w 0x599649eaw 0x167f8095w 0x9c0f9e16w 0xca2e8bb1w 0xf1729537w 0x18e34634w) (fe 0xb08a40eew 0x760f5d0ew 0x8a4fa75aw 0x30dfa815w 0xbf0b14b0w 0xa8208f6fw 0xe488a785w 0x0f8a84d2w)
+def outcomePrfB : Pt2 := pt2 (fp2 (fe 0x1976d30fw 0x0632bf01w 0x1e908107w 0xf132de3dw 0x38636228w 0xf5c4061aw 0x7406b28dw 0x0fc09cb9w) (fe 0x2542a86dw 0xef78f12dw 0xaabe4d9bw 0xa4450ea6w 0x55b979f7w 0xefaac8f9w 0xb254bbfaw 0x08de309fw)) (fp2 (fe 0x9c3e046dw 0x550e0cf9w 0x21dafef5w 0xf225a304w 0xf3738cfbw 0x2d4f49f7w 0x9eb8ef56w 0x0729b325w) (fe 0x5df28350w 0x94a6b32aw 0xb3e8219aw 0x6db63318w 0x1d7985b2w 0x8a1b32f4w 0xc0a2dc57w 0x303e7aa8w))
+def outcomePrfC : Pt1 := pt1 (fe 0x414c0b6ew 0xe2f400a1w 0x7816686fw 0x9fd11294w 0x7d332623w 0xc4559f5aw 0x041874b6w 0x21b0d21fw) (fe 0xd222069fw 0xec541cf5w 0x39ac3563w 0x8094cdeaw 0x69bfa19ew 0x5d2354f2w 0xf825c61ew 0x0076d870w)
+def outcomePub0 : Fe := fe 0x00000001w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def outcomePub1 : Fe := fe 0x00000005w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def outcomePub2 : Fe := fe 0x00000007w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def sharePrfA : Pt1 := pt1 (fe 0x920dc933w 0xeee999f1w 0xd5f6400bw 0x4d464883w 0x8692767dw 0x284337daw 0x9b4f2f2bw 0x2c7d12ebw) (fe 0x7f62c87cw 0x3f93c354w 0x979650bew 0x5f5febcew 0x9168bcbfw 0x43f11fa3w 0x2d8ccdc8w 0x2ab2ea86w)
+def sharePrfB : Pt2 := pt2 (fp2 (fe 0xafe607efw 0x996c508aw 0x3bb0f724w 0x2107570ew 0xe13f11d6w 0x59a25756w 0x0f1cc2a9w 0x235fb23dw) (fe 0xe1b471bew 0x88ac5a90w 0x76b27ef6w 0x74a872ffw 0xb8a53c31w 0x752d2a72w 0x9c12099aw 0x04a3f9b6w)) (fp2 (fe 0x65dfd977w 0x91ee514ew 0x65cdf2e5w 0xd733e9e0w 0xa5b3f0dew 0xe7c1348fw 0x02d248faw 0x3061e11bw) (fe 0x8f34c05bw 0x2cd489a0w 0x0cbfb71ew 0x677a80b5w 0xcc4397daw 0xff154c71w 0xdb26d672w 0x0f77448dw))
+def sharePrfC : Pt1 := pt1 (fe 0xf1a98865w 0x2e7f16f9w 0x6e611668w 0x1e25682fw 0x39dadfabw 0x97424cd4w 0x3de47bf9w 0x0c09cc80w) (fe 0xfb6d1d0fw 0xee435c74w 0x43ad96cbw 0x8afe5e60w 0xda9cbe8cw 0xd192af30w 0x4131b26fw 0x164e4846w)
+def sharePub0 : Fe := fe 0x00000001w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def sharePub1 : Fe := fe 0x00000002w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def sharePub2 : Fe := fe 0x00000009w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w 0x00000000w
+def g16PrfANc : Pt1 := pt1 (fe 0x66a3cf5cw 0x4e32beafw 0x8e4a5fffw 0xf2ee76a4w 0x5c861eeaw 0xa4b5e329w 0xc79d051aw 0x3be62956w) (fe 0x74441d55w 0x5d0d01dcw 0x64decbfew 0xeeae3d5fw 0x5fd4694bw 0x0b030d92w 0x3ae57a73w 0x2aaac682w)
+def g16P0One : Fe := fe 0x01c257fbw 0xc6f142c2w 0xbe07f625w 0x4d23537dw 0x6fccee79w 0x70dc0c38w 0xe5744ff7w 0x29a72ffew
+def g16P0Alias : Fe := fe 0xf1c257fbw 0x0ad33855w 0x37c166b7w 0x75573bc6w 0xf14e46d6w 0x292c51eew 0xc6a5f021w 0x5a0b7e71w
+def g16Elig : Sum Unit Unit := g16Verify eligVk (pbNext eligPub0 (pbNext eligPub1 (pbNext eligPub2 pbEnd))) eligPrfA eligPrfB eligPrfC
+def g16Outcome : Sum Unit Unit := g16Verify outcomeVk (pbNext outcomePub0 (pbNext outcomePub1 (pbNext outcomePub2 pbEnd))) outcomePrfA outcomePrfB outcomePrfC
+def g16Share : Sum Unit Unit := g16Verify shareVk (pbNext sharePub0 (pbNext sharePub1 (pbNext sharePub2 pbEnd))) sharePrfA sharePrfB sharePrfC
+def g16PubOne : Sum Unit Unit := g16Verify eligVk (pbNext g16P0One (pbNext eligPub1 (pbNext eligPub2 pbEnd))) eligPrfA eligPrfB eligPrfC
+def g16PubAlias : Sum Unit Unit := g16Verify eligVk (pbNext g16P0Alias (pbNext eligPub1 (pbNext eligPub2 pbEnd))) eligPrfA eligPrfB eligPrfC
+def g16Short : Sum Unit Unit := g16Verify eligVk (pbNext eligPub0 (pbNext eligPub1 pbEnd)) eligPrfA eligPrfB eligPrfC
+def g16SwapAC : Sum Unit Unit := g16Verify eligVk (pbNext eligPub0 (pbNext eligPub1 (pbNext eligPub2 pbEnd))) eligPrfC eligPrfB eligPrfA
+def g16Cross : Sum Unit Unit := g16Verify outcomeVk (pbNext eligPub0 (pbNext eligPub1 (pbNext eligPub2 pbEnd))) eligPrfA eligPrfB eligPrfC
+-- The second elig proof (Q-S8b-17 (a): the same deposit and handle, a
+-- second bid) is valid under the elig key (inr). With the cm of the first
+-- elig proof, it must be inl. g16NonCanon: the elig proof with A.x + p
+-- (the same point mod p, not canonical) must be inl.
+def g16Elig2 : Sum Unit Unit := g16Verify eligVk (pbNext elig2Pub0 (pbNext elig2Pub1 (pbNext elig2Pub2 pbEnd))) elig2PrfA elig2PrfB elig2PrfC
+def g16Elig2Cm : Sum Unit Unit := g16Verify eligVk (pbNext elig2Pub0 (pbNext elig2Pub1 (pbNext eligPub2 pbEnd))) elig2PrfA elig2PrfB elig2PrfC
+def g16NonCanon : Sum Unit Unit := g16Verify eligVk (pbNext eligPub0 (pbNext eligPub1 (pbNext eligPub2 pbEnd))) g16PrfANc eligPrfB eligPrfC
+-- The verifier words (S8b 4d): elgVrf, outcomeVrf and shareVrf on the
+-- golden statements must be inr. With one changed public, each must be inl.
+def vrfElig : Sum Unit Unit := elgVrf (root (hash eligPub0)) (handle (hash eligPub1)) (commitment (hash eligPub2)) (elgProof eligPrfA eligPrfB eligPrfC)
+def vrfElig2 : Sum Unit Unit := elgVrf (root (hash elig2Pub0)) (handle (hash elig2Pub1)) (commitment (hash elig2Pub2)) (elgProof elig2PrfA elig2PrfB elig2PrfC)
+def vrfEligCm : Sum Unit Unit := elgVrf (root (hash eligPub0)) (handle (hash eligPub1)) (commitment (hash elig2Pub2)) (elgProof eligPrfA eligPrfB eligPrfC)
+def vrfOutcome : Sum Unit Unit := outcomeVrf (aucId (szS sz0)) (handle (hsOf (szS (szS (szS (szS (szS sz0))))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero))))))) (outcomeProof outcomePrfA outcomePrfB outcomePrfC)
+def vrfOutPrice : Sum Unit Unit := outcomeVrf (aucId (szS sz0)) (handle (hsOf (szS (szS (szS (szS (szS sz0))))))) (amSucc (amSucc (amSucc (amSucc (amSucc (amSucc amZero)))))) (outcomeProof outcomePrfA outcomePrfB outcomePrfC)
+def vrfShare : Sum Unit Unit := shareVrf (aucId (szS sz0)) (szS (szS sz0)) (commitment (hsOf (szS (szS (szS (szS (szS (szS (szS (szS (szS sz0))))))))))) (shareProof sharePrfA sharePrfB sharePrfC)
+def vrfShareIdx : Sum Unit Unit := shareVrf (aucId (szS sz0)) (szS (szS (szS sz0))) (commitment (hsOf (szS (szS (szS (szS (szS (szS (szS (szS (szS sz0))))))))))) (shareProof sharePrfA sharePrfB sharePrfC)

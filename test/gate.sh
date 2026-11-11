@@ -125,6 +125,23 @@ while IFS= read -r line; do
 done <"$tmp/crypto.txt"
 echo "crypto oracle: $crypto rows, $cryptobad mismatches"
 
+# `build/cryptotool noir NAME DIR` does the Groth16 check of the golden proof
+# in DIR in C and prints the 14 `def` lines of its domain data (S8b, Q-S8b-20
+# (a)). Each golden dir of test/noir must give exit 0 and 14 `def` lines.
+noir=0
+for name in elig elig2 outcome share; do
+  status=0
+  build/cryptotool noir "$name" "test/noir/$name" >"$tmp/noir.txt" 2>"$tmp/err" || status=$?
+  defs=$(rg -c '^def ' "$tmp/noir.txt" || true)
+  if [ "$status" -eq 0 ] && [ "$defs" = "14" ]; then
+    noir=$((noir + 1))
+  else
+    echo "FAIL noir $name: want exit 0 and 14 def lines, got exit $status and ${defs:-0}: $(head -n 1 "$tmp/err")"
+    fail=$((fail + 1))
+  fi
+done
+echo "noir: $noir golden proofs passed"
+
 # eval_refused STATUS CODE NAME [ARGS]: `langc --kit eval examples/entries.lang
 # NAME ARGS` must exit STATUS and print `langc: CODE: NAME: ...` on stderr.
 eval_refused() {

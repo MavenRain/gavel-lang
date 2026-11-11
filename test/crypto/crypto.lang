@@ -79,8 +79,8 @@ def hsMsgRow : Word -> Word -> Word -> Word -> Word -> Word -> Word -> Word -> W
 -- give inr unit.
 def msgHs2 : Fe := feFromMont frMod (szToFe (szS (szS sz0)))
 def msgHs3 : Fe := feFromMont frMod (szToFe (szS (szS (szS sz0))))
-def msgStA : Fe := hsMsg (szToFe sz0) (szToFe (szS sz0)) (szToFe (szS sz0))
-def msgStL : Fe := hsMsg (szToFe sz0) (szToFe (szS sz0)) (szToFe (szS (szS sz0)))
+def msgStA : Fe := hsMsg (szToFe sz0) (feToMont frMod eligPub2) (szToFe (szS sz0))
+def msgStL : Fe := hsMsg (szToFe sz0) (feToMont frMod eligPub2) (szToFe (szS (szS sz0)))
 def msgOpA : Fe := hsMsg (szToFe (szS sz0)) (szToFe (szS sz0)) (szToFe (szS (szS sz0)))
 def msgOpE : Fe := hsMsg (szToFe (szS sz0)) (szToFe (szS sz0)) (szToFe (szS sz0))
 def msgAmA : Fe := hsMsg (szToFe (szS (szS sz0))) (szToFe sz0) (szToFe sz0)
@@ -106,3 +106,11 @@ def ckAmAK1 : Sum Unit Unit := schnorrCheck kcRcs fxKey1 fxAmAK1R fxAmAK1S msgAm
 def ckAmAK2 : Sum Unit Unit := schnorrCheck kcRcs fxKey2 fxAmAK2R fxAmAK2S msgAmA
 def ckAmAK3 : Sum Unit Unit := schnorrCheck kcRcs fxKey3 fxAmAK3R fxAmAK3S msgAmA
 def ckAmAK4 : Sum Unit Unit := schnorrCheck kcRcs fxKey4 fxAmAK4R fxAmAK4S msgAmA
+-- The pairCheckC rows (S8b, Q-S8b-1 (a)): the C builtin pairCheckC on the
+-- generators in Montgomery form. pcYes checks e(G1, G2) e(-G1, G2) = 1 and
+-- gives 1 when the result is yes. pcNo checks e(G1, G2) = 1 and gives 1
+-- when the result is no.
+def g1GenM : Pt1 := ptToMont fpMod g1Gen
+def g1NegM : Pt1 := pt1 (p1X g1GenM) (feSub fpMod feZero (p1Y g1GenM))
+def pcYes : Nat := either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (pairCheckC fpMod (plPair g1GenM g2Gen (plPair g1NegM g2Gen plEnd)))
+def pcNo : Nat := either (fun (u : Unit) => 1) (fun (u : Unit) => 0) (pairCheckC fpMod (plPair g1GenM g2Gen plEnd))

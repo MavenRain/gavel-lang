@@ -1,6 +1,6 @@
 # gavel-lang status
 
-The build implements slice S8a of `docs/PLAN.md`: the Cubical TT kernel of
+The build implements slice S8b of `docs/PLAN.md`: the Cubical TT kernel of
 ratify-lang a46d5df (a port of permit-lang 3d47120), R0 in the kernel and
 the Wasm writer, ported from ratify-lang 71f2c22, without the affine layer
 (Q-S0-14 (a), Q-S2-1 (a), Q-S3-1 (a)), the auction rule (Q-S4-1 (a) to
@@ -8,8 +8,10 @@ Q-S4-7 (a)), the committee (Q-S5-1 (a) to Q-S5-11 (a)) and the sealed bid
 (Q-S6-1 (b) to Q-S6-9 (a)) the log (Q-S7-1 (a) to Q-S7-10 (a)) and the machine `Word`, the field and
 the C oracle (Q-S8-1 (a) to Q-S8-9 (a)) and the crypto prelude part 1:
 keccak-256, Poseidon, the G1 curve and the Schnorr check (Q-S8a-1 (a) to
-Q-S8a-10 (a)). It does not complete M0. S8a is DONE (commit pending). The
-next slice is S8b: the BN254 pairing and the Noir verifier.
+Q-S8a-10 (a)) and the crypto prelude part 2: the BN254 pairing and the
+Groth16 verifier of the Noir proofs (Q-S8b-1 (a) to Q-S8b-20 (a)). It does
+not complete M0. S8b is DONE (commit pending). The next slice is S8c:
+ChaCha20, the seed input and the MPC output check.
 
 ## Implemented
 
@@ -72,7 +74,7 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
   boundary), `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`,
   `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr` and `Fp`. The C oracle
   is `build/cryptotool` (`src/crypto` from quorum-lang 8d1a113). It prints
-  501 rows (424 at S8), and `test/gate.sh` evaluates each one
+  537 rows (424 at S8, 501 at S8a), and `test/gate.sh` evaluates each one
   (`test/crypto/crypto.lang` holds the field rows and the S8a rows,
   outside the Wasm set). A declaration or a name `ckks`, `approx`,
   `approximate`, `float` or `double` gives `REFUSE_APPROX`.
@@ -92,6 +94,26 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
   `schnorrCheck`, and the memo of closed sealed applications
   (`docs/PLAN.md` section 8.1). The `build/cryptotool` self-check
   verifies the Schnorr rows with the C `sc_verify`.
+- The crypto prelude part 2 (S8b, Q-S8b-1 (a) to Q-S8b-20 (a)): the BN254
+  pairing and the Groth16 verifier. `pairCheckC` is the C pairing check
+  (a kit builtin). It also checks that each point is on its curve and
+  that each G2 point is in the subgroup. The guest tower, Miller loop and
+  final exponentiation (`pairCheck`) are the spec.
+  `test/crypto/pair-spec.lang` compares the spec with the C oracle (16
+  rows). `g16Verify vk pubs a b c` is the Groth16 check (sealed): the
+  canonical checks, the MSM of the publics with `ptMulC`, then one
+  `pairCheckC` on 4 pairs. `EligibilityProof` is `elgProof (epA : Pt1)
+  (epB : Pt2) (epC : Pt1)`, and `elgVrf` runs `g16Verify eligVk` on the
+  root, the handle and the commitment. `outcomeVrf` and `shareVrf` do the
+  same for `OutcomeProof` and `ShareProof` with `outcomeVk` and
+  `shareVk`. The keys are domain data. `test/noir/` holds 4 golden proofs
+  (`elig`, `elig2`, `outcome`, `share`) of Noir circuits: the eligibility
+  circuit is Alg 2 of the paper, and the outcome and share circuits are
+  stubs. The gate is offline: it does not run the generation tools.
+  `build/cryptotool noir NAME DIR` checks a golden proof in C and prints
+  its def lines, and `test/crypto/g16.lang` has 18 rows for the guest
+  verifier. `examples/sealed.lang` and `examples/log.lang` use the golden
+  statements. Each declaration has a fresh fuel of 40000000 steps.
 - The state and history part of the kernel (`state`, `REFUSE_STATE`,
   `REFUSE_HISTORY_WRITE`), byte equal to a46d5df (Q-S2-4 (a)).
 - R0 (`docs/PLAN.md` section 2): the Nat operations are total, and a
@@ -99,9 +121,9 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
-- The gate: 38 examples, 18 parse refusals, 190 check refusals, 10
-  kit-only refusals, 1 time hint, 152 evals, 501 crypto oracle rows with 0
-  mismatches, 1 build, 1 ir lowered, 5 ir refusals, 3 ir lowerings, 4
+- The gate: 38 examples, 18 parse refusals, 192 check refusals, 10
+  kit-only refusals, 1 time hint, 152 evals, 537 crypto oracle rows with 0
+  mismatches, 4 golden Noir proofs, 1 build, 1 ir lowered, 5 ir refusals, 3 ir lowerings, 4
   notrap modules, 7 notrap bad rows, 10 spine evals, 42 Wasm modules
   valid, 1910 differential cases with 0 mismatches;
   the review, domain and path regressions. Each differential module
@@ -109,9 +131,9 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
 
 ## Remaining M0 work
 
-1. S8b and S8c: the crypto layers of `docs/PLAN.md` section 12 (the
-   crypto prelude). Each slice needs the slice before it; S8b needs the S8
-   and S8a commits first.
+1. S8c: the last crypto layer of `docs/PLAN.md` section 12 (ChaCha20,
+   the seed input and the MPC output check). S8c needs the S8b commit
+   first.
 2. S9 to S22: the targets T1 to T5, A1 to A7 and the close.
 
 ## Known limits
@@ -127,12 +149,14 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
 - An open bid list passes the check at any length. The T1 entry bounds it
   (OI-22).
 - The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
-- `hsMsg` and `schnorrCheck` are sealed: on an open argument they do not
-  unfold, so a law cannot look inside them (Q-S8a-9 (a)). The memo holds
-  at most 256 rows; above that, a closed application is computed again.
+- `hsMsg`, `schnorrCheck` and `g16Verify` are sealed: on an open argument
+  they do not unfold, so a law cannot look inside them (Q-S8a-9 (a)). The
+  memo holds at most 256 rows; above that, a closed application is
+  computed again.
 - The Wasm path of `ptMulC` has no differential row. `test/ir/femul.lang`
   covers `feMulC` only.
-- The gate takes about 400 to 650 s (116 s at S8). In one run of 645 s,
+- One gate run at S8b takes about 420 to 630 s of CPU time (about 400 to
+  650 s at S8a, 116 s at S8). In one S8a run of 645 s,
   the Wasm and differential section (42 modules, 1910 cases) took 403 s,
   and the crypto oracle (501 rows) took 150 s. The cause of the increase
   is not known.
@@ -140,8 +164,18 @@ next slice is S8b: the BN254 pairing and the Noir verifier.
   (OI-26).
 - G3 sets no upper law on ta. A ta above n - f stops the amendments by
   the honest members (OI-24).
-- `elgVrf` is an ideal check until S8b (OI-28). `Sealed` is the clear
-  denotation of the ciphertext and the shares until S13 and S14 (OI-31).
+- `elgVrf` is a Groth16 check from S8b (OI-28 is closed). The keys in
+  `test/noir/` are for tests only: the setup entropy is fixed, and the
+  outcome and share circuits are stubs that bind only their 3 publics
+  (OI-39).
+- AucID is a private witness of the eligibility circuit, so one deposit
+  can get a second handle with a second AucID (OI-37).
+- A full guest pairing does not fit the 1 GiB arena. The gate compares
+  the spec with the C oracle on value rows and short chain rows, and
+  `g16Verify` uses `pairCheckC` (OI-38). No gate row runs the pairing in
+  Wasm (OI-17).
+- `Sealed` is the clear denotation of the ciphertext and the shares until
+  S13 and S14 (OI-31).
 - A release is outside the Log (OI-35). The Log and `Verdicts` have no
   bound; only `Ballots` has one (OI-36).
 - In a guest program, `amSucc` applies only to a literal Amount

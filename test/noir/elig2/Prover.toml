@@ -1,0 +1,9 @@
+root_s = "0x29a72ffee5744ff770dc0c386fccee794d23537dbe07f625c6f142c201c257fa"
+hu = "0x2c3462023699dcbef712fcd5bf6edbc43513b74ccec4260407a32114aa984ef2"
+cm = "0x018c6232ff2c55441f25f371fc2c5f7de743492ab55d5cc1ed2e6bd82a433cec"
+rho_u = "11"
+auc_id = "1"
+a_u = "2"
+path = ["101", "102", "103", "104", "105", "106", "107", "108"]
+bits = ["1", "0", "1", "1", "0", "0", "1", "0"]
+tx = "14"
