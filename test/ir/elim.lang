@@ -1,0 +1,18 @@
+-- The run-time elim of S9a. An elim over a family value that exists only
+-- at run time is a switch on the constructor tag of the value. The case of
+-- a constructor with a recursive field gets each field and a variable for
+-- the induction hypothesis. The cases in this file do not read that
+-- variable, so the switch on the first cell gives the full result. The gate
+-- compares `langc --kit eval` with the Wasm module on each case of the grid.
+def two : Size := szS (szS sz0)
+def twoA : Amount := amSucc (amSucc amZero)
+-- elFlip: an elim over Outcome (no recursive field) with an Outcome result.
+def elFlip : (f : Flag) -> (p : Amount) -> Outcome := fun (f : Flag) (p : Amount) => elim (fun (o : Outcome) => Outcome) (sale sz0 p) (fun (w : Size) (q : Amount) => noSale) (flagIf f (sale two p) noSale)
+-- elBump: the case of `sale` uses each field.
+def elBump : (f : Flag) -> (p q : Amount) -> Outcome := fun (f : Flag) (p q : Amount) => elim (fun (o : Outcome) => Outcome) noSale (fun (w : Size) (x : Amount) => sale w (amMax x q)) (flagIf f (sale two p) noSale)
+-- elPaid: a Nat result (no out words).
+def elPaid : (f : Flag) -> (p : Amount) -> Nat := fun (f : Flag) (p : Amount) => elim (fun (o : Outcome) => Nat) 0 (fun (w : Size) (q : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe q twoA)) (flagIf f (sale two p) noSale)
+-- elHead: an elim over a bid list. The case of bdCons does not read `ih`.
+def elHead : (f : Flag) -> (a b : Amount) -> Outcome := fun (f : Flag) (a b : Amount) => elim (fun (bs : Bids) => Outcome) noSale (fun (h : Amount) (t : Bids) (ih : Outcome) => sale sz0 h) (flagIf f (bdCons a (bdCons b bdNil)) bdNil)
+-- elSecond: the case of bdCons has a second elim over the tail `t`.
+def elSecond : (f : Flag) -> (a b : Amount) -> Outcome := fun (f : Flag) (a b : Amount) => elim (fun (bs : Bids) => Outcome) noSale (fun (h : Amount) (t : Bids) (ih : Outcome) => elim (fun (u : Bids) => Outcome) (sale sz0 h) (fun (k : Amount) (r : Bids) (jh : Outcome) => sale two (amMax h k)) t) (flagIf f (bdCons a (bdCons b bdNil)) (bdCons b bdNil))

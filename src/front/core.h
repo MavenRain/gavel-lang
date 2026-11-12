@@ -327,7 +327,7 @@ typedef struct {
 } DefInfo;
 
 /* Q-S8a-9 (a): the maximum count of sealed defs (eval.c SEALED_DEFS). */
-#define SEAL_MAX 4u
+#define SEAL_MAX 8u
 
 /* Q-S8a-10 (a): the maximum count of rows in the seal memo. */
 #define SEAL_MEMO_MAX 256u
@@ -428,6 +428,14 @@ const Value *apply_value(Machine *m, const Value *fn, const Value *arg);
 /* Q-S8a-9 (a): the unfold of a sealed def application V (OP_DEF_APP), also
    on open arguments. The lowering inlines each def. */
 const Value *seal_unfold(Machine *m, const Value *v);
+/* S9a (Q-S9-2): the lowering holds a value of a word family (Amount, Size)
+   in one i64 word. seal_lowering starts the seals of the Amount operations
+   that the lowering makes word operations. */
+typedef enum { WORD_FAMILY_NONE, WORD_FAMILY_AMOUNT, WORD_FAMILY_SIZE } WordFamily;
+void seal_lowering(Machine *m);
+WordFamily word_family(const Machine *m, uint32_t family);
+int word_chain(const Machine *m, uint32_t family, const Value *v, uint64_t *n, const Value **rest);
+const Value *word_value(Machine *m, uint32_t family, uint64_t n);
 /* transp LINE PHI BASE, for JSON rule 1 (S3b). LINE is a path value in U. */
 const Value *val_transp(Machine *m, const Value *line, const Value *phi, const Value *base);
 /* The body of a LAM, PI, SIGMA, PLAM or PATHP value at ARG. */

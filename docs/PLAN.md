@@ -18,7 +18,18 @@ questions. "design sec N" is section N of `design/DESIGN.md`. Section 14
 lists the questions for the USER. A reading that is not ruled stays a
 recommendation.
 
-Status: S8b DONE (commit pending), S8c NEXT. S8b adds the BN254 pairing
+Status: S9a DONE (commit pending), S9b NEXT. S9a lowers the kernel to
+Wasm with `outcome` as the first T1 entry and no crypto: the run-time
+`elim`, the bounded walk, the input ABI (the exported memory and a host
+region with a count word and the elements for each list), `Amount` and
+`Size` as one `i64` word, the status and the out words, the kit wrapper
+`outcomeT1` in `domain/t1.lang` and the refusal of an entry named
+`memory` (Q-S9-1 (a) to Q-S9-3 (a), Q-S9-5 (a) to Q-S9-8 (a), Q-S9-39
+(a)).
+S8c DONE: ChaCha20 of RFC 8439 as guest defs, the family `Seed` and
+`sdExpand`, and `outcomeAtt`, the n-of-n attestation check of the MPC
+output (Q-S8c-2 to Q-S8c-5).
+S8b DONE: the BN254 pairing
 (the C builtin `pairCheckC` and the guest spec), the Groth16 verifier
 `g16Verify`, `elgVrf` on Groth16, `outcomeVrf`, `shareVrf` and the golden
 Noir proofs in `test/noir/` (Q-S8b-1 (a) to Q-S8b-20 (a)).
@@ -45,7 +56,8 @@ deadline fields of `Params`, `AucID`, `Root`, `Handle`, `Commitment`,
 `append`, `paramsAt`, `Machine`, `Verdicts`, `replay`, `slashedOf`, the
 laws G4 and G5, `REFUSE_FIXPOINT`, `REFUSE_CLOCK` and the ballot half of
 `REFUSE_BOUND` (Q-S7-1 (a) to Q-S7-10 (a)). Section 1 has the rulings.
-Next: S8c (ChaCha20, the seed input and the MPC output check).
+Next: S9b (admit, slash, release, authorize and amendCheck as T1 entries:
+the crypto prelude in Wasm).
 
 ## 1. Rulings
 
@@ -182,6 +194,14 @@ Next: S8c (ChaCha20, the seed input and the MPC output check).
 | 2026-11-10 | Q-S8c-3 "Domain Seed, kit rows (Recommended)": `Seed` is a domain family and the ChaCha20 rows are kit rows (`test/crypto/chacha.lang`). The checker, the lowering and the Wasm entry do not change. |
 | 2026-11-10 | Q-S8c-4 "n-of-n attestations (Recommended)": the MPC output check is `outcomeAtt`. Each member signs the hash of (tag, AucID, winner handle, price), and the check needs the signatures of all n members. design/DESIGN.md line 38 says "t attestations": for the MPC output this ruling makes it n (OI-42). |
 | 2026-11-10 | Q-S8c-5 "One commit (Recommended)": S8c is one commit. Q-S8c-1 was not asked: ChaCha20 is a guest def, and there is no C builtin for it. |
+| 2026-11-11 | Q-S9-5 "(a) Three slices (Recommended)": S9a = the kernel lowering (run-time elim, bounded walk, input ABI, Amount word) with `outcome` as the first entry, no crypto. S9b = admit, slash, release, authorize, amendCheck (the crypto prelude in Wasm). S9c = paramsAt and replay (the Log). One commit for each. Q-S9-4 (the pairing and the heavy prelude in Wasm) and the entry name (`amend` or `amendCheck`) were not asked; S9b asks them. |
+| 2026-11-11 | Q-S9-1 "(a) Exported memory + host region (Recommended)": the module exports its memory; the host writes each list in a fixed layout (a count word, then the elements) in a region below the heap, and the entry takes scalars. |
+| 2026-11-11 | Q-S9-2 "(a) One i64 word (Recommended)": `Amount` is one unsigned 64-bit word at run time, unsigned compares, each bit pattern is a valid Amount; the four ops become word ops in the lowering; the unary defs stay the spec for the laws. |
+| 2026-11-11 | Q-S9-3 "(a) 1024 each, status value (Recommended)": each list input has the 1024 bound of the checker, the Log gets 1024 too; above a bound the entry returns a status value (tranche-lang Q-S3-22 (a)), no trap, no clamp. |
+| 2026-11-11 | Q-S9-6 "(a) Status + out words (Recommended)": the entry returns only a status: 0 = ok, 1 = a list count above 1024. The result goes to fixed out words at the start of the host region: word 0 = the constructor tag (0 noSale, 1 sale), word 1 = the winner index, word 2 = the price. One rule for all later entries. One new IR store statement. The winner index `Size` is one word in the lowering (as permit-lang Q-S8-9 (a)). |
+| 2026-11-11 | Q-S9-7 "(a) Kit wrapper file (Recommended)": a new kit file (`domain/t1.lang`) has one wrapper def for each T1 entry. S9a adds `outcomeT1 : Flag -> Amount -> Bids -> Outcome` (flag 0 = firstPrice, 1 = secondPrice). The kernel gets two new parameter kinds only: `Amount` = one i64, and a bounded list family = the host region. The Wasm export is the wrapper name. |
+| 2026-11-11 | Q-S9-8 "(a) Edit old run-wasm.mjs (Recommended)": a memory-write and out-word read form in the old node runner, a list argument form in `langc eval`, and a new rows section in the old test/gate.sh. No new harness file. |
+| 2026-11-11 | Q-S9-39 (a): the lowering refuses (`REFUSE_LOWER`, one diag) an entry named `memory` only when the module has a host-form entry. A module with no host-form entry keeps `def memory`. No old module changes bytes; the export name `memory` stays. |
 
 The seed is `bin/new-lang.sh gavel-lang tcc-wasm` from lang-template
 5265a2a. The kit gives the parser, the checker, the evaluator, the lowering
@@ -640,8 +660,10 @@ One session for each slice: scope, gate, mutants, docs, close.
 | S8 | `Word` and its native ops, `REFUSE_WORD`, the `SwapWord` rename, the Fr and Fp field, the C oracle, `REFUSE_APPROX`, the ASSUMED rows (Q-S8-1 (a) to Q-S8-9 (a)). Four units: u1 the `SwapWord` rename and the machine `Word` (CORE_WORD, VAL_WORD, ops, literals, `REFUSE_WORD`, the Wasm i32 lowering, `examples/crypto.lang` with 15 Word defs); u2 the field (`Fe` of 8 Words, `FeMod`, `frMod`, `fpMod`, `feAdd`, `feSub`, `feMul`, `feToMont`, `feFromMont`, `fePow`, `feInv`, `Fr`, `Fp`); u3 the C oracle (`src/crypto` from quorum-lang 8d1a113, `test/cryptotool.c`, `test/crypto/crypto.lang`, 424 rows); u4 `REFUSE_APPROX` (the list from ratify-lang 2aaaac6, four sites). Cost: `feMul` 9182 eval steps; the `frInv` eval row 3713353 steps and 303.4 MiB, under `EVAL_FUEL_STEPS` (20M at S8, 40M from S8b) and the 1 GiB arena. Gate: 38 examples, 18 parse refusals, 186 check refusals, 10 kit-only refusals, 1 time hint, 150 evals, 424 crypto oracle rows with 0 mismatches, 41 Wasm modules valid, 1846 differential cases with 0 mismatches; the other counts are the S7 counts. Changes against S7: examples 37 to 38, parse refusals 17 to 18, check refusals 182 to 186, evals 115 to 150, the new crypto oracle line, Wasm modules 40 to 41, differential cases 998 to 1846. Two old rows named a def `double` and now name it `twice` (`test/check/amount-elim.lang`, `test/fronttool.c`). Mutants M1 (the `REFUSE_WORD` site), M2 (the `APPROX_WORDS` list), M3 (the `frMod` n0 constant), M4 (`w_mulhi`), M5 (the `LEX_WORD_RANGE` test): M1 to M5 KILLED (5/5). | DONE |
 | S8a | Poseidon circomlib t=3, keccak-256, `Pt1` with a Jacobian scalar multiply, `schnorrCheck`, `party (ptKey : Pt1)`, the certificate entry (ctR, ctS), the message words poseidon2(tag, poseidon2(x, y)), oracle rows in `test/crypto/crypto.lang`, `schnorr.c` from ratify-lang (closes OI-25 and OI-30). Built (Q-S8a-1 (a) to Q-S8a-10 (a)): the builtins `feMulC` and `ptMulC`; keccak-256 (`keccakF`, `kcChallenge`); Poseidon (`poseidon2`, the constants as data); `Pt1` and `ptMul`; `schnorrCheck` (the C check `sc_verify` is in `test/cryptotool.c`; there is no `schnorr.c` copy); `szToFe`, `hsMsg`, `hsOf`; the fixtures; the switch of `Hash` (Fe tag), `Party` (Pt1 key) and `Certificate` (signed entries); `szPair` and `szTri` out; the open `wEq` rule, the sealed defs and the memo. Gate: 501 oracle rows with 0 mismatches, 190 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 400 to 650 s. Mutants: 9 of 9 KILLED. | DONE |
 | S8b | The crypto prelude part 2 (Q-S1-4 (b)): the BN254 pairing and the Noir verifier (`elgVrf`, the outcome proof, the TFHE share proof); the run time (OI-17). Built (Q-S8b-1 (a) to Q-S8b-20 (a)): the C builtin `pairCheckC` with the on-curve and G2 subgroup checks; the guest spec (the tower Fp2, Fp6 and Fp12, the Miller loop, the final exponentiation, `pairCheck`; `mdGate2` keeps the spec stuck at check time); `g16Verify` (sealed; the MSM with `ptMulC`, then one check of 4 pairs) with the families `G16Vk`, `G16Pubs` and `G16Ics`; the keys `eligVk`, `outcomeVk` and `shareVk` as domain data; `EligibilityProof := elgProof (epA : Pt1) (epB : Pt2) (epC : Pt1)` and `elgVrf` on Groth16 (closes OI-28); `OutcomeProof` with `outcomeVrf`, and `ShareProof` with `shareVrf`; the golden files in `test/noir/` (the Alg 2 eligibility circuit with 2 proofs, stub outcome and share circuits; the generation tools are not in the gate); `build/cryptotool noir NAME DIR` (the C Groth16 check and the key converter); the C pairing oracle with the EIP-197 known answers of revm-precompile 32.1.0; a fresh fuel for each declaration and `EVAL_FUEL_STEPS` 40M; the examples use the golden statements. There is no `amToFe` word: `outcomeVrf` is the fifth `Amount` reader. Gate: 537 oracle rows with 0 mismatches, `noir: 4 golden proofs passed`, 192 check refusals, 152 evals, 42 Wasm modules, 1910 differential cases, about 420 to 630 s of CPU time for one run. Mutants: 29 of 29 KILLED. New open items: OI-37, OI-38, OI-39. | DONE |
-| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. Built (Q-S8c-2 to Q-S8c-5): ChaCha20 of RFC 8439 as guest defs over `Word` (`CcSt`, `ccQr`, `ccDbl`, `ccRounds`, `ccBlock`, `ccBlockOf`; no C builtin); the family `Seed` (`seed8`, 8 Words) and `sdExpand` (key = the seed, counter = the block index, nonce = (stream tag, 0, 0)); `ccGate` keeps a block stuck at check time while the first seed word is open; the C ChaCha20 oracle in `test/cryptotool.c` with the RFC 8439 known answers of the sections 2.1.1, 2.3.2 and 2.4.2, and 34 rows in `test/crypto/chacha.lang`; `outcomeAtt`, the n-of-n attestation check of the MPC output (each member signs the outcome message hsMsg (3, auction tag, hsMsg (4, winner handle, price)); it rejects noncanonical winner handles and is the sixth `Amount` reader); the fixture OuA and 10 rows in `test/crypto/att.lang`. The checker, the lowering and the Wasm entry do not change. Gate: 581 oracle rows with 0 mismatches; the other counts are the S8b counts. Mutants: 7 of 8 KILLED (M1 `ccRn10` with 9 steps, M2 a rotate of `ccQr`, M3 the argument order of `sdExpand`, M5 a rotate of the C oracle, A1 `mbLen` to `cmT`, A2 the price out of the message, A3 the tag 3 to 1); no gate row sees M4 (`ccGate` with `wEq w w`, OI-43). New open items: OI-40 to OI-45. | DONE (commit pending) |
-| S9 | T1 part 1: the Wasm module with the prelude, the notrap rows. | NEXT |
+| S8c | The crypto prelude part 3: ChaCha20 and the seed input (Q-S1-10 (a)), the MPC output check. Built (Q-S8c-2 to Q-S8c-5): ChaCha20 of RFC 8439 as guest defs over `Word` (`CcSt`, `ccQr`, `ccDbl`, `ccRounds`, `ccBlock`, `ccBlockOf`; no C builtin); the family `Seed` (`seed8`, 8 Words) and `sdExpand` (key = the seed, counter = the block index, nonce = (stream tag, 0, 0)); `ccGate` keeps a block stuck at check time while the first seed word is open; the C ChaCha20 oracle in `test/cryptotool.c` with the RFC 8439 known answers of the sections 2.1.1, 2.3.2 and 2.4.2, and 34 rows in `test/crypto/chacha.lang`; `outcomeAtt`, the n-of-n attestation check of the MPC output (each member signs the outcome message hsMsg (3, auction tag, hsMsg (4, winner handle, price)); it rejects noncanonical winner handles and is the sixth `Amount` reader); the fixture OuA and 10 rows in `test/crypto/att.lang`. The checker, the lowering and the Wasm entry do not change. Gate: 581 oracle rows with 0 mismatches; the other counts are the S8b counts. Mutants: 7 of 8 KILLED (M1 `ccRn10` with 9 steps, M2 a rotate of `ccQr`, M3 the argument order of `sdExpand`, M5 a rotate of the C oracle, A1 `mbLen` to `cmT`, A2 the price out of the message, A3 the tag 3 to 1); no gate row sees M4 (`ccGate` with `wEq w w`, OI-43). New open items: OI-40 to OI-45. | DONE |
+| S9a | T1 part 1a (Q-S9-5 (a)): the kernel lowering to Wasm with `outcome` as the first entry, no crypto. Built (Q-S9-1 to Q-S9-3, Q-S9-6 to Q-S9-8, Q-S9-39): the run-time `elim`, the bounded walk, the input ABI (the exported memory and the host region), `Amount` and `Size` as one `i64` word (`amSucc` on a run-time Amount gives `REFUSE_LOWER`), the status (1 = a list count above 1024) and the out words, the kit wrapper `outcomeT1` in `domain/t1.lang`, the refusal of an entry named `memory` in a module with a host-form entry, a list argument form in `langc eval`, and the host form in `test/run-wasm.mjs`. Gate: 48 Wasm modules valid, 2747 differential cases, 18 differential and 5 golden T1 rows, all with 0 mismatches; 8 ir refusals. Mutants: 15 of 17 KILLED (M1 to M10, M10b, M12, M13, M15, M16); M11 (the walk stop) and M14 (the `VAL_PI` item) are accepted survivors. | DONE (commit pending) |
+| S9b | T1 part 1b: admit, slash, release, authorize and amendCheck as T1 entries (the crypto prelude in Wasm); asks the draft Q-S9-4 (the pairing and the heavy prelude in Wasm) and the entry name (`amend` or `amendCheck`). | NEXT |
+| S9c | T1 part 1c: paramsAt and replay (the Log). | |
 | S10 | T1 part 2: `gaveld`, the Wasm engine (Q-S0-15), the demo D1 to D8. | |
 | S11 | T5: the JSON report, `docs/REPORT-JSON.md`. | |
 | S12 | T2: the ZK relation export (Q-S0-9 (a), Q-S0-10 (a)) and the TFHE share relation (Q-S1-8 (a)). | |
@@ -733,7 +755,7 @@ Design notes from S7:
 - OI-17 MEASURED in part at S8b (Q-S8b-1 (a)). With the C builtin
   `pairCheckC`, one closed `g16Verify` row takes 0.2 to 0.6 s of CPU time
   under the C99 interpreter. The guest spec of the pairing does not fit
-  the arena (OI-38), so its run time is not measured. S9 measures the Wasm
+  the arena (OI-38), so its run time is not measured. S9b measures the Wasm
   run of the spec.
 - OI-18 The reason for a lost link, a late message or a bad message in
   member mode is fixed at S14c.
@@ -748,9 +770,15 @@ Design notes from S7:
   uses only `amLe`, `amSelect`, `amMax` and `amMin`, so T1 can lower
   `Amount` to a fixed-width word with only these four operations. The T1
   slice fixes the width and the input check.
+  S9a: one unsigned `i64` word (Q-S9-2 (a)); the four operations are
+  word operations in the lowering, and the unary defs stay the spec for
+  the laws. `amSucc` on a run-time Amount gives `REFUSE_LOWER`, because a
+  word wraps at 2^64 and the unary spec does not.
 - OI-22 An open bid list (an input) passes the check at any length; only a
   closed `Bids` value with more than 1024 bids gives `REFUSE_BOUND`
   (Q-S4-6 (a)). The T1 entry bounds the input list (S9).
+  S9a: `outcomeT1` bounds each list input at 1024 (Q-S9-3 (a)); above it
+  the entry returns the status 1, with no trap (Q-S9-6 (a)).
 - OI-23 The kernel signature slot `Outcome` is `DaoOutcome` from S4
   (Q-S4-3 (a)): in `src/front/check.c`, in the DAO prelude of
   `src/front/front.c` and in 23 `.lang` files. A port from ratify-lang or
@@ -766,7 +794,7 @@ Design notes from S7:
   Q-S8-6 (a)).
 - OI-26 An open committee (an input) passes the check at any size; only a
   closed `Members` value with more than 1024 members gives `REFUSE_BOUND`
-  (Q-S5-7 (a)). The T1 entry bounds the open committee (S9).
+  (Q-S5-7 (a)). The T1 entry bounds the open committee (S9b).
 - OI-27 CLOSED at S6. `Params` has the deadline fields `prSlot`,
   `prStampEnd` and `prRelease` and the proof field `prOrder`, and `release`
   takes an `Opening` with the proof field `opOk` (Q-S6-1 (b), Q-S6-2 (a)).
@@ -793,7 +821,7 @@ Design notes from S7:
   release entry.
 - OI-36 The indexed `Log` has no bound: a closed `Log` value of any length
   passes the check. `Verdicts` has no bound too. Only `Ballots` has one
-  (Q-S7-10 (a)). The T1 entry bounds the log (S9).
+  (Q-S7-10 (a)). The T1 entry bounds the log (S9c).
 - OI-37 AucID is a private witness of the eligibility circuit (Q-S8b-13
   (c)); the statement is the root, the handle and the commitment. Thus a
   deposit can get a second handle with a second AucID, and the P3 slash
@@ -802,7 +830,7 @@ Design notes from S7:
   the evaluator. The gate compares the spec with the C oracle on value
   rows and short chain rows (`test/crypto/pair-spec.lang`), and
   `g16Verify` calls `pairCheckC`. A Wasm run of the spec needs an arena
-  reset or a larger limit (S9, OI-17).
+  reset or a larger limit (S9b, OI-17).
 - OI-39 The Groth16 keys in `domain/domain.lang` and `test/noir/` are for
   tests only (Q-S8b-10 (a)): the phase-2 entropy is fixed, so the setup
   gives no soundness against a person who knows it. The outcome and share

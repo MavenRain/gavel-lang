@@ -1,0 +1,5 @@
+-- A def named memory next to a host-form entry. The check accepts it, but
+-- the lowering refuses it: the host form exports the Wasm memory under the
+-- name memory (Q-S9-1), and two exports cannot have the same name (Q-S9-39).
+def pick : Flag -> Outcome := fun (f : Flag) => flagIf f (sale sz0 amZero) noSale
+def memory : Nat -> Nat := fun (n : Nat) => n

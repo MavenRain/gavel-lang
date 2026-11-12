@@ -1,0 +1,15 @@
+-- The host form of S9a. An entry with a family result returns the status 0
+-- and stores the result in the out words: the constructor tag, then each
+-- field, then 0 in each word that the constructor does not use. `langc
+-- --kit eval` prints the status and the out words on one line (`0 1 2 3`).
+-- The gate compares the two on each case of the grid.
+def two : Size := szS (szS sz0)
+def three : Amount := amSucc (amSucc (amSucc amZero))
+-- pick: a sale at 1, no sale at 0. The out words 1 and 2 of no sale are 0.
+def pick : Flag -> Outcome := fun (f : Flag) => flagIf f (sale two three) noSale
+-- priced: an Amount parameter in a field.
+def priced : (f : Flag) -> (p : Amount) -> Outcome := fun (f : Flag) (p : Amount) => flagIf f (sale two p) noSale
+-- alwaysSale: one constructor on each path.
+def alwaysSale : Amount -> Outcome := fun (p : Amount) => sale sz0 p
+-- larger: the winner is 0 when x <= y, else 1. The price is the larger amount.
+def larger : (x y : Amount) -> Outcome := fun (x y : Amount) => amSelect Outcome x y (sale sz0 (amMax x y)) (sale (szS sz0) (amMax x y))

@@ -20,7 +20,9 @@
 typedef enum {
   IR_SCALAR_NAT,
   IR_SCALAR_FLAG,
-  IR_SCALAR_WORD /* S8: a Word; the entry keeps the low 32 bits */
+  IR_SCALAR_WORD, /* S8: a Word; the entry keeps the low 32 bits */
+  IR_SCALAR_AMOUNT, /* S9a: an Amount; one unsigned i64 word */
+  IR_SCALAR_LIST    /* S9a (D37): a host list; no Wasm parameter */
 } IrScalar;
 
 typedef enum {
@@ -81,7 +83,8 @@ typedef enum {
   IR_STMT_REPEAT, /* counter := expr, then run body counter times */
   IR_STMT_WHILE,  /* counter := expr; run body while counter > 0 and local != 0,
                      counter decreasing by 1 at each run; body sets local */
-  IR_STMT_RETURN  /* return expr */
+  IR_STMT_RETURN, /* return expr */
+  IR_STMT_STORE   /* S9a: out word local := expr (the host form) */
 } IrStmtKind;
 
 struct IrStmt {
@@ -101,6 +104,20 @@ struct IrStmt {
    eval. */
 #define IR_HEAP_WORDS_MAX ((uint64_t)1 << 27)
 
+/* S9a: the host region. Bytes 0 to 63 of the memory hold the 8 out words of
+   a host-form entry: word 0 = the constructor tag of the result, word 1 + K
+   = field K, and 0 in each word that the constructor does not use. The
+   entry returns the status 0. An old-form entry has no host region. */
+#define IR_OUT_WORDS_MAX 8u
+#define IR_HOST_HEAP_BASE ((uint64_t)8 * IR_OUT_WORDS_MAX)
+
+/* S9a (D37): the host lists. List J of a host-form entry starts at the byte
+   IR_HOST_HEAP_BASE + J * IR_HOST_LIST_BYTES: the count word, then the
+   element words (at most IR_HOST_LIST_MAX). The heap starts after the last
+   list. */
+#define IR_HOST_LIST_MAX 1024u
+#define IR_HOST_LIST_BYTES ((uint64_t)8 * (1u + IR_HOST_LIST_MAX))
+
 /* One exported entry. The body block ends in RETURN on each path. */
 typedef struct {
   const char *name;
@@ -110,6 +127,12 @@ typedef struct {
   uint32_t local_count; /* includes the parameters */
   IrBlock body;
   uint64_t heap_words; /* the ALLOC words on the longest path (S3) */
+  /* S9a: the host form. out_words is the count of the out words that the
+     entry stores (0 = an old-form entry). heap_base is the first byte of
+     the heap: 0 for an old-form entry, else IR_HOST_HEAP_BASE plus
+     IR_HOST_LIST_BYTES for each list parameter (D37). */
+  uint32_t out_words;
+  uint64_t heap_base;
 } IrFunc;
 
 typedef struct {

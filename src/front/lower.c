@@ -45,12 +45,20 @@ struct Buf {
   size_t memo_cap; /* 0 or a power of two */
 };
 
+/* S9a (D26): the largest depth of the run-time elims that test their `ih`
+   variable at one time. */
+#define LOW_WATCH_MAX 8u
+
 typedef struct {
   Machine *m;
   uint32_t local_count;
   Operand *levels; /* the operand of each de Bruijn level */
   uint32_t level_count;
   uint32_t level_cap;
+  uint32_t watch[LOW_WATCH_MAX]; /* the levels of the `ih` variables under test */
+  uint32_t watch_count;
+  uint32_t watch_hit; /* bit I: the lowering read the level watch[I] */
+  uint32_t host; /* S9a (D4): 1 in a host-form entry */
 } Low;
 
 static int oom(Low *l) {
@@ -512,6 +520,11 @@ static void stmt_print(const IrStmt *s, FILE *out, unsigned depth) {
     block_print(&s->body, out, depth + 1u);
     close_print(out, depth);
     return;
+  case IR_STMT_STORE:
+    fprintf(out, "out %u := ", (unsigned)s->local);
+    expr_print(s->expr, out, 0);
+    fputs("\n", out);
+    return;
   case IR_STMT_RETURN:
     fputs("return ", out);
     expr_print(s->expr, out, 0);
@@ -538,6 +551,10 @@ static const char *scalar_word(IrScalar s) {
     return "flag";
   case IR_SCALAR_WORD:
     return "word";
+  case IR_SCALAR_AMOUNT:
+    return "amount";
+  case IR_SCALAR_LIST:
+    return "list";
   }
   return "?";
 }
@@ -550,8 +567,12 @@ void ir_print(const IrProgram *prog, FILE *out) {
     fprintf(out, "func %s (", fn->name);
     for (k = 0; k < fn->param_count; k++)
       fprintf(out, "%s%s", k == 0 ? "" : ", ", scalar_word(fn->params[k]));
-    fprintf(out, ") -> %s, %u locals, %u heap words\n", scalar_word(fn->result), (unsigned)fn->local_count,
-            (unsigned)fn->heap_words);
+    fputs(") -> ", out);
+    if (fn->out_words != 0u)
+      fprintf(out, "out %u", (unsigned)fn->out_words);
+    else
+      fputs(scalar_word(fn->result), out);
+    fprintf(out, ", %u locals, %u heap words\n", (unsigned)fn->local_count, (unsigned)fn->heap_words);
     block_print(&fn->body, out, 1u);
   }
 }
@@ -631,9 +652,31 @@ static int ctor_full(Low *l, Buf *b, const Value *v, uint32_t skip, uint32_t n, 
   return v->argc < skip + n ? closure(l) : ctor_block(l, b, tag, v->args + skip, n, out);
 }
 
+/* S9a (Q-S9-2): a constructor of a word family. A closed chain is its
+   number. A Size chain that ends in a run-time value adds its length to that
+   word. An Amount chain does not: the sum can wrap at 2^64, and the unary
+   Amount has no wrap. */
+static int word_ctor(Low *l, Buf *b, const Value *v, uint32_t family, Operand *out) {
+  uint64_t n;
+  const Value *rest;
+  Operand x;
+  if (!word_chain(l->m, family, v, &n, &rest))
+    return closure(l);
+  if (rest == NULL)
+    return give(l, out, n);
+  if (word_family(l->m, family) == WORD_FAMILY_AMOUNT)
+    return refuse(l, "amSucc on a run-time Amount (an i64 word wraps at 2^64)");
+  if (!lower(l, b, rest, &x))
+    return 0;
+  *out = operand(atom(l, b, ex_bin(l, IR_OP_ADD, x.w, ex_const(l, n))));
+  return out->w != NULL;
+}
+
 static int lower_ctor(Low *l, Buf *b, const Value *v, Operand *out) {
   const CtorInfo *c = &l->m->ctors[v->inst];
   const FamilyInfo *fam = &l->m->families[c->family];
+  if (word_family(l->m, c->family) != WORD_FAMILY_NONE)
+    return word_ctor(l, b, v, c->family, out);
   return ctor_full(l, b, v, fam->param_count, c->field_count, v->inst - fam->first_ctor, out);
 }
 
@@ -913,8 +956,9 @@ static int walk_step(Low *l, Buf *b, const Walk *w, uint32_t k) {
 
 /* The spine walk of X. A node with tag I has the recursive field REC[I] (or
    NO_REC). A node with a recursive field goes on the chain. The walk stops
-   at a node without one (CUR). The cell of the last node comes first. */
-static int walk(Low *l, Buf *b, Operand x, const uint32_t *rec, uint32_t n, Walk *w) {
+   at a node without one (CUR). The cell of the last node comes first. The
+   WHILE has the count FUEL (S9a, D4). */
+static int walk_fuel(Low *l, Buf *b, Operand x, const uint32_t *rec, uint32_t n, uint64_t fuel, Walk *w) {
   IrBlock *arms = arena_alloc(l->m->arena, ((size_t)n + 1u) * sizeof *arms);
   Buf body = buf_under(b);
   Buf arm;
@@ -931,7 +975,12 @@ static int walk(Low *l, Buf *b, Operand x, const uint32_t *rec, uint32_t n, Walk
   return set(l, b, w->rev, ex_const(l, 0)) && set(l, b, w->count, ex_const(l, 0)) && set(l, b, w->cur, x.w) &&
          set(l, b, w->cont, ex_const(l, 1)) &&
          st_switch(l, &body, ex_load(l, ex_local(l, w->cur), 0), arms, n) &&
-         st_while(l, b, ex_const(l, SPINE_FUEL), w->cont, &body);
+         st_while(l, b, ex_const(l, fuel), w->cont, &body);
+}
+
+/* The spine walk of X with the fuel SPINE_FUEL. */
+static int walk(Low *l, Buf *b, Operand x, const uint32_t *rec, uint32_t n, Walk *w) {
+  return walk_fuel(l, b, x, rec, n, SPINE_FUEL, w);
 }
 
 /* The start of a pass over the chain of W: NODE := field 0 of the cell. */
@@ -1238,6 +1287,232 @@ static int fold_nat(Low *l, Buf *b, const Value *v, Operand *out) {
 }
 
 /* An eliminator on a variable. */
+/* S9a (Q-S9-2): amMax (MAX is 1) or amMin of two Amount words. */
+static int amount_pick(Low *l, Buf *b, const Value *v, int max, Operand *out) {
+  Operand x;
+  Operand y;
+  Slot res = slot_new(l);
+  Buf le = buf_under(b);
+  Buf gt = buf_under(b);
+  *out = slot_get(l, res);
+  if (!lower(l, b, v->args[0], &x) || !lower(l, b, v->args[1], &y))
+    return 0;
+  return store(l, &le, res, max ? y : x) && store(l, &gt, res, max ? x : y) &&
+         if_flag(l, b, ex_bin(l, IR_OP_LE, x.w, y.w), &le, &gt);
+}
+
+/* S9a (Q-S9-2): amSelect A x y p q is p when x <= y, else q. Only the arm
+   that the test selects runs. */
+static int amount_select(Low *l, Buf *b, const Value *v, Operand *out) {
+  Operand x;
+  Operand y;
+  Slot res = slot_new(l);
+  Buf le = buf_under(b);
+  Buf gt = buf_under(b);
+  *out = slot_get(l, res);
+  if (!lower(l, b, v->args[1], &x) || !lower(l, b, v->args[2], &y))
+    return 0;
+  return lower_into(l, &le, v->args[3], res) && lower_into(l, &gt, v->args[4], res) &&
+         if_flag(l, b, ex_bin(l, IR_OP_LE, x.w, y.w), &le, &gt);
+}
+
+/* S9a (Q-S9-2): a sealed application. The four Amount operations of the kit
+   are word operations (seal_lowering in eval.c); each other sealed def goes
+   to sealed_spec. */
+static int amount_op(Low *l, Buf *b, const Value *v, Operand *out) {
+  const DefInfo *d = &l->m->defs[v->inst];
+  const char *name = d->origin != ORIGIN_PROGRAM && d->name != NULL ? d->name : "";
+  if (v->argc == 2u && strcmp(name, "amLe") == 0)
+    return word_cmp(l, b, v, IR_OP_LE, out);
+  if (v->argc == 2u && strcmp(name, "amMax") == 0)
+    return amount_pick(l, b, v, 1, out);
+  if (v->argc == 2u && strcmp(name, "amMin") == 0)
+    return amount_pick(l, b, v, 0, out);
+  if (v->argc == 5u && strcmp(name, "amSelect") == 0)
+    return amount_select(l, b, v, out);
+  return sealed_spec(l, b, v, out);
+}
+
+/* S9a: the refusal of a stuck elim. An elim of a family has the family
+   index + 1 in its field. */
+static int elim_refuse(Low *l, const Value *v) {
+  return refuse(l, v->field != 0u && word_family(l->m, v->field - 1u) != WORD_FAMILY_NONE
+                     ? "an elim over a run-time Amount or Size (the value is one i64 word)"
+                     : "an elim, KMap, Fin or Glue operation");
+}
+
+/* S9a (D26): the lowering reads the operand of LEVEL. */
+static void watch_read(Low *l, uint32_t level) {
+  uint32_t i;
+  for (i = 0; i < l->watch_count; i++)
+    l->watch_hit |= l->watch[i] == level ? (uint32_t)1 << i : 0u;
+}
+
+/* S9a (D3 (ii)): a step of a run-time elim at the node BASE of the
+   constructor C: ACC := FN applied to each field, with ACC after the
+   recursive field R (the induction hypothesis). */
+static int elim_case(Low *l, Buf *b, const IrExpr *base, const Value *fn, const CtorInfo *c, uint32_t r, Slot acc) {
+  Operand *args = arena_alloc(l->m->arena, ((size_t)c->field_count + 2u) * sizeof *args);
+  uint32_t k;
+  uint32_t n = 0;
+  if (args == NULL)
+    return oom(l);
+  for (k = 0; k < c->field_count; k++) {
+    if (!field_at(l, b, base, k, &args[n++]))
+      return 0;
+    if (k == r)
+      args[n++] = slot_get(l, acc);
+  }
+  return apply_into(l, b, fn, args, n, acc);
+}
+
+/* S9a (D3 (ii)): SWITCH on the tag of the node at BASE into ACC. When
+   REC_ARMS is 1, the arms of the constructors with a recursive field apply
+   their case (else the arms of the ones without). The other arms are
+   empty. */
+static int elim_switch(Low *l, Buf *b, const IrExpr *base, const Value *v, const uint32_t *rec, int rec_arms, Slot acc) {
+  const FamilyInfo *fam = &l->m->families[v->field - 1u];
+  IrBlock *arms = arena_alloc(l->m->arena, ((size_t)fam->ctor_count + 1u) * sizeof *arms);
+  Buf arm;
+  uint32_t i;
+  if (arms == NULL)
+    return oom(l);
+  for (i = 0; i < fam->ctor_count; i++) {
+    arm = buf_under(b);
+    if ((rec[i] != NO_REC) == rec_arms &&
+        !elim_case(l, &arm, base, v->args[1u + i], &l->m->ctors[fam->first_ctor + i], rec[i], acc))
+      return 0;
+    arms[i] = block_of(&arm);
+  }
+  return st_switch(l, b, ex_load(l, base, 0), arms, fam->ctor_count);
+}
+
+/* S9a (D3 (ii), D4): a run-time elim with a case that reads `ih`. The walk
+   of the spine of X, the case of the stop node into ACC, then a pass from
+   the last recursive node to the first. In a host-form entry, the walk over
+   a family with the bound B stops after B + 1 nodes: a longer spine returns
+   the status 1, and the pass is a WHILE with a count-down local. Else the
+   walk has the fuel SPINE_FUEL and the pass is a REPEAT; then an ALLOC in a
+   step has no static heap bound. */
+static int elim_walk(Low *l, Buf *b, const Value *v, Operand x, const uint32_t *rec, Slot acc) {
+  const FamilyInfo *fam = &l->m->families[v->field - 1u];
+  uint64_t bound = l->host != 0u ? family_bound(l->m, v->field - 1u) : 0u;
+  uint64_t fuel = bound != 0u ? bound + 1u : SPINE_FUEL;
+  const IrExpr *node;
+  Walk w;
+  Buf stop = buf_under(b);
+  Buf go = buf_under(b);
+  Buf in = buf_under(b);
+  Buf body = buf_under(b);
+  uint32_t left;
+  if (!walk_fuel(l, b, x, rec, fam->ctor_count, fuel, &w))
+    return 0;
+  if (bound != 0u && !(emit(l, &stop, stmt_expr(l, IR_STMT_RETURN, ex_const(l, 1))) &&
+                       st_if(l, b, ex_local(l, w.cont), &stop, &go)))
+    return 0;
+  if (!elim_switch(l, &in, ex_local(l, w.cur), v, rec, 0, acc) || !splice(l, b, &in) ||
+      !chain_node(l, &body, &w, &node) || !elim_switch(l, &body, node, v, rec, 1, acc))
+    return 0;
+  if (bound == 0u)
+    return chain_end(l, b, &w, &body);
+  left = local_new(l);
+  return set(l, b, left, ex_local(l, w.count)) &&
+         set(l, &body, w.rev, field_op(l, ex_local(l, w.rev), 1).w) &&
+         set(l, &body, left, ex_bin(l, IR_OP_SUB, ex_local(l, left), ex_const(l, 1))) &&
+         st_while(l, b, ex_const(l, fuel), left, &body);
+}
+
+/* S9a (D3, D4, D26 to D28): a stuck elim of a family at run time. Arm I
+   applies case I to each field, with a variable for the induction
+   hypothesis after a recursive field. That variable has no value in an
+   arm. When no case reads it, the elim is a SWITCH on the tag of the
+   scrutinee. When a case reads it, the elim is the walk of elim_walk. These
+   stay refusals: a function motive, a word family, a block of families, a
+   family with a parameter, an index or a path constructor, and a
+   constructor with two recursive fields. */
+static int family_elim(Low *l, Buf *b, const Value *v, Operand *out) {
+  const FamilyInfo *fam = &l->m->families[v->field - 1u];
+  IrBlock *arms = arena_alloc(l->m->arena, ((size_t)fam->ctor_count + 1u) * sizeof *arms);
+  uint32_t *rec = arena_alloc(l->m->arena, ((size_t)fam->ctor_count + 1u) * sizeof *rec);
+  const CtorInfo *c;
+  const Value *var;
+  const Value *type;
+  Operand *args;
+  Operand x;
+  Slot res;
+  Buf arm;
+  uint32_t i;
+  uint32_t k;
+  uint32_t n;
+  uint32_t ih;
+  uint32_t slot;
+  uint32_t hit = 0;
+  int ok;
+  if (arms == NULL || rec == NULL)
+    return oom(l);
+  if (word_family(l->m, v->field - 1u) != WORD_FAMILY_NONE || fam->block_count > 1u || fam->param_count != 0u ||
+      fam->index_count != 0u || v->argc != fam->ctor_count + 2u)
+    return elim_refuse(l, v);
+  for (i = 0; i < fam->ctor_count; i++) {
+    c = &l->m->ctors[fam->first_ctor + i];
+    rec[i] = NO_REC;
+    if (c->interval_count != 0u)
+      return elim_refuse(l, v);
+    for (k = 0; k < c->field_count; k++) {
+      if (c->fields[k].recursive && rec[i] != NO_REC)
+        return elim_refuse(l, v);
+      if (c->fields[k].recursive)
+        rec[i] = k;
+    }
+  }
+  var = fresh(l, operand(ex_const(l, 0)));
+  type = var == NULL ? NULL : apply_value(l->m, v->args[0], var);
+  if (!got(l, type))
+    return 0;
+  if (type->kind == VAL_PI)
+    return elim_refuse(l, v);
+  res = slot_new(l);
+  *out = slot_get(l, res);
+  if (!lower(l, b, v->args[v->argc - 1u], &x))
+    return 0;
+  for (i = 0; i < fam->ctor_count && hit == 0u; i++) {
+    c = &l->m->ctors[fam->first_ctor + i];
+    arm = buf_under(b);
+    args = arena_alloc(l->m->arena, ((size_t)c->field_count + 2u) * sizeof *args);
+    if (args == NULL)
+      return oom(l);
+    if (rec[i] != NO_REC && l->watch_count == LOW_WATCH_MAX)
+      return elim_refuse(l, v);
+    n = 0;
+    ih = NO_REC;
+    for (k = 0; k < c->field_count; k++) {
+      if (!field_at(l, &arm, x.w, k, &args[n++]))
+        return 0;
+      if (k == rec[i]) {
+        ih = n;
+        args[n++] = operand(ex_const(l, 0));
+      }
+    }
+    slot = l->watch_count;
+    if (ih != NO_REC) {
+      l->watch[slot] = l->level_count + ih;
+      l->watch_hit &= ~((uint32_t)1 << slot);
+      l->watch_count++;
+    }
+    ok = apply_into(l, &arm, v->args[1u + i], args, n, res);
+    if (ih != NO_REC) {
+      l->watch_count--;
+      hit = (l->watch_hit >> slot) & 1u;
+    }
+    if (!ok)
+      return 0;
+    arms[i] = block_of(&arm);
+  }
+  if (hit != 0u)
+    return elim_walk(l, b, v, x, rec, res);
+  return st_switch(l, b, ex_load(l, x.w, 0), arms, fam->ctor_count);
+}
+
 static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   switch (v->op) {
   case OP_NAT:
@@ -1293,7 +1568,9 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_UNFOLD:
     return unfold(l, b, v, out);
   case OP_FOLD_FAMILY:
-    return family_fold(l, b, v, out);
+    return word_family(l->m, v->inst) != WORD_FAMILY_NONE
+             ? refuse(l, "a fold over a run-time Amount or Size (the value is one i64 word)")
+             : family_fold(l, b, v, out);
   case OP_NAT_SUB:
     return nat_bin(l, b, v, IR_OP_SUB, out);
   case OP_NAT_EQ:
@@ -1343,7 +1620,7 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_PAIR_CHECK:
     return builtin_spec(l, b, v, OP_PAIR_CHECK, out);
   case OP_DEF_APP:
-    return sealed_spec(l, b, v, out);
+    return amount_op(l, b, v, out);
   case OP_NONZERO_OF:
     return nonzero_of(l, b, v, out);
   case OP_NONZERO_VALUE:
@@ -1353,6 +1630,7 @@ static int lower_stuck(Low *l, Buf *b, const Value *v, Operand *out) {
   case OP_FM_LEN:
     return refuse(l, "len (the op count of a FreeMon trace at run time)");
   case OP_ELIM:
+    return v->field != 0u ? family_elim(l, b, v, out) : elim_refuse(l, v);
   case OP_KMAP:
   case OP_KMAP_OF:
   case OP_KMAP_GET:
@@ -1389,6 +1667,7 @@ static int lower_value(Low *l, Buf *b, const Value *v, Operand *out) {
   case VAL_VAR:
     if (v->nat >= l->level_count)
       return internal(l, "a variable without an operand");
+    watch_read(l, v->nat);
     *out = l->levels[v->nat];
     return 1;
   case VAL_OP:
@@ -1436,6 +1715,7 @@ static int heap_stmt(const IrStmt *s, uint64_t *out) {
   *out = 0;
   switch (s->kind) {
     case IR_STMT_SET:
+    case IR_STMT_STORE:
     case IR_STMT_RETURN:
       return 1;
     case IR_STMT_ALLOC:
@@ -1473,7 +1753,103 @@ static int heap_block(const IrBlock *b, uint64_t *out) {
   return ok;
 }
 
+typedef char entry_out_words_fit[ENTRY_OUT_WORDS_MAX <= IR_OUT_WORDS_MAX ? 1 : -1];
+
+/* S9a (D5): out word WORD := E. */
+static int out_store(Low *l, Buf *b, uint32_t word, const IrExpr *e) {
+  IrStmt *s = stmt_expr(l, IR_STMT_STORE, e);
+  if (s != NULL)
+    s->local = word;
+  return emit(l, b, s);
+}
+
+/* S9a (D5): the host form. The result block at R goes to the out words: a
+   SWITCH on its tag, and the arm of each constructor stores the tag, its
+   fields, and 0 in each other word (a block has only the words of its
+   constructor). Then the entry returns the status 0. */
+static int host_result(Low *l, Buf *b, const Entry *e, Operand r) {
+  const FamilyInfo *fam = &l->m->families[e->result_family];
+  IrBlock *arms = arena_alloc(l->m->arena, ((size_t)fam->ctor_count + 1u) * sizeof *arms);
+  const IrExpr *base = atom(l, b, r.w);
+  Buf arm;
+  uint32_t i;
+  uint32_t k;
+  uint32_t n;
+  if (arms == NULL)
+    return oom(l);
+  if (base == NULL)
+    return 0;
+  for (i = 0; i < fam->ctor_count; i++) {
+    n = l->m->ctors[fam->first_ctor + i].field_count;
+    arm = buf_under(b);
+    if (!out_store(l, &arm, 0, ex_const(l, i)))
+      return 0;
+    for (k = 1; k < e->out_words; k++)
+      if (!out_store(l, &arm, k, k <= n ? ex_load(l, base, k) : ex_const(l, 0)))
+        return 0;
+    arms[i] = block_of(&arm);
+  }
+  return st_switch(l, b, ex_load(l, base, 0), arms, fam->ctor_count) &&
+         emit(l, b, stmt_expr(l, IR_STMT_RETURN, ex_const(l, 0)));
+}
+
 /* The entry INDEX, applied to a variable for each parameter. */
+/* S9a (D37): the byte of list J in the host region. */
+static uint64_t list_at(uint32_t j) {
+  return IR_HOST_HEAP_BASE + IR_HOST_LIST_BYTES * j;
+}
+
+/* S9a (D39): a count above IR_HOST_LIST_MAX in the local K gives the status
+   1 with no out word (D29). LT is unsigned. */
+static int list_over(Low *l, Buf *b, uint32_t k) {
+  Buf stop = buf_under(b);
+  Buf go = buf_under(b);
+  return emit(l, &stop, stmt_expr(l, IR_STMT_RETURN, ex_const(l, 1))) &&
+         st_if(l, b, ex_bin(l, IR_OP_LT, ex_const(l, IR_HOST_LIST_MAX), ex_local(l, k)), &stop, &go);
+}
+
+/* S9a (D39): the cons blocks of the list at the byte BASE, with its count in
+   the local K. A pass from element IR_HOST_LIST_MAX - 1 to element 0 adds a
+   block for each element below the count, so K then holds the block of
+   element 0. */
+static int list_build(Low *l, Buf *b, uint32_t k, uint64_t base) {
+  Buf body = buf_under(b);
+  Buf yes = buf_under(b);
+  Buf no = buf_under(b);
+  uint32_t cur = local_new(l);
+  uint32_t idx = local_new(l);
+  Operand nil;
+  Operand cell;
+  Operand ops[2];
+  if (!block_ops(l, b, 0, ops, 0, &nil) || !set(l, b, cur, nil.w) || !set(l, b, idx, ex_const(l, IR_HOST_LIST_MAX)))
+    return 0;
+  ops[0] = operand(
+      ex_load(l, ex_bin(l, IR_OP_ADD, ex_const(l, base), ex_bin(l, IR_OP_MUL, ex_local(l, idx), ex_const(l, 8))), 1));
+  ops[1] = operand(ex_local(l, cur));
+  return block_ops(l, &yes, 1, ops, 2, &cell) && set(l, &yes, cur, cell.w) &&
+         set(l, &body, idx, ex_bin(l, IR_OP_SUB, ex_local(l, idx), ex_const(l, 1))) &&
+         st_if(l, &body, ex_bin(l, IR_OP_LT, ex_local(l, idx), ex_local(l, k)), &yes, &no) &&
+         st_repeat(l, b, ex_const(l, IR_HOST_LIST_MAX), &body) && set(l, b, k, ex_local(l, cur));
+}
+
+/* S9a (D39): the prologue of an entry with a list parameter. The list
+   parameters come last (D36). First each count, then the bound test of each
+   count, then the blocks of each list. */
+static int host_lists(Low *l, Buf *b, const Entry *e) {
+  uint32_t first = e->param_count - e->list_count;
+  uint32_t j;
+  for (j = 0; j < e->list_count; j++)
+    if (!set(l, b, first + j, ex_load(l, ex_const(l, list_at(j)), 0)))
+      return 0;
+  for (j = 0; j < e->list_count; j++)
+    if (!list_over(l, b, first + j))
+      return 0;
+  for (j = 0; j < e->list_count; j++)
+    if (!list_build(l, b, first + j, list_at(j)))
+      return 0;
+  return 1;
+}
+
 static int lower_entry(Machine *m, uint32_t index, const Entry *e, IrFunc *fn) {
   Low l;
   Buf body = buf_under(NULL);
@@ -1484,18 +1860,30 @@ static int lower_entry(Machine *m, uint32_t index, const Entry *e, IrFunc *fn) {
   uint32_t k;
   memset(&l, 0, sizeof l);
   l.m = m;
+  l.watch_count = 0;
+  l.watch_hit = 0;
+  l.host = e->out_words != 0u ? 1u : 0u;
   l.local_count = e->param_count;
   m->def = m->defs[index].name;
   m->fuel = EVAL_FUEL_STEPS;
   if (params == NULL)
     return oom(&l);
   v = def_value(m, index);
+  /* S9a (D39): the prologue of the host lists comes before the body. */
+  if (e->list_count != 0u && !host_lists(&l, &body, e))
+    return 0;
   for (k = 0; k < e->param_count && v != NULL; k++) {
-    params[k] = e->param_flag[k] ? IR_SCALAR_FLAG : e->param_word[k] ? IR_SCALAR_WORD : IR_SCALAR_NAT;
+    params[k] = e->param_flag[k] ? IR_SCALAR_FLAG
+                : e->param_word[k] ? IR_SCALAR_WORD
+                : e->param_amount[k] ? IR_SCALAR_AMOUNT
+                : e->param_list[k] != 0u ? IR_SCALAR_LIST
+                : IR_SCALAR_NAT;
     x = fresh(&l, operand(ex_local(&l, k)));
     v = x == NULL ? NULL : apply_value(m, v, x);
   }
-  if (!got(&l, v) || !lower(&l, &body, v, &r) || !emit(&l, &body, stmt_expr(&l, IR_STMT_RETURN, r.w)))
+  if (!got(&l, v) || !lower(&l, &body, v, &r))
+    return 0;
+  if (e->out_words != 0u ? !host_result(&l, &body, e, r) : !emit(&l, &body, stmt_expr(&l, IR_STMT_RETURN, r.w)))
     return 0;
   fn->name = m->defs[index].name;
   fn->params = params;
@@ -1504,9 +1892,25 @@ static int lower_entry(Machine *m, uint32_t index, const Entry *e, IrFunc *fn) {
   fn->local_count = l.local_count;
   fn->body = block_of(&body);
   fn->heap_words = 0;
+  fn->out_words = e->out_words;
+  fn->heap_base = e->out_words != 0u ? IR_HOST_HEAP_BASE + IR_HOST_LIST_BYTES * e->list_count : 0u;
   if (!heap_block(&fn->body, &fn->heap_words) || fn->heap_words > IR_HEAP_WORDS_MAX)
     return diag_fail(m->diag, "REFUSE_LOWER", m->def, "heap use has no static bound");
   return 1;
+}
+
+/* Q-S9-39: the host form exports the Wasm memory under the name memory
+   (wasm.c 404). So a module with a host-form entry cannot also have an
+   entry named memory: the two exports would have the same name. */
+static int memory_clash(const IrProgram *prog) {
+  size_t i;
+  int host = 0;
+  int named = 0;
+  for (i = 0; i < prog->func_count; i++) {
+    host = host || prog->funcs[i].out_words != 0u;
+    named = named || strcmp(prog->funcs[i].name, "memory") == 0;
+  }
+  return host && named;
 }
 
 int lower_program(Machine *m, IrProgram *prog) {
@@ -1519,6 +1923,7 @@ int lower_program(Machine *m, IrProgram *prog) {
   prog->func_count = 0;
   if (funcs == NULL)
     return diag_fail(m->diag, "OOM", m->def, "out of memory");
+  seal_lowering(m);
   for (i = 0; i < m->def_count; i++) {
     m->fuel = EVAL_FUEL_STEPS;
     entry = m->defs[i].origin == ORIGIN_PROGRAM && entry_of(m, m->defs[i].type, &e) && !e.result_option;
@@ -1527,5 +1932,7 @@ int lower_program(Machine *m, IrProgram *prog) {
     n += entry ? 1u : 0u;
   }
   prog->func_count = n;
+  if (memory_clash(prog))
+    return diag_fail(m->diag, "REFUSE_LOWER", "memory", "the name memory clashes with the memory export of the host form");
   return 1;
 }

@@ -6,8 +6,12 @@
      check. Memory 0 has a fixed size (minimum = maximum): the pages of the
      largest heap bound of an entry (IrFunc heap_words), at least 1 page.
    - Function 1 + K is IR entry K, exported as its name. Each parameter and the
-     result is an i64. Each entry first resets the heap pointer to 0, and it
-     sets a Flag parameter to 1 when it is not 0.
+     result is an i64. Each entry first resets the heap pointer to its heap
+     base (0 for an old-form entry), and it sets a Flag parameter to 1 when
+     it is not 0.
+   - S9a: a host-form entry (IrFunc out_words != 0) returns a status and
+     stores its result in the out words at bytes 0 to 63. Its heap base is
+     64. A module with such an entry exports memory 0 as "memory".
    - A word is 8 bytes. Word K of the block at address A is at A + 8K.
 
    Each entry has three i64 scratch locals after the IR locals: S and S + 1
@@ -284,6 +288,8 @@ static int emit_stmt(Sink *s, const IrStmt *st, uint32_t t, unsigned depth) {
       return emit_loop(s, st, 0, t, depth);
     case IR_STMT_WHILE:
       return emit_loop(s, st, 1, t, depth);
+    case IR_STMT_STORE: /* S9a: out word K is at the constant address 8K */
+      return i32_const(s, 0) && emit_expr(s, st->expr, t, depth + 1u) && memarg(s, OP_I64_STORE, st->local);
     case IR_STMT_RETURN:
       return emit_expr(s, st->expr, t, depth + 1u) && put_byte(s, OP_RETURN);
   }
@@ -310,6 +316,8 @@ static int part_alloc(Sink *s, const void *arg) {
 static int flag_norm(Sink *s, const IrFunc *fn, size_t k) {
   switch (fn->params[k]) {
     case IR_SCALAR_NAT:
+    case IR_SCALAR_AMOUNT: /* S9a: an unsigned i64 word, all 64 bits */
+    case IR_SCALAR_LIST:   /* S9a (D38): a plain local; the prologue sets it */
       return 1;
     case IR_SCALAR_FLAG:
       return i64_const(s, 0) && i64_const(s, 1) && op2(s, OP_LOCAL_GET, k) && put_byte(s, OP_I64_EQZ) &&
@@ -320,12 +328,22 @@ static int flag_norm(Sink *s, const IrFunc *fn, size_t k) {
   return 0;
 }
 
+/* S9a (D38): the count of the Wasm parameters of FN. A list parameter
+   (IR_SCALAR_LIST) is a plain local, and the list parameters come last. */
+static size_t wasm_params(const IrFunc *fn) {
+  size_t k;
+  size_t n = 0;
+  for (k = 0; k < fn->param_count; k++)
+    n += fn->params[k] != IR_SCALAR_LIST ? 1u : 0u;
+  return n;
+}
+
 static int part_entry(Sink *s, const void *arg) {
   const IrFunc *fn = arg;
   uint32_t t = fn->local_count;
   size_t k;
-  int ok = put_uleb(s, 1) && put_uleb(s, (uint64_t)(fn->local_count - fn->param_count) + 3u) &&
-           put_byte(s, TYPE_I64) && i64_const(s, 0) && op2(s, OP_GLOBAL_SET, 0);
+  int ok = put_uleb(s, 1) && put_uleb(s, (uint64_t)(fn->local_count - wasm_params(fn)) + 3u) &&
+           put_byte(s, TYPE_I64) && i64_const(s, fn->heap_base) && op2(s, OP_GLOBAL_SET, 0);
   for (k = 0; k < fn->param_count && ok; k++) ok = flag_norm(s, fn, k);
   /* The body ends in RETURN (lower_entry), so no code follows it. */
   return ok && emit_block(s, &fn->body, t, 0) && put_byte(s, OP_END);
@@ -338,8 +356,8 @@ static int part_types(Sink *s, const void *arg) {
   int ok = put_uleb(s, 1u + prog->func_count) && put_byte(s, TYPE_FUNC) && put_uleb(s, 1) && put_byte(s, TYPE_I32) &&
            put_uleb(s, 1) && put_byte(s, TYPE_I64);
   for (i = 0; i < prog->func_count && ok; i++) {
-    ok = put_byte(s, TYPE_FUNC) && put_uleb(s, prog->funcs[i].param_count);
-    for (k = 0; k < prog->funcs[i].param_count && ok; k++) ok = put_byte(s, TYPE_I64);
+    ok = put_byte(s, TYPE_FUNC) && put_uleb(s, wasm_params(&prog->funcs[i]));
+    for (k = 0; k < wasm_params(&prog->funcs[i]) && ok; k++) ok = put_byte(s, TYPE_I64);
     ok = ok && put_uleb(s, 1) && put_byte(s, TYPE_I64);
   }
   return ok;
@@ -357,11 +375,16 @@ static int part_functions(Sink *s, const void *arg) {
    entry, at least 1. */
 static int part_memory(Sink *s, const void *arg) {
   const IrProgram *prog = arg;
-  uint64_t words = 0;
+  uint64_t bytes = 0;
+  uint64_t top;
   uint64_t pages;
   size_t i;
-  for (i = 0; i < prog->func_count; i++) words = prog->funcs[i].heap_words > words ? prog->funcs[i].heap_words : words;
-  pages = (8u * words + WASM_PAGE_BYTES - 1u) / WASM_PAGE_BYTES;
+  /* S9a: the heap of a host-form entry starts at its heap base. */
+  for (i = 0; i < prog->func_count; i++) {
+    top = prog->funcs[i].heap_base + 8u * prog->funcs[i].heap_words;
+    bytes = top > bytes ? top : bytes;
+  }
+  pages = (bytes + WASM_PAGE_BYTES - 1u) / WASM_PAGE_BYTES;
   pages = pages == 0 ? 1u : pages;
   return put_uleb(s, 1) && put_byte(s, 1) && put_uleb(s, pages) && put_uleb(s, pages);
 }
@@ -374,11 +397,16 @@ static int part_global(Sink *s, const void *arg) {
 static int part_exports(Sink *s, const void *arg) {
   const IrProgram *prog = arg;
   size_t i;
-  int ok = put_uleb(s, prog->func_count);
+  int host = 0;
+  int ok;
+  /* S9a (Q-S9-1): a module with a host-form entry exports memory 0 as
+     "memory". Each other module keeps its old bytes. */
+  for (i = 0; i < prog->func_count; i++) host = host || prog->funcs[i].out_words != 0u;
+  ok = put_uleb(s, prog->func_count + (host ? 1u : 0u));
   for (i = 0; i < prog->func_count && ok; i++) {
     ok = put_name(s, prog->funcs[i].name) && put_byte(s, 0) && put_uleb(s, 1u + i);
   }
-  return ok;
+  return ok && (!host || (put_name(s, "memory") && put_byte(s, 2) && put_uleb(s, 0)));
 }
 
 static int part_code(Sink *s, const void *arg) {

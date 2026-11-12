@@ -1,0 +1,23 @@
+-- The Amount word operations of S9a. An Amount parameter is one unsigned
+-- i64 word on Wasm, and amLe, amSelect, amMax and amMin are word operations
+-- there. `langc --kit eval` runs the unary definitions of
+-- domain/domain.lang. The gate compares the two on each case of the grid.
+-- Each entry gives a Nat: 1 when the amLe test holds, else 0.
+def three : Amount := amSucc (amSucc (amSucc amZero))
+def four : Amount := amSucc three
+def leOf : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe x y)
+-- selOf: amSelect gives its first value when x <= y.
+def selOf : (x y : Amount) -> Nat := fun (x y : Amount) => amSelect Nat x y 11 22
+-- amMax is not smaller than each argument, and it is one of them.
+def maxLeft : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amMax x y) x)
+def maxRight : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amMax x y) y)
+def maxOver : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe x (amMax x y))
+-- amMin is not larger than each argument, and it is one of them.
+def minLeft : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amMin x y) x)
+def minRight : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amMin x y) y)
+def minOver : (x y : Amount) -> Nat := fun (x y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe x (amMin x y))
+-- A closed Amount is a constant word.
+def litLe : (y : Amount) -> Nat := fun (y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe three y)
+def maxLit : (y : Amount) -> Nat := fun (y : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amMax three y) four)
+-- closedLe has no parameter: its result is the constant 1.
+def closedLe : Nat := either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe three four)

@@ -1,0 +1,14 @@
+-- The bounded walk of S9a. A run-time elim with a case that reads the
+-- induction hypothesis `ih` walks the spine of the value, then makes a pass
+-- from the last node to the first. In a host-form entry, the walk over a bid
+-- list stops after 1025 nodes, and then the entry returns the status 1. The
+-- gate compares `langc --kit eval` with the Wasm module on each case of the
+-- grid.
+-- wkTop: bdTop over a run-time list. Its case reads `ih`.
+def wkTop : (f : Flag) -> (a b : Amount) -> Outcome := fun (f : Flag) (a b : Amount) => sale sz0 (bdTop (flagIf f (bdCons a (bdCons b (bdCons a bdNil))) (bdCons b (bdCons a bdNil))))
+-- wkArg: each step of bdArg has a walk of bdTop over the tail.
+def wkArg : (f : Flag) -> (a b : Amount) -> Outcome := fun (f : Flag) (a b : Amount) => sale (bdArg (flagIf f (bdCons a (bdCons b (bdCons a bdNil))) (bdCons b (bdCons a bdNil)))) (bdTop (flagIf f (bdCons a (bdCons b (bdCons a bdNil))) (bdCons b (bdCons a bdNil))))
+-- wkSecond: the base case of bdSecond is the reserve r.
+def wkSecond : (f : Flag) -> (r a b : Amount) -> Outcome := fun (f : Flag) (r a b : Amount) => sale sz0 (bdSecond r (flagIf f (bdCons a (bdCons b (bdCons a bdNil))) (bdCons b (bdCons a bdNil))))
+-- wkOut: the case of outcome reads `t`, not `ih`. The rule is a run-time value.
+def wkOut : (f g : Flag) -> (r a b : Amount) -> Outcome := fun (f g : Flag) (r a b : Amount) => outcome (flagIf g firstPrice secondPrice) r (flagIf f (bdCons a (bdCons b (bdCons a bdNil))) (bdCons b (bdCons a bdNil)))

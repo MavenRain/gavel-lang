@@ -1,0 +1,5 @@
+-- The T1 entry of S9a. The rule of the auction is a run-time flag g: flag 0
+-- gives the first price and flag 1 gives the second price. flagIf g a b gives
+-- a for flag 1, so the second price is the first branch.
+-- outcomeT1: the outcome of one sealed-bid auction with the reserve r.
+def outcomeT1 : (g : Flag) -> (r : Amount) -> (bs : Bids) -> Outcome := fun (g : Flag) (r : Amount) (bs : Bids) => outcome (flagIf g secondPrice firstPrice) r bs

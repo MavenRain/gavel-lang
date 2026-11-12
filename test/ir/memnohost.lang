@@ -1,0 +1,4 @@
+-- A def named memory in a module with no host-form entry. The module has no
+-- memory export (Q-S9-1), so the name does not clash and the lowering
+-- accepts it (Q-S9-39).
+def memory : Nat -> Nat := fun (n : Nat) => n

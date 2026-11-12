@@ -569,14 +569,14 @@ static int val_closed(const Value *v, uint32_t *nodes) {
 /* Record the def INDEX when it is a sealed def: its arity is the count of
    its outer binders, and apply_value finds its last closure by the body
    under them. */
-static void seal_note(Machine *m, uint32_t index) {
+static void seal_add(Machine *m, uint32_t index, const char *const *names, size_t count) {
   const DefInfo *d = &m->defs[index];
   const Core *body = d->body;
   uint32_t arity = 0u;
   size_t i;
   int sealed = 0;
-  for (i = 0; i < sizeof SEALED_DEFS / sizeof SEALED_DEFS[0]; i++)
-    sealed = sealed || (d->name != NULL && strcmp(d->name, SEALED_DEFS[i]) == 0);
+  for (i = 0; i < count; i++)
+    sealed = sealed || (d->name != NULL && strcmp(d->name, names[i]) == 0);
   if (!sealed || m->seal_count >= SEAL_MAX)
     return;
   while (body != NULL && body->kind == CORE_LAM) {
@@ -589,6 +589,86 @@ static void seal_note(Machine *m, uint32_t index) {
   m->seal_arity[m->seal_count] = arity;
   m->seal_body[m->seal_count] = body;
   m->seal_count++;
+}
+
+static void seal_note(Machine *m, uint32_t index) {
+  seal_add(m, index, SEALED_DEFS, sizeof SEALED_DEFS / sizeof SEALED_DEFS[0]);
+}
+
+/* S9a (Q-S9-2): the four Amount operations that the lowering keeps as
+   neutral applications and makes word operations. The checker and `langc
+   eval` unfold them: these seals start in lower_program. Each of the four
+   has all its binders at the start of its body, so that seal_apply finds
+   the last closure. */
+static const char *const LOWER_SEALED_DEFS[] = {"amLe", "amSelect", "amMax", "amMin"};
+
+void seal_lowering(Machine *m) {
+  uint32_t i;
+  uint32_t k;
+  int skip;
+  for (i = 0; i < m->def_count; i++) {
+    skip = m->defs[i].origin == ORIGIN_PROGRAM;
+    for (k = 0; k < m->seal_count; k++)
+      skip = skip || m->seal_def[k] == i;
+    if (!skip)
+      seal_add(m, i, LOWER_SEALED_DEFS, sizeof LOWER_SEALED_DEFS / sizeof LOWER_SEALED_DEFS[0]);
+  }
+}
+
+/* S9a (Q-S9-2): a word family is a kit family with the name and the shape
+   of a unary number: no parameter, a constructor with no field, then a
+   constructor with one recursive field. */
+static const char *const WORD_FAMILIES[2][3] = {{"Amount", "amZero", "amSucc"}, {"Size", "sz0", "szS"}};
+
+WordFamily word_family(const Machine *m, uint32_t family) {
+  const FamilyInfo *fam;
+  const CtorInfo *zero;
+  const CtorInfo *succ;
+  size_t i;
+  if (family >= m->family_count)
+    return WORD_FAMILY_NONE;
+  fam = &m->families[family];
+  if (fam->origin == ORIGIN_PROGRAM || fam->name == NULL || fam->param_count != 0u || fam->ctor_count != 2u)
+    return WORD_FAMILY_NONE;
+  zero = &m->ctors[fam->first_ctor];
+  succ = zero + 1;
+  if (zero->name == NULL || succ->name == NULL || zero->field_count != 0u || succ->field_count != 1u || !succ->fields[0].recursive)
+    return WORD_FAMILY_NONE;
+  for (i = 0; i < 2u; i++)
+    if (strcmp(fam->name, WORD_FAMILIES[i][0]) == 0 && strcmp(zero->name, WORD_FAMILIES[i][1]) == 0 &&
+        strcmp(succ->name, WORD_FAMILIES[i][2]) == 0)
+      return i == 0u ? WORD_FAMILY_AMOUNT : WORD_FAMILY_SIZE;
+  return WORD_FAMILY_NONE;
+}
+
+/* The successor chain of V in the word family FAMILY: N is its length. REST
+   is NULL when the chain ends in the zero constructor, else it is the value
+   at the end. 0 when a constructor of the chain does not have its
+   arguments. */
+int word_chain(const Machine *m, uint32_t family, const Value *v, uint64_t *n, const Value **rest) {
+  uint32_t zero = m->families[family].first_ctor;
+  *n = 0;
+  *rest = NULL;
+  while (val_is(v, OP_CTOR) && v->inst == zero + 1u) {
+    if (v->argc != 1u)
+      return 0;
+    v = v->args[0];
+    (*n)++;
+  }
+  if (val_is(v, OP_CTOR) && v->inst == zero)
+    return v->argc == 0u;
+  *rest = v;
+  return 1;
+}
+
+/* The unary value of N in the word family FAMILY. */
+const Value *word_value(Machine *m, uint32_t family, uint64_t n) {
+  uint32_t zero = m->families[family].first_ctor;
+  const Value *v = val_make(m, OP_CTOR, zero, 0, NULL, NULL, NULL);
+  uint64_t i;
+  for (i = 0; i < n && v != NULL; i++)
+    v = val_make(m, OP_CTOR, zero + 1u, 1, v, NULL, NULL);
+  return v;
 }
 
 const Value *def_value(Machine *m, uint32_t index) {

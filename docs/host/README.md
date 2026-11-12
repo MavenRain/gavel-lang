@@ -91,10 +91,17 @@ usage or IO error. A diagnostic on stderr has the form
 
 ## Entries
 
-An entry is a top-level program definition whose declared type is `Nat`,
-`Flag`, or a first-order function from `Nat` and `Flag` arguments to a
-`Nat` or `Flag` result. `build` exports each entry by its name. Each
-parameter and the result is an `i64`. Other definitions are not exported.
+An entry is a top-level program definition of one of two forms. The old
+form: the declared type is `Nat`, `Flag` or `Word`, or a first-order
+function from `Nat`, `Flag`, `Word` and `Amount` arguments to a `Nat`,
+`Flag` or `Word` result. Each parameter and the result is an `i64`. The
+host form (S9a): a first-order function with a bounded list parameter or
+a family result, for example `outcomeT1 : Flag -> Amount -> Bids ->
+Outcome` (`domain/t1.lang`). It returns the status 0 (ok) or 1 (a list
+above its bound), and it gives its lists and its result through the
+memory (see "Wasm layout"). `build` exports each entry by its name. Other
+definitions are not exported. `docs/host/CAPABILITY.md` gives the limits
+of the host form.
 
 `Nat` is an unsigned 64-bit integer. `natAdd` gives an `Option Nat`:
 `none` on an overflow past 2^64 - 1. `natSub` stops at 0. The divisor of
@@ -107,7 +114,7 @@ each entry with the parameters as free variables. Types and universes erase.
 Proof contents erase. A lambda stays only as the direct function argument of
 `fold`, `unfold`, `map`, `bind`, `filter`, `either` or `option`. The
 lowering puts its body into a loop or a branch. The lowering refuses two
-programs with a HOST-LIMIT code (see `docs/CAPABILITY.md`):
+programs with a HOST-LIMIT code (see `docs/host/CAPABILITY.md`):
 
 - `REFUSE_RUNTIME_CLOSURE`: a function value must exist at run time.
 - `REFUSE_RUNTIME_TREE`: a fold walks a tree that exists only at run time.
@@ -144,22 +151,38 @@ Decision record: `docs/PLAN.md` sections 1 and 2.
 ## Wasm layout
 
 - The module has one memory of a fixed size and one mutable `i64` global,
-  the heap pointer. The size is the pages of the largest heap bound of an
-  entry (at least 1 page). `langc` adds the words of each heap block on the
-  longest path of an entry. When an entry makes heap blocks in a loop with a
-  run-time count, its heap use has no static bound: `langc ir` and `langc
-  build` refuse it with `REFUSE_LOWER` (`heap use has no static bound`). A
-  bound larger than 1 GiB gets the same refusal.
+  the heap pointer. The size is the pages of the largest heap end of an
+  entry: its heap base + its heap bound (at least 1 page). `langc` adds
+  the words of each heap block on the longest path of an entry. When an
+  entry makes heap blocks in a loop with a run-time count, its heap use
+  has no static bound: `langc ir` and `langc build` refuse it with
+  `REFUSE_LOWER` (`heap use has no static bound`). A bound larger than
+  1 GiB gets the same refusal.
 - Function 0 is the internal allocator `alloc (bytes : i32) -> i64`. It
   increases the heap pointer. It does not check the size, because the
   memory holds the heap bound of each entry.
-- Function 1 + K is entry K. Each entry first sets the heap pointer to 0,
-  so each call starts with an empty heap.
+- Function 1 + K is entry K. Each entry first sets the heap pointer to its
+  heap base (0 for an old-form entry), so each call starts with an empty
+  heap.
 - A `Flag` argument is true when it is not 0. The entry sets it to 1.
 - A word is 8 bytes. A heap block holds the tag in word 0 and the word of
   field K in word 1 + K. Each op is total; a value is one word.
 - A tag switch is nested blocks and `br_table`. The last arm is the
   default, so a tag out of range runs the last arm.
+- A module with a host-form entry exports its memory as `memory` (export
+  kind 2, index 0). Another module has no memory export and keeps its old
+  bytes.
+- The host region of a host-form entry starts at byte 0. Bytes 0 to 63
+  are 8 out words. From byte 64 come the list parameters in their order:
+  for each list, one count word and then 1024 element words (`Bids` =
+  8200 bytes). The heap base of the entry is the end of its last list
+  (8264 for `outcomeT1`).
+- The caller writes each list into the host region before the call. The
+  entry reads each list one time: a count above 1024 returns the status 1
+  and writes no out word. Else the entry copies the list into heap cells.
+- At the status 0 the entry stores the result: out word 0 = the
+  constructor tag, out word 1 + K = field K, and 0 in each word that the
+  constructor does not use.
 
 ## Domain slot
 
@@ -213,14 +236,15 @@ module's IR; node and `langc eval` must agree on every result.
   of the function at a fresh variable. A dependent result needs a
   declared type.
 - A definition with a `List`, `Prod` or other non-scalar result is not an
-  entry. `ir` and `abi` skip it.
+  entry, except a host-form entry with a family result (see "Entries").
+  `ir` and `abi` skip it.
 - `langc eval` stops after 40000000 steps (`EVAL_FUEL`). The Wasm module
   has no step limit, so a large loop count can run on Wasm and stop in
   `eval`. The grid of `test/grid.awk` uses large values only for
   entries with no loop.
 - The arena of `langc` stops at 1 GiB. The Wasm memory has a fixed size:
-  minimum = maximum = the pages of the largest heap bound of an entry, at
-  least 1 page. An entry with no static heap bound refuses
-  (`REFUSE_LOWER`, `test/ir/spine.lang`).
+  minimum = maximum = the pages of the largest heap end of an entry (heap
+  base + heap bound), at least 1 page. An entry with no static heap bound
+  refuses (`REFUSE_LOWER`, `test/ir/spine.lang`).
 - Source files are at most 1 MiB. `Nat` literals are at most
   18446744073709551615.

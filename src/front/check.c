@@ -4287,6 +4287,15 @@ static const struct {
   {"Ballots", "blNil", "blCons", BALLOT_BOUND, "ballot list with more than 1024 ballots", "an open list passes and the T1 entry bounds it; Q-S7-10 (a)"},
 };
 
+/* S9a (D4): the bound of the list family FAMILY, or 0 (no bound). */
+uint32_t family_bound(const Machine *m, uint32_t family) {
+  size_t i;
+  for (i = 0; i < sizeof LIST_BOUNDS / sizeof LIST_BOUNDS[0]; i++)
+    if (strcmp(m->families[family].name, LIST_BOUNDS[i].family) == 0)
+      return LIST_BOUNDS[i].bound;
+  return 0;
+}
+
 /* A bounded list family (Bids or Members): the family, its two
    constructors (the tail is the last argument of CONS) and the largest
    closed length. */
@@ -5111,14 +5120,75 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, C
   return 1;
 }
 
+/* S9a (D5): 1 when the field F is one out word: a Nat, a Flag, a Word or a
+   value of a word family. */
+static int host_field(const Machine *m, const FieldInfo *f) {
+  const Core *t = f->type;
+  if (f->recursive || f->path || f->history || t == NULL || t->kind != CORE_OP)
+    return 0;
+  return t->op == OP_NAT || t->op == OP_FLAG || t->op == OP_WORD ||
+         (t->op == OP_FAMILY && word_family(m, t->inst) != WORD_FAMILY_NONE);
+}
+
+/* S9a (D5): the out word count of the result family FAMILY of a host-form
+   entry, or 0 when the family is not such a result. A family that the
+   program declares is not such a result (D24): a definition with that
+   result type is no entry, as before S9a. */
+static uint32_t host_words(const Machine *m, uint32_t family) {
+  const FamilyInfo *fam = &m->families[family];
+  uint32_t words = 1;
+  uint32_t i;
+  uint32_t k;
+  if (fam->origin == ORIGIN_PROGRAM || fam->param_count != 0u || fam->index_count != 0u ||
+      word_family(m, family) != WORD_FAMILY_NONE)
+    return 0;
+  for (i = 0; i < fam->ctor_count; i++) {
+    const CtorInfo *c = &m->ctors[fam->first_ctor + i];
+    if (c->interval_count != 0u)
+      return 0;
+    for (k = 0; k < c->field_count; k++)
+      if (!host_field(m, &c->fields[k]))
+        return 0;
+    words = c->field_count + 1u > words ? c->field_count + 1u : words;
+  }
+  return words <= ENTRY_OUT_WORDS_MAX ? words : 0u;
+}
+
+/* S9a (D36): 1 when FAMILY is a host list: a bounded list family of the form
+   `nil | cons (head : A) (tail : FAMILY)`, with A an Amount. */
+static int host_list(const Machine *m, uint32_t family) {
+  const FamilyInfo *fam = &m->families[family];
+  const CtorInfo *nil;
+  const CtorInfo *cons;
+  const Core *head;
+  if (family_bound(m, family) == 0u || fam->param_count != 0u || fam->index_count != 0u || fam->ctor_count != 2u)
+    return 0;
+  nil = &m->ctors[fam->first_ctor];
+  cons = &m->ctors[fam->first_ctor + 1u];
+  if (nil->field_count != 0u || nil->interval_count != 0u || cons->interval_count != 0u || cons->field_count != 2u)
+    return 0;
+  head = cons->fields[0].type;
+  return head != NULL && head->kind == CORE_OP && head->op == OP_FAMILY &&
+         word_family(m, head->inst) == WORD_FAMILY_AMOUNT && !cons->fields[0].recursive && cons->fields[1].recursive;
+}
+
 int entry_of(Machine *m, const Value *type, Entry *out) {
   const Value *t = type;
   memset(out, 0, sizeof *out);
   while (t != NULL && t->kind == VAL_PI && out->param_count < ENTRY_PARAMS_MAX) {
-    if (!val_is(t->dom, OP_NAT) && !val_is(t->dom, OP_FLAG) && !val_is(t->dom, OP_WORD))
+    /* S9a (Q-S9-2): an Amount parameter is one unsigned i64 word on Wasm. */
+    int amount = val_is(t->dom, OP_FAMILY) && word_family(m, t->dom->inst) == WORD_FAMILY_AMOUNT;
+    /* S9a (D36): a host list parameter comes after each scalar parameter. */
+    int list = val_is(t->dom, OP_FAMILY) && host_list(m, t->dom->inst);
+    if (!val_is(t->dom, OP_NAT) && !val_is(t->dom, OP_FLAG) && !val_is(t->dom, OP_WORD) && !amount && !list)
+      return 0;
+    if (!list && out->list_count != 0u)
       return 0;
     out->param_flag[out->param_count] = val_is(t->dom, OP_FLAG);
     out->param_word[out->param_count] = val_is(t->dom, OP_WORD);
+    out->param_amount[out->param_count] = amount;
+    out->param_list[out->param_count] = list ? t->dom->inst + 1u : 0u;
+    out->list_count += list ? 1u : 0u;
     t = closure_apply(m, t, val_var(m, out->param_count));
     out->param_count++;
   }
@@ -5126,7 +5196,13 @@ int entry_of(Machine *m, const Value *type, Entry *out) {
   out->result_option = val_is(t, OP_OPTION);
   t = out->result_option ? t->args[0] : t;
   out->result_flag = val_is(t, OP_FLAG);
-  return val_is(t, OP_NAT) || val_is(t, OP_FLAG) || val_is(t, OP_WORD);
+  /* S9a (D5, D20): a family result gives a host-form entry. A definition
+     with no parameter is not one: `langc eval` prints its source syntax. */
+  out->out_words = out->result_option || out->param_count == 0u || !val_is(t, OP_FAMILY) ? 0u : host_words(m, t->inst);
+  out->result_family = out->out_words != 0u ? t->inst : 0u;
+  /* S9a (D36): an entry with a list parameter has a host-form result. */
+  return out->list_count != 0u ? out->out_words != 0u
+                               : val_is(t, OP_NAT) || val_is(t, OP_FLAG) || val_is(t, OP_WORD) || out->out_words != 0u;
 }
 
 static int parse_u64(const char *s, uint64_t *out) {
@@ -5174,14 +5250,29 @@ static int parse_word(const char *s, uint64_t *out) {
 }
 
 /* The type of an entry argument. */
-typedef enum { ARG_TYPE_NAT, ARG_TYPE_FLAG, ARG_TYPE_WORD } ArgType;
+typedef enum { ARG_TYPE_NAT, ARG_TYPE_FLAG, ARG_TYPE_WORD, ARG_TYPE_AMOUNT } ArgType;
 
 static const char *const ARG_TEXT[] = {
-  "Nat (0 to 2^64-1)", "Flag (0 or 1)", "Word (0w to 0xffffffffw)",
+  "Nat (0 to 2^64-1)", "Flag (0 or 1)", "Word (0w to 0xffffffffw)", "kit Amount (0 to 16)",
 };
 
-/* An entry argument: a Nat in decimal, a Flag as 0 or 1, or a Word as 31w
-   or 0x1fw. */
+/* S9a: `langc eval` builds the unary value of an Amount argument, so the
+   argument has a small limit. The Wasm entry takes each unsigned i64 word.
+   The evaluator computes each `ih` of an elim, also one that the step does
+   not use. Thus the unary amLe on two equal amounts n costs about 2^n
+   steps, and the arena limit is reached at n = 21. */
+#define EVAL_AMOUNT_MAX 16u
+
+static const Value *amount_value(Machine *m, uint64_t n) {
+  uint32_t f;
+  for (f = 0; f < m->family_count; f++)
+    if (word_family(m, f) == WORD_FAMILY_AMOUNT)
+      return word_value(m, f, n);
+  return NULL;
+}
+
+/* An entry argument: a Nat in decimal, a Flag as 0 or 1, a Word as 31w or
+   0x1fw, or an Amount in decimal (S9a). */
 static const Value *entry_arg(Machine *m, const char *text, ArgType type) {
   uint64_t n = 0;
   const Value *v = NULL;
@@ -5194,6 +5285,9 @@ static const Value *entry_arg(Machine *m, const char *text, ArgType type) {
     break;
   case ARG_TYPE_WORD:
     v = parse_word(text, &n) ? val_word(m, (uint32_t)n) : NULL;
+    break;
+  case ARG_TYPE_AMOUNT:
+    v = parse_u64(text, &n) && n <= EVAL_AMOUNT_MAX ? amount_value(m, n) : NULL;
     break;
   }
   if (v == NULL && m->diag->code == NULL)
@@ -5238,6 +5332,114 @@ static int print_result(Machine *m, const char *name, const Value *v, FILE *out,
   return 1;
 }
 
+/* S9a (D8): the out word of the field value X of the type T. */
+static int host_word(Machine *m, const Core *t, const Value *x, uint64_t *out) {
+  const Value *rest = NULL;
+  if (x == NULL)
+    return 0;
+  if (x->kind == VAL_NAT || x->kind == VAL_WORD) {
+    *out = x->nat;
+    return 1;
+  }
+  if (val_is(x, OP_FLAG_YES) || val_is(x, OP_FLAG_NO)) {
+    *out = val_is(x, OP_FLAG_YES) ? 1u : 0u;
+    return 1;
+  }
+  return t->op == OP_FAMILY && word_chain(m, t->inst, x, out, &rest) && rest == NULL;
+}
+
+/* S9a (D8): the result line of a host-form entry: the status 0, then the
+   out words (the constructor tag, each field, 0 in each other word). */
+static int print_host(Machine *m, const char *name, const Entry *e, const Value *v, FILE *out) {
+  const FamilyInfo *fam = &m->families[e->result_family];
+  const CtorInfo *c = val_is(v, OP_CTOR) ? &m->ctors[v->inst] : NULL;
+  uint64_t words[ENTRY_OUT_WORDS_MAX] = {0};
+  uint32_t k;
+  int ok = c != NULL && c->family == e->result_family && v->argc == c->field_count;
+  for (k = 0; ok && k < c->field_count; k++)
+    ok = host_word(m, c->fields[k].type, v->args[k], &words[1u + k]);
+  if (!ok) {
+    diag_fail(m->diag, "EVAL_ENTRY", name, "the entry did not compute an out value");
+    return 1;
+  }
+  words[0] = v->inst - fam->first_ctor;
+  fputs("0", out);
+  for (k = 0; k < e->out_words; k++)
+    fprintf(out, " %llu", (unsigned long long)words[k]);
+  fputs("\n", out);
+  return 0;
+}
+
+/* S9a (D40): the arguments of an entry with a list parameter do not match
+   the list form. */
+static const Value *list_form(Machine *m) {
+  if (m->diag->code == NULL)
+    diag_fail(m->diag, "EVAL_ARGS", m->def, "the arguments do not match the list form");
+  return NULL;
+}
+
+/* S9a (D40): the list of the family FAMILY at ARGS[*AT]: the count, then,
+   when the count is at most the bound of the family, that count of Amount
+   words. Element 0 is the head. A count above the bound sets *OVER, takes no
+   element word and gives the empty list. */
+static const Value *list_arg(Machine *m, uint32_t family, char *const *args, uint32_t arg_count, uint32_t *at,
+                             int *over) {
+  uint32_t nil = m->families[family].first_ctor;
+  const Value *v = val_make(m, OP_CTOR, nil, 0, NULL, NULL, NULL);
+  uint64_t n = 0;
+  uint32_t first;
+  uint32_t k;
+  if (*at >= arg_count)
+    return list_form(m);
+  if (!parse_u64(args[*at], &n))
+    return entry_arg(m, args[*at], ARG_TYPE_NAT) == NULL ? NULL : list_form(m);
+  *at += 1u;
+  first = *at;
+  if (n > family_bound(m, family)) {
+    *over = 1;
+    return v;
+  }
+  if (n > (uint64_t)(arg_count - first))
+    return list_form(m);
+  *at = first + (uint32_t)n;
+  for (k = (uint32_t)n; k > 0u && v != NULL; k--) {
+    const Value *pair[2];
+    pair[0] = entry_arg(m, args[first + k - 1u], ARG_TYPE_AMOUNT);
+    pair[1] = v;
+    v = pair[0] == NULL ? NULL : val_ctor(m, nil + 1u, pair, 2);
+  }
+  return v;
+}
+
+/* S9a (D40): eval of an entry with a list parameter. A scalar is one word, a
+   list is its count and its elements, and each word is used once. A list
+   above its bound gives the status 1 with no out word, as the Wasm entry
+   does (D29). */
+static int eval_lists(Machine *m, const char *name, const Entry *e, const Value *v, char *const *args,
+                      uint32_t arg_count, FILE *out) {
+  uint32_t at = 0;
+  uint32_t i;
+  int over = 0;
+  for (i = 0; i < e->param_count && v != NULL; i++) {
+    ArgType type = e->param_flag[i] ? ARG_TYPE_FLAG
+                   : e->param_word[i] ? ARG_TYPE_WORD
+                   : e->param_amount[i] ? ARG_TYPE_AMOUNT
+                   : ARG_TYPE_NAT;
+    const Value *arg = e->param_list[i] != 0u ? list_arg(m, e->param_list[i] - 1u, args, arg_count, &at, &over)
+                       : at < arg_count ? entry_arg(m, args[at++], type)
+                       : list_form(m);
+    v = arg == NULL ? NULL : apply_value(m, v, arg);
+  }
+  v = v != NULL && at != arg_count ? list_form(m) : v;
+  if (v == NULL)
+    return strcmp(m->diag->code != NULL ? m->diag->code : "", "EVAL_ARGS") == 0 ? 2 : 1;
+  if (over) {
+    fputs("1\n", out);
+    return 0;
+  }
+  return print_host(m, name, e, v, out);
+}
+
 int eval_command(Machine *m, const char *name, char *const *args, int arg_count, FILE *out, FILE *err) {
   uint32_t d = find_def(m, name);
   Entry entry;
@@ -5267,17 +5469,23 @@ int eval_command(Machine *m, const char *name, char *const *args, int arg_count,
     fprintf(out, "%s\n", buf);
     return 0;
   }
+  if (entry.list_count != 0u)
+    return eval_lists(m, name, &entry, v, args, (uint32_t)arg_count, out);
   if ((uint32_t)arg_count != entry.param_count) {
     diag_fail(m->diag, "EVAL_ARGS", name, "the entry takes %u arguments, found %d", entry.param_count, arg_count);
     return 2;
   }
   for (i = 0; i < entry.param_count && v != NULL; i++) {
-    const Value *arg = entry_arg(m, args[i], entry.param_flag[i] ? ARG_TYPE_FLAG : entry.param_word[i] ? ARG_TYPE_WORD : ARG_TYPE_NAT);
+    ArgType type = entry.param_flag[i] ? ARG_TYPE_FLAG
+                   : entry.param_word[i] ? ARG_TYPE_WORD
+                   : entry.param_amount[i] ? ARG_TYPE_AMOUNT
+                   : ARG_TYPE_NAT;
+    const Value *arg = entry_arg(m, args[i], type);
     v = arg == NULL ? NULL : apply_value(m, v, arg);
   }
   if (v == NULL)
     return strcmp(m->diag->code != NULL ? m->diag->code : "", "EVAL_ARGS") == 0 ? 2 : 1;
-  return print_result(m, name, v, out, err);
+  return entry.out_words != 0u ? print_host(m, name, &entry, v, out) : print_result(m, name, v, out, err);
 }
 
 static uint32_t find_family(const Machine *m, const char *name) {

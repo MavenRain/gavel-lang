@@ -1,0 +1,3 @@
+-- amSucc on a run-time Amount. The check accepts it, but the lowering
+-- refuses it: an i64 word wraps at 2^64 and the unary Amount has no wrap.
+def succLe : (x : Amount) -> Nat := fun (x : Amount) => either (fun (u : Unit) => 0) (fun (u : Unit) => 1) (amLe (amSucc x) x)

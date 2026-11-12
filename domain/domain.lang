@@ -288,25 +288,25 @@ and Echo := echoBack (backHop : Hop)
 -- laws below go by induction on both.
 family Amount := amZero | amSucc (amPred : Amount)
 def amLe : Amount -> Amount -> Sum Unit Unit :=
-  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Sum Unit Unit)
+  fun (x : Amount) (y : Amount) => (elim (fun (a : Amount) => Amount -> Sum Unit Unit)
     (fun (y : Amount) => inr unit)
     (fun (a : Amount) (ih : Amount -> Sum Unit Unit) => fun (y : Amount) =>
-      elim (fun (b : Amount) => Sum Unit Unit) (inl unit) (fun (b : Amount) (ihb : Sum Unit Unit) => ih b) y) x
+      elim (fun (b : Amount) => Sum Unit Unit) (inl unit) (fun (b : Amount) (ihb : Sum Unit Unit) => ih b) y) x) y
 def amSelect : (A : Type 0) -> Amount -> Amount -> A -> A -> A :=
-  fun (A : Type 0) (x : Amount) => elim (fun (a : Amount) => Amount -> A -> A -> A)
+  fun (A : Type 0) (x : Amount) (y : Amount) (p : A) (q : A) => (elim (fun (a : Amount) => Amount -> A -> A -> A)
     (fun (y : Amount) (p : A) (q : A) => p)
     (fun (a : Amount) (ih : Amount -> A -> A -> A) => fun (y : Amount) =>
-      elim (fun (b : Amount) => A -> A -> A) (fun (p : A) (q : A) => q) (fun (b : Amount) (ihb : A -> A -> A) => ih b) y) x
+      elim (fun (b : Amount) => A -> A -> A) (fun (p : A) (q : A) => q) (fun (b : Amount) (ihb : A -> A -> A) => ih b) y) x) y p q
 def amMax : Amount -> Amount -> Amount :=
-  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+  fun (x : Amount) (y : Amount) => (elim (fun (a : Amount) => Amount -> Amount)
     (fun (y : Amount) => y)
     (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
-      elim (fun (b : Amount) => Amount) (amSucc a) (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+      elim (fun (b : Amount) => Amount) (amSucc a) (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x) y
 def amMin : Amount -> Amount -> Amount :=
-  fun (x : Amount) => elim (fun (a : Amount) => Amount -> Amount)
+  fun (x : Amount) (y : Amount) => (elim (fun (a : Amount) => Amount -> Amount)
     (fun (y : Amount) => amZero)
     (fun (a : Amount) (ih : Amount -> Amount) => fun (y : Amount) =>
-      elim (fun (b : Amount) => Amount) amZero (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x
+      elim (fun (b : Amount) => Amount) amZero (fun (b : Amount) (ihb : Amount) => amSucc (ih b)) y) x) y
 -- The laws of amLe, amMax, amMin and amSelect, by induction on the amounts.
 -- "x is at most y" is the path amMax x y = y; leOfMax turns it into the
 -- compare form amLe x y = inr unit.

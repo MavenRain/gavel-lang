@@ -1,0 +1,3 @@
+-- An elim over a run-time Amount. The check accepts it, but the lowering
+-- refuses it: on Wasm an Amount is one i64 word, not a chain of cells.
+def amIsZero : (x : Amount) -> Nat := fun (x : Amount) => elim (fun (t : Amount) => Nat) 1 (fun (k : Amount) (ih : Nat) => 0) x

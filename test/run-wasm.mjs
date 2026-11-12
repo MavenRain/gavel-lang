@@ -16,7 +16,22 @@ const call = ([entry, ...words]) => {
   const fn = instance.exports[entry];
   if (typeof fn !== "function") throw new Error(`no exported entry '${entry}'`);
   try {
-    return BigInt.asUintN(64, fn(...words.map((w) => BigInt(w.replace(/w$/, ""))))).toString();
+    // S9a: a last word `out:N` is not an argument. The entry is in the host
+    // form: at the status 0, the N out words of the memory follow the status.
+    const last = words.at(-1) ?? "";
+    const host = /^out:\d+$/.test(last);
+    const rest = host ? words.slice(0, -1) : words;
+    // S9a (D41): a word `at:B:W,W,...` is not an argument. Before the call,
+    // the harness writes the u64 words W at the byte B of the memory.
+    for (const w of rest.filter((x) => x.startsWith("at:"))) {
+      const [, at, list] = w.split(":");
+      const vals = list.split(",").map((x) => BigInt(x));
+      new BigUint64Array(instance.exports.memory.buffer, Number(at), vals.length).set(vals);
+    }
+    const argv = rest.filter((x) => !x.startsWith("at:"));
+    const status = BigInt.asUintN(64, fn(...argv.map((w) => BigInt(w.replace(/w$/, "")))));
+    const outs = host && status === 0n ? [...new BigUint64Array(instance.exports.memory.buffer, 0, Number(last.slice(4)))] : [];
+    return [status, ...outs].join(" ");
   } catch (e) {
     if (e instanceof WebAssembly.RuntimeError) return "trap";
     throw e;

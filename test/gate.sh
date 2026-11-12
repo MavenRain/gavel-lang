@@ -192,6 +192,10 @@ echo "ir: $irs lowered"
 # tree.lang folds a tree that exists only at run time (REFUSE_RUNTIME_TREE).
 # spine.lang walks lists that exist only at run time, so its heap use has no
 # static bound (S3).
+# amsucc.lang adds 1 to a run-time Amount (an i64 word wraps at 2^64).
+# amelim.lang does an elim over a run-time Amount (one i64 word).
+# memclash.lang has a def named memory next to a host-form entry: the host
+# form exports the Wasm memory under the same name (Q-S9-39).
 irrefusals=0
 ir_refused() {
   status=0
@@ -210,7 +214,15 @@ ir_refused kmap.lang "REFUSE_LOWER: got: the Wasm host does not lower an elim, K
 ir_refused tree.lang "REFUSE_RUNTIME_TREE: tips: "
 ir_refused spine.lang "REFUSE_LOWER: trapHead: heap use has no static bound"
 ir_refused hop.lang "REFUSE_LOWER: hopDepth: a recursive fold over a block of families"
+ir_refused amsucc.lang "REFUSE_LOWER: succLe: the Wasm host does not lower amSucc on a run-time Amount"
+ir_refused amelim.lang "REFUSE_LOWER: amIsZero: the Wasm host does not lower an elim over a run-time Amount or Size"
+ir_refused memclash.lang "REFUSE_LOWER: memory: the name memory clashes with the memory export of the host form"
 echo "ir refusals: $irrefusals checked"
+# Q-S9-39: memnohost.lang has a def named memory but no host-form entry, so
+# the module has no memory export (Q-S9-1) and the lowering accepts it.
+status=0
+build/langc --kit ir test/ir/memnohost.lang > /dev/null 2>&1 || status=$?
+[ "$status" -eq 0 ] || { echo "FAIL memnohost.lang: want ir exit 0, got exit $status (Q-S9-39)"; fail=$((fail + 1)); }
 
 # The IR lowerings (S3): `langc
 # --kit check` must accept each file and `langc --kit ir` must exit 0. The
@@ -247,6 +259,10 @@ build/langc --kit build test/ir/natops.lang -o "$tmp/natops.wasm" 2>"$tmp/err" |
 if [ "$status" -ne 0 ] || ! wasm-validate "$tmp/natops.wasm" 2>>"$tmp/err"; then
   echo "FAIL build natops: want exit 0 and a valid module, got exit $status: $(head -n 1 "$tmp/err")"
   fail=$((fail + 1))
+fi
+# Q-S9-1: no entry of natops.lang has the host form, so no memory export.
+if wasm-objdump -x -j Export "$tmp/natops.wasm" | rg -q -F -- '-> "memory"'; then
+  echo "FAIL natops: a memory export, but no entry has the host form (Q-S9-1)"; fail=$((fail + 1))
 fi
 # The module of test/ir/block.lang (S3): the same build
 # check. The notrap row below uses it.
@@ -326,11 +342,11 @@ cases=0
 mismatches=0
 difkit() {
   case "$1" in
-    test/ir/*) echo --kit ;;
+    test/ir/* | domain/t1.lang) echo --kit ;;
     *) kit examples/kit.txt "$(basename "$1")" ;;
   esac
 }
-for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-trap.lang test/ir/femul.lang; do
+for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-trap.lang test/ir/femul.lang test/ir/amount.lang test/ir/outcome.lang test/ir/elim.lang test/ir/walk.lang test/ir/hostlist.lang domain/t1.lang; do
   w="$tmp/$(basename "$f" .lang).wasm"
   wasms=$((wasms + 1))
   if ! build/langc $(difkit "$f") build "$f" -o "$w" 2>"$tmp/w.err" || ! wasm-validate "$w" 2>>"$tmp/w.err" ||
@@ -344,7 +360,14 @@ for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-tr
   : >"$tmp/want.txt"
   while read -r call; do
     status=0
-    want=$(build/langc $(difkit "$f") eval "$f" $call 2>/dev/null) || status=$?
+    # A host-form case (S9a) has the last word out:N for node only.
+    # A host list (S9a, D41) is the word at:B:W,W,... for node only. Eval
+    # takes the count, then the elements.
+    case "$call" in
+      *" at:"*) args=$(echo "${call% out:*}" | awk '{ gsub(/at:[0-9]+:/, ""); gsub(/,/, " "); print }') ;;
+      *) args=${call% out:*} ;;
+    esac
+    want=$(build/langc $(difkit "$f") eval "$f" $args 2>/dev/null) || status=$?
     [ "$status" -eq 0 ] || want="eval-exit-$status"
     # A Word result (S8) prints as 0x0000000fw in eval; node prints 15.
     case "$want" in 0x*w) want=$((${want%w})) ;; esac
@@ -365,6 +388,47 @@ for f in examples/*.lang test/ir/natops.lang test/ir/block.lang test/ir/proof-tr
 done
 echo "wasm: $wasms modules valid"
 echo "differential: $cases cases, $mismatches mismatches"
+# The t1 rows (S9a u5): test/ir/t1-rows.txt has lines KIND|CALL|WANT for
+# the entry outcomeT1 of domain/t1.lang (built with --kit). A D row compares
+# node with `langc eval`, as the loop above does. A G row compares node with
+# WANT and has no eval run (the n 1024 list and the n 1025 count word). A
+# build fail, a node fail, a mismatch or a trap line is a FAIL.
+t1d=0
+t1g=0
+t1bad=0
+if ! build/langc --kit build domain/t1.lang -o "$tmp/t1r.wasm" 2>"$tmp/w.err"; then
+  echo "FAIL t1 build: $(head -n 1 "$tmp/w.err")"
+  fail=$((fail + 1))
+else
+  : >"$tmp/t1calls.txt"
+  : >"$tmp/t1want.txt"
+  while IFS='|' read -r kind call want; do
+    echo "$call" >>"$tmp/t1calls.txt"
+    case "$kind" in
+      D)
+        t1d=$((t1d + 1))
+        status=0
+        args=$(echo "${call% out:*}" | awk '{ gsub(/at:[0-9]+:/, ""); gsub(/,/, " "); print }')
+        want=$(build/langc --kit eval domain/t1.lang $args 2>/dev/null </dev/null) || status=$?
+        [ "$status" -eq 0 ] || want="eval-exit-$status"
+        ;;
+      G) t1g=$((t1g + 1)) ;;
+      *) want="bad-kind-$kind" ;;
+    esac
+    echo "$want" >>"$tmp/t1want.txt"
+  done <test/ir/t1-rows.txt
+  if ! node test/run-wasm.mjs "$tmp/t1r.wasm" - <"$tmp/t1calls.txt" >"$tmp/t1got.txt" 2>"$tmp/w.err"; then
+    echo "FAIL t1 node: $(head -n 1 "$tmp/w.err")"
+    fail=$((fail + 1))
+  else
+    paste -d '|' "$tmp/t1calls.txt" "$tmp/t1want.txt" "$tmp/t1got.txt" | awk -F '|' '$2 != $3' >"$tmp/t1bad.txt"
+    t1bad=$(rg -c '.' "$tmp/t1bad.txt" || echo 0)
+    [ "$t1bad" -eq 0 ] || { echo "FAIL t1 rows: $t1bad mismatches, first $(head -n 1 "$tmp/t1bad.txt" | cut -c 1-160)"; fail=$((fail + 1)); }
+    traps=$(cat "$tmp/t1want.txt" "$tmp/t1got.txt" | rg -c -x -F trap || echo 0)
+    [ "$traps" -eq 0 ] || { echo "FAIL t1 trap: $traps trap lines (R0)"; fail=$((fail + 1)); }
+  fi
+fi
+echo "t1 rows: $t1d diff, $t1g golden, $t1bad mismatches"
 # A Flag argument larger than 1 (langc eval refuses it with EVAL_ARGS). R0
 # (docs/PLAN.md section 2, OI-4): the entry sets a Flag argument of 2 or
 # more to 1 (flag_norm in src/wasm.c), so the module gives 4 and does not

@@ -1,0 +1,13 @@
+-- The host lists of S9a. A Bids parameter of a host-form entry is a list in
+-- the host region of the memory: the count word, then the elements. The entry
+-- builds the cons blocks before the body. A count above 1024 gives the status
+-- 1. The gate compares `langc --kit eval` with the Wasm module on each case of
+-- the grid.
+-- hlTop: bdTop over a host list.
+def hlTop : (bs : Bids) -> Outcome := fun (bs : Bids) => sale sz0 (bdTop bs)
+-- hlArg: each step of bdArg has a walk of bdTop over the tail.
+def hlArg : (bs : Bids) -> Outcome := fun (bs : Bids) => sale (bdArg bs) (bdTop bs)
+-- hlSecond: the base case of bdSecond is the reserve r.
+def hlSecond : (r : Amount) -> (bs : Bids) -> Outcome := fun (r : Amount) (bs : Bids) => sale sz0 (bdSecond r bs)
+-- hlOut: the rule is a run-time value.
+def hlOut : (g : Flag) -> (r : Amount) -> (bs : Bids) -> Outcome := fun (g : Flag) (r : Amount) (bs : Bids) => outcome (flagIf g firstPrice secondPrice) r bs

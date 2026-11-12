@@ -134,18 +134,22 @@ pending). The next slice is S9: the Wasm module with the prelude.
 - The IR lowering (`src/front/lower.c`, `src/ir.h`) and the Wasm writer
   `src/wasm.c`. The writer emits no trap form; `test/notraptool.c` checks
   each built module. The entry sets a Flag argument above 1 to 1.
+- S9a: the host form. The lowering makes `Amount` and `Size` words and
+  lowers a run-time `elim`, a bounded walk, list parameters and out
+  words. `domain/t1.lang` has the entry `outcomeT1`.
 - The gate: 38 examples, 18 parse refusals, 192 check refusals, 10
   kit-only refusals, 1 time hint, 152 evals, 581 crypto oracle rows with 0
-  mismatches, 4 golden Noir proofs, 1 build, 1 ir lowered, 5 ir refusals, 3 ir lowerings, 4
-  notrap modules, 7 notrap bad rows, 10 spine evals, 42 Wasm modules
-  valid, 1910 differential cases with 0 mismatches;
+  mismatches, 4 golden Noir proofs, 1 build, 1 ir lowered, 8 ir refusals,
+  3 ir lowerings, 4 notrap modules, 7 notrap bad rows, 10 spine evals, 48
+  Wasm modules valid, 2747 differential cases with 0 mismatches, 18
+  differential and 5 golden T1 rows with 0 mismatches;
   the review, domain and path regressions. Each differential module
   passes `build/notraptool`.
 
 ## Remaining M0 work
 
-1. S9 to S22: the targets T1 to T5, A1 to A7 and the close. S9 needs
-   the S8c commit first.
+1. S9b to S22: the rest of the targets T1 to T5, A1 to A7 and the close.
+   S9a lowers `outcome` with no crypto (Q-S9-5 (a)); S9b comes next.
 
 ## Known limits
 
@@ -155,10 +159,13 @@ pending). The next slice is S9: the Wasm module with the prelude.
   an affine code.
 - `REFUSE_CELL` holds the CM and CC shape check inline in the kernel.
   The R1 slice renames it or adds `REFUSE_FORMER`.
-- `Amount` is a unary family in the kernel. T1 lowers it to a
-  fixed-width word (`docs/PLAN.md` OI-21).
-- An open bid list passes the check at any length. The T1 entry bounds it
-  (OI-22).
+- `Amount` is a unary family in the checker and the evaluator. The S9a
+  lowering makes it one `i64` word. `amSucc` on a run-time Amount refuses
+  (`REFUSE_LOWER`), because a word wraps at 2^64 and the unary spec does
+  not. `langc eval` takes a kit Amount from 0 to 16 (`docs/PLAN.md`
+  OI-21).
+- An open bid list passes the check at any length. The S9a entry
+  `outcomeT1` bounds it: a count above 1024 gives the status 1 (OI-22).
 - The kernel signature slot is `DaoOutcome`, not `Outcome` (OI-23).
 - `hsMsg`, `schnorrCheck` and `g16Verify` are sealed: on an open argument
   they do not unfold, so a law cannot look inside them (Q-S8a-9 (a)). The
@@ -166,8 +173,9 @@ pending). The next slice is S9: the Wasm module with the prelude.
   computed again.
 - The Wasm path of `ptMulC` has no differential row. `test/ir/femul.lang`
   covers `feMulC` only.
-- One gate run at S8b takes about 420 to 630 s of CPU time (about 400 to
-  650 s at S8a, 116 s at S8). In one S8a run of 645 s,
+- One gate run at S9a takes about 1050 s of CPU time (1048 s at u7a;
+  about 420 to 630 s at S8b, 400 to 650 s at S8a, 116 s at S8). In one
+  S8a run of 645 s,
   the Wasm and differential section (42 modules, 1910 cases) took 403 s,
   and the crypto oracle (501 rows) took 150 s. The cause of the increase
   is not known.
@@ -191,6 +199,12 @@ pending). The next slice is S9: the Wasm module with the prelude.
   bound; only `Ballots` has one (OI-36).
 - In a guest program, `amSucc` applies only to a literal Amount
   (`REFUSE_AMOUNT`). `examples/log.lang` uses literal Amounts.
+- The static heap bound of an outcome entry grows with the square of the
+  list bound (a walk inside a walk), and `langc eval` runs an outcome row
+  only up to about 48 bids. The gate rows with 64 and 1024 bids are golden
+  rows (`docs/host/CAPABILITY.md`, Limits).
+- In a module with a host-form entry, an entry named `memory` refuses
+  with `REFUSE_LOWER` (Q-S9-39 (a)).
 
 ## Internal boundaries
 
